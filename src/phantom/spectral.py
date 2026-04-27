@@ -101,20 +101,24 @@ def analyze_spectrum(audio: AudioData) -> SpectralResult:
         return _silent_spectral_result()
 
     try:
-        # -- Spectral feature extraction (frame_size=2048, hop_size=1024) --
+        # Spectral features: 2048/1024 (~46ms/~23ms at 44.1kHz) per AES standard for tonal analysis
         frame_size = 2048
         hop_size = 1024
 
         windowing = es.Windowing(type="hann", size=frame_size)
         spectrum = es.Spectrum(size=frame_size)
         centroid = es.Centroid(range=sample_rate / 2)
-        rolloff = es.RollOff(cutoff=0.85, sampleRate=sample_rate)
+        rolloff = es.RollOff(
+            cutoff=0.85, sampleRate=sample_rate
+        )  # 85% per Peeters 2004
         flatness = es.Flatness()
         spectral_contrast = es.SpectralContrast(
             sampleRate=sample_rate, frameSize=frame_size
         )
         spectral_peaks = es.SpectralPeaks(
-            sampleRate=sample_rate, maxPeaks=100, orderBy="frequency"
+            sampleRate=sample_rate,
+            maxPeaks=100,
+            orderBy="frequency",  # 100 peaks sufficient for dissonance curve
         )
         dissonance_algo = es.Dissonance()
 
@@ -151,7 +155,7 @@ def analyze_spectrum(audio: AudioData) -> SpectralResult:
         contrast_array = np.array(contrasts)
         mean_contrast = [float(v) for v in np.mean(contrast_array, axis=0)]
 
-        # -- Octave band energy (frame_size=4096, hop_size=2048) --
+        # Octave bands: 4096/2048 (~93ms/~46ms) — longer window for low-frequency resolution
         band_frame_size = 4096
         band_hop_size = 2048
 
@@ -171,7 +175,7 @@ def analyze_spectrum(audio: AudioData) -> SpectralResult:
             band_energies_list.append(bands)
 
         # Average across frames, convert to dB
-        eps = 1e-10
+        eps = 1e-10  # log-domain floor to avoid -inf on silence
         avg_bands = np.mean(band_energies_list, axis=0)
         band_db = 10 * np.log10(avg_bands + eps)
 

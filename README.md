@@ -234,8 +234,18 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, coding conventions
 
 ## License
 
-Phantom is licensed under [AGPL-3.0](LICENSE). You're free to use, modify, and distribute it — but if you run a modified version as a service, you must publish your source under the same license.
+Phantom is licensed under [AGPL-3.0](LICENSE).
 
-For commercial licensing without AGPL obligations, contact hello@leesae.nz.
+**What you can do:**
+- Use Phantom for any purpose, personal or commercial
+- Modify the code and distribute your modified version
+- Use the MCP tools and CLI in your own workflow without restriction
+
+**What AGPL requires:**
+- If you modify Phantom and run it as a network service (e.g., a hosted API that wraps Phantom's analysis), you must publish your modified source under AGPL-3.0
+- If you distribute a modified version, same thing — publish the source
+- Using Phantom unmodified as a tool in your workflow does not trigger this
+
+**Want to use Phantom in a proprietary product?** Commercial licensing is available — contact hello@leesae.nz.
 
 The optional `matchering` dependency uses [GPLv3](https://github.com/sergree/matchering/blob/master/LICENSE), which is compatible with AGPL-3.0.

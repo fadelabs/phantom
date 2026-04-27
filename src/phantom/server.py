@@ -122,14 +122,40 @@ def _to_tool_error(exc: Exception, context: dict | None = None) -> ToolError:
         msg = _PATH_REGEX.sub("", msg)
         error_info["message"] = msg
     else:
-        error_info["message"] = (
-            "Internal analysis error — check server logs for details."
-        )
+        if os.environ.get("PHANTOM_DEBUG"):
+            error_info["message"] = str(exc)
+        else:
+            error_info["message"] = (
+                "Internal analysis error — check server logs for details."
+            )
     error_info["context"] = context if context else {}
     return ToolError(json.dumps(error_info))
 
 
 mcp = FastMCP("phantom")
+
+
+def _phantom_tool(fn):
+    """Wrap an MCP tool function with standard Phantom error handling."""
+    import functools
+    import inspect
+
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        sig = inspect.signature(fn)
+        bound = sig.bind(*args, **kwargs)
+        bound.apply_defaults()
+        context = {k: v for k, v in bound.arguments.items() if isinstance(v, str)}
+        try:
+            return fn(*args, **kwargs)
+        except PhantomError as e:
+            raise _to_tool_error(e, context)
+        except ToolError:
+            raise
+        except Exception as e:
+            raise _to_tool_error(e, context)
+
+    return wrapper
 
 
 # ---------------------------------------------------------------------------
@@ -138,73 +164,43 @@ mcp = FastMCP("phantom")
 
 
 @mcp.tool
+@_phantom_tool
 def analyze_spectrum(file_path: str) -> dict:
     """Analyze frequency spectrum: centroid, rolloff, flatness, contrast, dissonance, octave band energy."""
-    try:
-        audio = load_audio(file_path)
-        return _analyze_spectrum(audio).model_dump()
-    except PhantomError as e:
-        raise _to_tool_error(e, {"file_path": file_path})
-    except ToolError:
-        raise
-    except Exception as e:
-        raise _to_tool_error(e, {"file_path": file_path})
+    audio = load_audio(file_path)
+    return _analyze_spectrum(audio).model_dump()
 
 
 @mcp.tool
+@_phantom_tool
 def analyze_loudness(file_path: str) -> dict:
     """Measure EBU R128 loudness: integrated LUFS, true peak dBTP, loudness range, short-term and momentary LUFS."""
-    try:
-        audio = load_audio(file_path)
-        return _analyze_loudness(audio).model_dump()
-    except PhantomError as e:
-        raise _to_tool_error(e, {"file_path": file_path})
-    except ToolError:
-        raise
-    except Exception as e:
-        raise _to_tool_error(e, {"file_path": file_path})
+    audio = load_audio(file_path)
+    return _analyze_loudness(audio).model_dump()
 
 
 @mcp.tool
+@_phantom_tool
 def analyze_dynamics(file_path: str) -> dict:
     """Measure dynamics: RMS, peak, crest factor, dynamic range, dynamic complexity."""
-    try:
-        audio = load_audio(file_path)
-        return _analyze_dynamics(audio).model_dump()
-    except PhantomError as e:
-        raise _to_tool_error(e, {"file_path": file_path})
-    except ToolError:
-        raise
-    except Exception as e:
-        raise _to_tool_error(e, {"file_path": file_path})
+    audio = load_audio(file_path)
+    return _analyze_dynamics(audio).model_dump()
 
 
 @mcp.tool
+@_phantom_tool
 def analyze_stereo(file_path: str) -> dict:
     """Analyze stereo field: correlation, width, mid/side ratio, L/R balance, panorama distribution."""
-    try:
-        audio = load_audio(file_path)
-        return _analyze_stereo(audio).model_dump()
-    except PhantomError as e:
-        raise _to_tool_error(e, {"file_path": file_path})
-    except ToolError:
-        raise
-    except Exception as e:
-        raise _to_tool_error(e, {"file_path": file_path})
+    audio = load_audio(file_path)
+    return _analyze_stereo(audio).model_dump()
 
 
 @mcp.tool
+@_phantom_tool
 def analyze_phase(file_path: str) -> dict:
     """Check phase coherence: overall and per-band correlation, polarity detection."""
-    try:
-        audio = load_audio(file_path)
-        return _analyze_phase(audio).model_dump()
-    except PhantomError as e:
-        raise _to_tool_error(e, {"file_path": file_path})
-    except ToolError:
-        raise
-    except Exception as e:
-        raise _to_tool_error(e, {"file_path": file_path})
+    audio = load_audio(file_path)
+    return _analyze_phase(audio).model_dump()
 
 
 # ---------------------------------------------------------------------------
@@ -213,55 +209,29 @@ def analyze_phase(file_path: str) -> dict:
 
 
 @mcp.tool
+@_phantom_tool
 def compare_phase(file_path_a: str, file_path_b: str) -> dict:
     """Compare phase between two audio files: cross-correlation, delay detection, polarity check."""
-    try:
-        audio_a = load_audio(file_path_a)
-        audio_b = load_audio(file_path_b)
-        return _compare_phase(audio_a, audio_b).model_dump()
-    except PhantomError as e:
-        raise _to_tool_error(
-            e, {"file_path_a": file_path_a, "file_path_b": file_path_b}
-        )
-    except ToolError:
-        raise
-    except Exception as e:
-        raise _to_tool_error(
-            e, {"file_path_a": file_path_a, "file_path_b": file_path_b}
-        )
+    audio_a = load_audio(file_path_a)
+    audio_b = load_audio(file_path_b)
+    return _compare_phase(audio_a, audio_b).model_dump()
 
 
 @mcp.tool
+@_phantom_tool
 def detect_problems(file_path: str) -> dict:
     """Scan for audio problems: clipping, DC offset, ISP, noise, hum, sibilance, mud, harshness, resonances."""
-    try:
-        audio = load_audio(file_path)
-        return _detect_problems(audio).model_dump()
-    except PhantomError as e:
-        raise _to_tool_error(e, {"file_path": file_path})
-    except ToolError:
-        raise
-    except Exception as e:
-        raise _to_tool_error(e, {"file_path": file_path})
+    audio = load_audio(file_path)
+    return _detect_problems(audio).model_dump()
 
 
 @mcp.tool
+@_phantom_tool
 def analyze_masking(file_path_a: str, file_path_b: str) -> dict:
     """Analyze frequency masking between two stems with per-octave-band severity."""
-    try:
-        audio_a = load_audio(file_path_a)
-        audio_b = load_audio(file_path_b)
-        return _analyze_masking(audio_a, audio_b).model_dump()
-    except PhantomError as e:
-        raise _to_tool_error(
-            e, {"file_path_a": file_path_a, "file_path_b": file_path_b}
-        )
-    except ToolError:
-        raise
-    except Exception as e:
-        raise _to_tool_error(
-            e, {"file_path_a": file_path_a, "file_path_b": file_path_b}
-        )
+    audio_a = load_audio(file_path_a)
+    audio_b = load_audio(file_path_b)
+    return _analyze_masking(audio_a, audio_b).model_dump()
 
 
 # ---------------------------------------------------------------------------
@@ -270,106 +240,50 @@ def analyze_masking(file_path_a: str, file_path_b: str) -> dict:
 
 
 @mcp.tool
+@_phantom_tool
 def compare_to_profile(file_path: str, profile_name: str) -> dict:
     """Compare audio against a genre reference profile for loudness, frequency, dynamics, and stereo deviations."""
-    try:
-        audio = load_audio(file_path)
-        profile = _load_profile(profile_name)
-        return _compare_to_profile(audio, profile).model_dump()
-    except PhantomError as e:
-        raise _to_tool_error(e, {"file_path": file_path, "profile_name": profile_name})
-    except ToolError:
-        raise
-    except Exception as e:
-        raise _to_tool_error(e, {"file_path": file_path, "profile_name": profile_name})
+    audio = load_audio(file_path)
+    profile = _load_profile(profile_name)
+    return _compare_to_profile(audio, profile).model_dump()
 
 
 @mcp.tool
+@_phantom_tool
 def compare_to_reference(file_path: str, reference_path: str) -> dict:
     """Compare audio against a reference WAV file with normalized spectral curves."""
-    try:
-        audio = load_audio(file_path)
-        ref_audio = load_audio(reference_path)
-        return _compare_to_reference(audio, ref_audio).model_dump()
-    except PhantomError as e:
-        raise _to_tool_error(
-            e, {"file_path": file_path, "reference_path": reference_path}
-        )
-    except ToolError:
-        raise
-    except Exception as e:
-        raise _to_tool_error(
-            e, {"file_path": file_path, "reference_path": reference_path}
-        )
+    audio = load_audio(file_path)
+    ref_audio = load_audio(reference_path)
+    return _compare_to_reference(audio, ref_audio).model_dump()
 
 
 @mcp.tool
+@_phantom_tool
 def list_profiles() -> list[str]:
     """List all available genre reference profile names."""
-    try:
-        return _list_profiles()
-    except PhantomError as e:
-        raise _to_tool_error(e)
-    except ToolError:
-        raise
-    except Exception as e:
-        raise _to_tool_error(e)
+    return _list_profiles()
 
 
 @mcp.tool
+@_phantom_tool
 def load_profile(name: str) -> dict:
     """Load a genre reference profile by name. Returns profile data as JSON."""
-    try:
-        profile = _load_profile(name)
-        return profile.model_dump()
-    except PhantomError as e:
-        raise _to_tool_error(e, {"name": name})
-    except ToolError:
-        raise
-    except Exception as e:
-        raise _to_tool_error(e, {"name": name})
+    profile = _load_profile(name)
+    return profile.model_dump()
 
 
 @mcp.tool
+@_phantom_tool
 def separate_stems(file_path: str, output_dir: str) -> dict:
     """Separate audio into stems (vocals, drums, bass, other) via Demucs. Requires phantom-audio[separation]."""
-    try:
-        return _separate_stems(file_path, output_dir).model_dump()
-    except PhantomError as e:
-        raise _to_tool_error(e, {"file_path": file_path, "output_dir": output_dir})
-    except ToolError:
-        raise
-    except Exception as e:
-        raise _to_tool_error(e, {"file_path": file_path, "output_dir": output_dir})
+    return _separate_stems(file_path, output_dir).model_dump()
 
 
 @mcp.tool
+@_phantom_tool
 def match_to_reference(target_path: str, reference_path: str, output_path: str) -> dict:
     """Match target audio to reference spectral/loudness/width characteristics via Matchering. Requires phantom-audio[matching]."""
-    try:
-        return _match_to_reference(
-            target_path, reference_path, output_path
-        ).model_dump()
-    except PhantomError as e:
-        raise _to_tool_error(
-            e,
-            {
-                "target_path": target_path,
-                "reference_path": reference_path,
-                "output_path": output_path,
-            },
-        )
-    except ToolError:
-        raise
-    except Exception as e:
-        raise _to_tool_error(
-            e,
-            {
-                "target_path": target_path,
-                "reference_path": reference_path,
-                "output_path": output_path,
-            },
-        )
+    return _match_to_reference(target_path, reference_path, output_path).model_dump()
 
 
 # ---------------------------------------------------------------------------
@@ -395,25 +309,19 @@ def _run_full_analysis(audio) -> dict:
 
 
 @mcp.tool
+@_phantom_tool
 def full_diagnostic(file_path: str) -> dict:
     """Run all six analysis types on a single audio file: spectral, loudness, dynamics, stereo, phase, and problems."""
-    try:
-        audio = load_audio(file_path)
-        analysis = _run_full_analysis(audio)
-        result = FullDiagnosticResult(
-            file=os.path.basename(file_path),
-            duration_seconds=audio.duration,
-            sample_rate=audio.sample_rate,
-            channels=audio.num_channels,
-            **analysis,
-        )
-        return result.model_dump()
-    except PhantomError as e:
-        raise _to_tool_error(e, {"file_path": file_path})
-    except ToolError:
-        raise
-    except Exception as e:
-        raise _to_tool_error(e, {"file_path": file_path})
+    audio = load_audio(file_path)
+    analysis = _run_full_analysis(audio)
+    result = FullDiagnosticResult(
+        file=os.path.basename(file_path),
+        duration_seconds=audio.duration,
+        sample_rate=audio.sample_rate,
+        channels=audio.num_channels,
+        **analysis,
+    )
+    return result.model_dump()
 
 
 @mcp.tool
@@ -567,6 +475,18 @@ def multi_stem_masking(file_paths: list[str]) -> dict:
 
 def main():
     """Entry point for phantom-mcp CLI."""
+    import sys
+
+    if "--version" in sys.argv:
+        from phantom import __version__
+
+        print(f"phantom-mcp {__version__}")
+        return
+    if "--tools" in sys.argv:
+        tools = sorted(t.name for t in mcp._tool_manager._tools.values())
+        for name in tools:
+            print(name)
+        return
     mcp.run()
 
 
