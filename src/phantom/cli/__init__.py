@@ -38,6 +38,7 @@ _COMMANDS = {
     "phantom.cli.separate": ("separate", None),
     "phantom.cli.render": ("render", None),
     "phantom.cli.setup_reaper": ("setup_reaper", "setup-reaper"),
+    "phantom.cli.doctor": ("doctor", None),
 }
 
 for _module_path, (_attr_name, _cli_name) in _COMMANDS.items():

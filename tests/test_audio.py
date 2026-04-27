@@ -279,9 +279,7 @@ class TestMultiFormat:
         other_path = audio_file_factory(samples, sr, fmt=fmt)
         wav_result = load_audio(wav_path)
         other_result = load_audio(other_path)
-        np.testing.assert_allclose(
-            wav_result.samples, other_result.samples, atol=1e-4
-        )
+        np.testing.assert_allclose(wav_result.samples, other_result.samples, atol=1e-4)
 
 
 # ── Security guard tests (Phase 10.2) ────────────────────────────────
