@@ -6,6 +6,7 @@ songs/
 *.aiff
 *.ogg
 *.m4a
+!examples/demo.wav
 
 # Live test audio -- not committed (D-02)
 tests/fixtures/live/

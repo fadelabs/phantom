@@ -36,13 +36,24 @@ Four layers that work together:
 
 4. **Execution** — Reaper DAW integration via MCP. Claude doesn't just recommend — it inserts EQ, sets compression ratios, builds sidechain routing, writes automation, and renders deliverables.
 
-## Quick Start
+## Try It
+
+No install needed — just run this on any audio file:
+
+```bash
+uvx phantom-audio analyze your-track.wav
+```
+
+Or install it:
 
 ```bash
 pip install phantom-audio
+phantom analyze examples/demo.wav
 ```
 
-Add to your Claude Code MCP config (`.mcp.json`):
+That runs a full spectral, loudness, dynamics, stereo, phase, and problem analysis. You'll see results in about a second.
+
+To use with Claude, add to your MCP config (`.mcp.json`):
 
 ```json
 {
