@@ -58,6 +58,23 @@ def wav_file_factory(tmp_path):
 
 
 @pytest.fixture
+def audio_file_factory(tmp_path):
+    """Factory fixture: write a numpy array to a temporary audio file in any format."""
+    _counter = [0]
+
+    def _make(samples, sr=44100, fmt="WAV"):
+        _counter[0] += 1
+        ext = fmt.lower()
+        if ext == "aiff":
+            ext = "aif"
+        path = tmp_path / f"test_{_counter[0]}.{ext}"
+        sf.write(str(path), samples, sr, format=fmt)
+        return str(path)
+
+    return _make
+
+
+@pytest.fixture
 def multichannel_wav(tmp_path):
     """Write a 4-channel WAV file for rejection testing."""
     sr = 44100

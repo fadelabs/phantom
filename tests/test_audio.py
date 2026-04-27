@@ -245,6 +245,45 @@ class TestEdgeCases:
         assert result.num_samples == num_samples
 
 
+# ── Multi-format tests ────────────────────────────────────────────────
+
+
+class TestMultiFormat:
+    """Tests for FLAC, AIFF, and OGG format support."""
+
+    @pytest.mark.parametrize("fmt", ["FLAC", "AIFF", "OGG"])
+    def test_load_format(self, audio_file_factory, mono_sine_440hz, fmt):
+        """load_audio reads FLAC, AIFF, and OGG files."""
+        samples, sr = mono_sine_440hz
+        path = audio_file_factory(samples, sr, fmt=fmt)
+        result = load_audio(path)
+        assert isinstance(result, AudioData)
+        assert result.sample_rate == sr
+        assert result.num_channels == 1
+        assert result.num_samples == len(samples)
+
+    @pytest.mark.parametrize("fmt", ["FLAC", "AIFF", "OGG"])
+    def test_stereo_format(self, audio_file_factory, stereo_sine_440hz, fmt):
+        """Stereo FLAC/AIFF/OGG loads correctly."""
+        samples, sr = stereo_sine_440hz
+        path = audio_file_factory(samples, sr, fmt=fmt)
+        result = load_audio(path)
+        assert result.num_channels == 2
+        assert result.num_samples == len(samples)
+
+    @pytest.mark.parametrize("fmt", ["FLAC", "AIFF"])
+    def test_samples_match_wav(self, audio_file_factory, mono_sine_440hz, fmt):
+        """Same source signal produces equivalent AudioData across formats."""
+        samples, sr = mono_sine_440hz
+        wav_path = audio_file_factory(samples, sr, fmt="WAV")
+        other_path = audio_file_factory(samples, sr, fmt=fmt)
+        wav_result = load_audio(wav_path)
+        other_result = load_audio(other_path)
+        np.testing.assert_allclose(
+            wav_result.samples, other_result.samples, atol=1e-4
+        )
+
+
 # ── Security guard tests (Phase 10.2) ────────────────────────────────
 
 

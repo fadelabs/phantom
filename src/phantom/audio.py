@@ -1,13 +1,13 @@
 """Audio data model and loading function.
 
 Provides the AudioData Pydantic model (the universal audio type for Phantom)
-and the load_audio() function for reading WAV files from disk.
+and the load_audio() function for reading audio files from disk.
 
 AudioData normalizes all audio to float32 samples in a 2D array [N, channels]
 and provides .left, .right, and .mono channel-access properties.
 
-Only mono and stereo WAV files are supported (>2 channels rejected with
-a clear error per AIO-03).
+Supports all formats handled by libsndfile: WAV, FLAC, AIFF, OGG, and more.
+Mono and stereo only (>2 channels rejected per AIO-03).
 """
 
 from __future__ import annotations
@@ -102,14 +102,15 @@ def load_audio(
     max_duration: float | None = None,
     max_file_size: int | None = None,
 ) -> AudioData:
-    """Load a WAV file and return an AudioData instance.
+    """Load an audio file and return an AudioData instance.
 
     Reads the file as float32 samples normalized to [-1.0, 1.0].
+    Supports all formats handled by libsndfile (WAV, FLAC, AIFF, OGG, etc.).
     Only mono and stereo files are supported; files with more than
     2 channels are rejected with an AudioLoadError.
 
     Args:
-        path: Path to a WAV file on disk.
+        path: Path to an audio file on disk.
         max_duration: Maximum allowed duration in seconds. Precedence:
             this parameter > PHANTOM_MAX_DURATION env var > 900s default.
         max_file_size: Maximum allowed file size in bytes. Precedence:
@@ -201,7 +202,7 @@ def load_audio(
     if info.channels > 2:
         raise AudioLoadError(
             f"Cannot load {info.channels}-channel audio file. "
-            f"Phantom supports mono and stereo WAV only."
+            f"Phantom supports mono and stereo only."
         )
 
     # Step 6: Load audio as float32 (existing)
