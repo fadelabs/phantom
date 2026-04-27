@@ -97,7 +97,7 @@ class TestSeparateStems:
 
         with pytest.raises(DependencyMissingError) as exc_info:
             separate_stems("any.wav", "/tmp/out")
-        assert "pip install phantom[separation]" in str(exc_info.value)
+        assert 'pip install "phantom-audio[separation]"' in str(exc_info.value)
 
     def test_missing_input_raises_file_not_found(self, tmp_path):
         """AudioLoadError when input_path does not exist (SEP-01)."""

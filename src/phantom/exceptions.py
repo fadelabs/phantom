@@ -46,9 +46,7 @@ class DependencyMissingError(PhantomError):
     def __init__(self, package: str, extra: str, detail: str = "") -> None:
         self.package = package
         self.extra = extra
-        msg = (
-            f"{package} is not installed. Install it with: pip install phantom[{extra}]"
-        )
+        msg = f'{package} is not installed. Install it with: pip install "phantom-audio[{extra}]"'
         if detail:
             msg += f"\n{detail}"
         super().__init__(msg)

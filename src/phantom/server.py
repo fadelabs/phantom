@@ -332,7 +332,7 @@ def load_profile(name: str) -> dict:
 
 @mcp.tool
 def separate_stems(file_path: str, output_dir: str) -> dict:
-    """Separate audio into stems (vocals, drums, bass, other) via Demucs. Requires phantom[separation]."""
+    """Separate audio into stems (vocals, drums, bass, other) via Demucs. Requires phantom-audio[separation]."""
     try:
         return _separate_stems(file_path, output_dir).model_dump()
     except PhantomError as e:
@@ -345,7 +345,7 @@ def separate_stems(file_path: str, output_dir: str) -> dict:
 
 @mcp.tool
 def match_to_reference(target_path: str, reference_path: str, output_path: str) -> dict:
-    """Match target audio to reference spectral/loudness/width characteristics via Matchering. Requires phantom[matching]."""
+    """Match target audio to reference spectral/loudness/width characteristics via Matchering. Requires phantom-audio[matching]."""
     try:
         return _match_to_reference(
             target_path, reference_path, output_path
