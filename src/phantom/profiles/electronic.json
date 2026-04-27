@@ -1,0 +1,19 @@
+{
+  "genre": "electronic",
+  "description": "Electronic music: synthesizer-driven, spatial, controlled sub-bass, wide stereo field.",
+  "loudness": {
+    "lufs_range": [-10.0, -7.0],
+    "crest_factor_range": [5.0, 10.0],
+    "true_peak_max_dbtp": -1.0
+  },
+  "frequency": {
+    "bands": {
+      "31_hz": 3.0, "62_hz": 3.0, "125_hz": 2.0, "250_hz": 0.0,
+      "500_hz": -1.0, "1000_hz": 0.0, "2000_hz": 1.0, "4000_hz": 2.0,
+      "8000_hz": 2.0, "16000_hz": 1.0
+    }
+  },
+  "stereo": { "width": "wide", "mono_below_hz": 100.0 },
+  "spatial": { "reverb_type": "hall", "reverb_amount": "moderate", "pre_delay_ms": "short" },
+  "processing_notes": "Synthesizers define the soundscape. Sub-bass must be tight and mono. Wide stereo field from panned synth layers and stereo effects. Sidechain pumping is a stylistic element. Clean transients on drums. Automation and filter sweeps add movement."
+}

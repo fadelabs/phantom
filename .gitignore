@@ -1,0 +1,52 @@
+# Audio files — managed outside git
+songs/
+*.wav
+*.mp3
+*.flac
+*.aiff
+*.ogg
+*.m4a
+
+# Live test audio -- not committed (D-02)
+tests/fixtures/live/
+
+# DAW project files
+*.cpr
+*.bak
+*.flp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude local
+.claude.local.md
+
+# Environment
+.env
+.env.*
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+.pytest_cache/
+.venv/
+venv/
+
+# Development planning (internal only)
+.planning/
+
+# Claude Code local config
+.claude/
+.mcp.json
+
+# Internal design specs and milestone plans
+docs/superpowers/
+
+# Skill evaluation workspaces (contain local paths)
+plugin/eval-workspaces/

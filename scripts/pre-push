@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# scripts/pre-push -- local CI gate (per D-13)
+# Runs before every git push. Exit non-zero blocks the push.
+# Install: ln -sf ../../scripts/pre-push .git/hooks/pre-push
+set -euo pipefail
+
+echo "=== Pre-push checks ==="
+
+echo ""
+echo "==> PII scan (privacy guard)..."
+HITS=$(git ls-files -- '*.py' '*.md' '*.toml' '*.json' '*.yml' '*.yaml' '*.cfg' '*.txt' '*.rst' | \
+  grep -v "^LICENSE$" | grep -v "^README.md$" | grep -v "^scripts/pre-push$" | \
+  xargs grep -inE "saenz|leesaenz|@gmail\.com" 2>/dev/null | \
+  grep -v "^\.claude" | grep -v "^\.planning/" || true)
+if [ -n "$HITS" ]; then
+  echo "BLOCKED: Personal information detected in tracked files:"
+  echo "$HITS"
+  echo ""
+  echo "Remove PII before pushing. See CLAUDE.md privacy rules."
+  exit 1
+fi
+echo "  No PII found in tracked files."
+
+echo ""
+echo "==> Linting (ruff check)..."
+uv tool run ruff check src/ tests/
+
+echo ""
+echo "==> Format check (ruff format)..."
+uv tool run ruff format --check src/ tests/
+
+echo ""
+echo "=== All pre-push checks passed. ==="

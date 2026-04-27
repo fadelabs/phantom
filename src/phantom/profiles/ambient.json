@@ -1,0 +1,19 @@
+{
+  "genre": "ambient",
+  "description": "Ambient: spacious, dynamic, wide stereo field, emphasis on atmosphere and texture.",
+  "loudness": {
+    "lufs_range": [-20.0, -14.0],
+    "crest_factor_range": [10.0, 20.0],
+    "true_peak_max_dbtp": -1.0
+  },
+  "frequency": {
+    "bands": {
+      "31_hz": 1.0, "62_hz": 1.0, "125_hz": 1.0, "250_hz": 0.0,
+      "500_hz": 0.0, "1000_hz": 0.0, "2000_hz": 0.0, "4000_hz": 1.0,
+      "8000_hz": 1.0, "16000_hz": 1.0
+    }
+  },
+  "stereo": { "width": "very_wide", "mono_below_hz": 80.0 },
+  "spatial": { "reverb_type": "hall", "reverb_amount": "lush", "pre_delay_ms": "long" },
+  "processing_notes": "Space is the instrument. Long reverb tails and delays create depth. Minimal compression to preserve natural dynamics. Wide stereo field with careful panning of textural elements. Low end should be gentle and warm. High frequencies add air and shimmer. Avoid loudness maximization -- dynamics are the point."
+}

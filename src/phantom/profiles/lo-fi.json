@@ -1,0 +1,19 @@
+{
+  "genre": "lo-fi",
+  "description": "Lo-fi: warm, vintage, reduced high-frequency content, intimate and nostalgic.",
+  "loudness": {
+    "lufs_range": [-14.0, -10.0],
+    "crest_factor_range": [8.0, 14.0],
+    "true_peak_max_dbtp": -1.0
+  },
+  "frequency": {
+    "bands": {
+      "31_hz": 2.0, "62_hz": 2.0, "125_hz": 2.0, "250_hz": 1.0,
+      "500_hz": 0.0, "1000_hz": 0.0, "2000_hz": -1.0, "4000_hz": -2.0,
+      "8000_hz": -3.0, "16000_hz": -4.0
+    }
+  },
+  "stereo": { "width": "narrow", "mono_below_hz": 100.0 },
+  "spatial": { "reverb_type": "spring", "reverb_amount": "moderate", "pre_delay_ms": "medium" },
+  "processing_notes": "Imperfection is the aesthetic. Roll off highs aggressively above 8kHz. Add warmth with subtle saturation. Vinyl crackle and tape hiss are desirable. Narrow stereo image for intimacy. Gentle compression, no hard limiting. Bit-crushing and sample rate reduction for texture."
+}

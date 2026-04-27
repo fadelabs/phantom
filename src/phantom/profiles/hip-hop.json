@@ -1,0 +1,19 @@
+{
+  "genre": "hip-hop",
+  "description": "Modern hip-hop: heavy sub-bass, crisp snares, upfront vocals, punchy dynamics.",
+  "loudness": {
+    "lufs_range": [-10.0, -7.0],
+    "crest_factor_range": [5.0, 9.0],
+    "true_peak_max_dbtp": -1.0
+  },
+  "frequency": {
+    "bands": {
+      "31_hz": 4.0, "62_hz": 4.0, "125_hz": 3.0, "250_hz": 1.0,
+      "500_hz": -1.0, "1000_hz": 0.0, "2000_hz": 1.0, "4000_hz": 2.0,
+      "8000_hz": 1.0, "16000_hz": 0.0
+    }
+  },
+  "stereo": { "width": "moderate", "mono_below_hz": 150.0 },
+  "spatial": { "reverb_type": "plate", "reverb_amount": "subtle", "pre_delay_ms": "short" },
+  "processing_notes": "Sub-bass is the foundation. 808s or deep kicks drive the low end. Vocals must cut through clearly -- presence boost at 3-5kHz. Snares and hi-hats provide rhythmic crispness. Keep the mix dry and upfront. Heavy sidechain compression from kick to bass."
+}

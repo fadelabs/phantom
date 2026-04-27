@@ -1,0 +1,99 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "phantom-audio"
+version = "1.1.0"
+description = "AI audio engineering system -- makes Claude a professional audio engineer"
+readme = "README.md"
+license = "AGPL-3.0-or-later"
+license-files = ["LICENSE"]
+requires-python = ">=3.10,<3.14"
+authors = [
+    { name = "Phantom Contributors" },
+]
+keywords = [
+    "audio", "mixing", "mastering", "audio-engineering", "mcp",
+    "claude", "ai", "analysis", "loudness", "spectral",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Other Audience",
+    "Topic :: Multimedia :: Sound/Audio :: Analysis",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "numpy>=2.0",
+    "soundfile>=0.13.0",
+    "pydantic>=2.0",
+    "essentia==2.1b6.dev1389",
+    "scipy>=1.12",
+    "fastmcp>=2.0,<3.0",
+    "click>=8.0",
+    "rich>=13.0",
+    "rich-click>=1.8",
+    "plotext>=5.3",
+    "ffmpeg-progress-yield>=0.7",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=1.0",
+    "pyloudnorm>=0.1.0",
+    "ruff>=0.15",
+]
+analysis = [
+    "librosa>=0.11.0",
+]
+separation = [
+    "demucs>=4.0",
+    "torch>=2.0",
+    "torchaudio>=2.0",
+]
+matching = [
+    "matchering>=2.0",
+]
+processing = [
+    "pedalboard>=0.9",
+]
+all = [
+    "phantom-audio[analysis,separation,matching,processing]",
+]
+
+[project.urls]
+Homepage = "https://github.com/fadelabs/phantom"
+Documentation = "https://github.com/fadelabs/phantom#readme"
+Repository = "https://github.com/fadelabs/phantom"
+Issues = "https://github.com/fadelabs/phantom/issues"
+Changelog = "https://github.com/fadelabs/phantom/releases"
+
+[project.scripts]
+phantom = "phantom.cli:cli"
+phantom-mcp = "phantom.server:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/phantom"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"src/phantom/profiles" = "phantom/profiles"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = [
+    "live: requires real audio in tests/fixtures/live/",
+]
+
+[dependency-groups]
+dev = [
+    "midiutil>=1.2.1",
+]

@@ -1,0 +1,19 @@
+{
+  "genre": "metal",
+  "description": "Metal: aggressive, tight low end, scooped mids, present guitars, powerful drums.",
+  "loudness": {
+    "lufs_range": [-10.0, -6.0],
+    "crest_factor_range": [4.0, 8.0],
+    "true_peak_max_dbtp": -1.0
+  },
+  "frequency": {
+    "bands": {
+      "31_hz": 2.0, "62_hz": 3.0, "125_hz": 3.0, "250_hz": -1.0,
+      "500_hz": -2.0, "1000_hz": -1.0, "2000_hz": 2.0, "4000_hz": 3.0,
+      "8000_hz": 2.0, "16000_hz": 1.0
+    }
+  },
+  "stereo": { "width": "moderate", "mono_below_hz": 120.0 },
+  "spatial": { "reverb_type": "room", "reverb_amount": "subtle", "pre_delay_ms": "medium" },
+  "processing_notes": "Tightness is everything. Kick and bass must be locked together. Mid-scoop around 250-500Hz creates the classic metal sound. Quad-tracked guitars panned hard left/right. Drums are triggered or sample-replaced for consistency. Heavy compression but preserve attack transients on snare and kick."
+}

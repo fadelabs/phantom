@@ -1,0 +1,19 @@
+{
+  "genre": "edm",
+  "description": "EDM: maximum impact, loud mastering, heavy sub-bass, wide drops, energy-focused.",
+  "loudness": {
+    "lufs_range": [-8.0, -5.0],
+    "crest_factor_range": [4.0, 8.0],
+    "true_peak_max_dbtp": -1.0
+  },
+  "frequency": {
+    "bands": {
+      "31_hz": 4.0, "62_hz": 4.0, "125_hz": 3.0, "250_hz": 0.0,
+      "500_hz": -2.0, "1000_hz": -1.0, "2000_hz": 1.0, "4000_hz": 2.0,
+      "8000_hz": 2.0, "16000_hz": 1.0
+    }
+  },
+  "stereo": { "width": "wide", "mono_below_hz": 120.0 },
+  "spatial": { "reverb_type": "hall", "reverb_amount": "subtle", "pre_delay_ms": "short" },
+  "processing_notes": "Loudness is a feature, not a bug. Drops should hit as hard as possible. Heavy limiting on the master bus. Sub-bass dominates the low end. Mid-scoop creates space for drops. Sidechain everything to the kick. Buildups use filter automation and risers."
+}

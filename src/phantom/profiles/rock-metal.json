@@ -1,0 +1,19 @@
+{
+  "genre": "rock-metal",
+  "description": "Rock-metal crossover: heavier than rock, less extreme than metal. Balanced aggression with musical dynamics.",
+  "loudness": {
+    "lufs_range": [-10.0, -7.0],
+    "crest_factor_range": [5.0, 9.0],
+    "true_peak_max_dbtp": -1.0
+  },
+  "frequency": {
+    "bands": {
+      "31_hz": 2.0, "62_hz": 3.0, "125_hz": 3.0, "250_hz": -1.0,
+      "500_hz": -2.0, "1000_hz": 0.0, "2000_hz": 2.0, "4000_hz": 3.0,
+      "8000_hz": 1.0, "16000_hz": 0.0
+    }
+  },
+  "stereo": { "width": "moderate", "mono_below_hz": 120.0 },
+  "spatial": { "reverb_type": "room", "reverb_amount": "subtle", "pre_delay_ms": "medium" },
+  "processing_notes": "Bridge between rock energy and metal precision. Drums should punch but retain some room ambience. Guitars are heavy but not wall-of-sound -- leave space for vocals. Bass follows the kick pattern tightly. Moderate compression on the master bus. More dynamic range than pure metal but more aggression than rock."
+}
