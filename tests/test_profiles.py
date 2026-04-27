@@ -357,3 +357,118 @@ class TestFrozenProfile:
         profile = load_profile("rock")
         with pytest.raises(Exception):  # ValidationError for frozen model
             profile.genre = "changed"
+
+
+def _make_user_rock_profile():
+    return {
+        "genre": "rock",
+        "description": "Custom user rock",
+        "loudness": {
+            "lufs_range": [-14.0, -10.0],
+            "crest_factor_range": [8.0, 14.0],
+            "true_peak_max_dbtp": -0.5,
+        },
+        "frequency": {"bands": {k: 0.0 for k in EXPECTED_BANDS}},
+        "stereo": {"width": "narrow", "mono_below_hz": 200.0},
+        "spatial": {
+            "reverb_type": "hall",
+            "reverb_amount": "lush",
+            "pre_delay_ms": "long",
+        },
+        "processing_notes": "Custom user rock profile.",
+    }
+
+
+class TestShadowWarning:
+    """User profile shadowing a built-in emits a warning."""
+
+    def test_shadow_warning_emitted(self, tmp_path, monkeypatch, capsys):
+        """Overriding a built-in profile prints a warning to stderr."""
+        from phantom._profiles import _profile_cache
+
+        _profile_cache.clear()
+        profile_path = tmp_path / "rock.json"
+        profile_path.write_text(json.dumps(_make_user_rock_profile()))
+        monkeypatch.setenv("PHANTOM_PROFILES_DIR", str(tmp_path))
+        monkeypatch.delenv("PHANTOM_PROFILE_OVERRIDE_QUIET", raising=False)
+
+        load_profile("rock")
+        captured = capsys.readouterr()
+        assert "overrides built-in" in captured.err
+
+    def test_shadow_warning_suppressed(self, tmp_path, monkeypatch, capsys):
+        """PHANTOM_PROFILE_OVERRIDE_QUIET=1 suppresses the warning."""
+        from phantom._profiles import _profile_cache
+
+        _profile_cache.clear()
+        profile_path = tmp_path / "rock.json"
+        profile_path.write_text(json.dumps(_make_user_rock_profile()))
+        monkeypatch.setenv("PHANTOM_PROFILES_DIR", str(tmp_path))
+        monkeypatch.setenv("PHANTOM_PROFILE_OVERRIDE_QUIET", "1")
+
+        load_profile("rock")
+        captured = capsys.readouterr()
+        assert "overrides built-in" not in captured.err
+
+    def test_no_warning_for_custom_only(self, tmp_path, monkeypatch, capsys):
+        """No warning when user profile doesn't shadow a built-in."""
+        from phantom._profiles import _profile_cache
+
+        _profile_cache.clear()
+        custom = _make_user_rock_profile()
+        custom["genre"] = "my-custom"
+        profile_path = tmp_path / "my-custom.json"
+        profile_path.write_text(json.dumps(custom))
+        monkeypatch.setenv("PHANTOM_PROFILES_DIR", str(tmp_path))
+        monkeypatch.delenv("PHANTOM_PROFILE_OVERRIDE_QUIET", raising=False)
+
+        load_profile("my-custom")
+        captured = capsys.readouterr()
+        assert "overrides built-in" not in captured.err
+
+
+class TestProfileMerge:
+    """PHANTOM_PROFILE_MERGE=1 merges user fields over built-in."""
+
+    def test_merge_mode(self, tmp_path, monkeypatch):
+        """User fields override built-in, missing fields fall through."""
+        from phantom._profiles import _profile_cache
+
+        _profile_cache.clear()
+        partial = {"description": "Merged rock description"}
+        profile_path = tmp_path / "rock.json"
+        profile_path.write_text(json.dumps(partial))
+        monkeypatch.setenv("PHANTOM_PROFILES_DIR", str(tmp_path))
+        monkeypatch.setenv("PHANTOM_PROFILE_MERGE", "1")
+        monkeypatch.setenv("PHANTOM_PROFILE_OVERRIDE_QUIET", "1")
+
+        result = load_profile("rock")
+        assert result.description == "Merged rock description"
+        assert result.genre == "rock"
+        assert result.loudness is not None
+
+
+class TestProfileMtimeCache:
+    """Profile changes are picked up via mtime without server restart."""
+
+    def test_mtime_cache_invalidation(self, tmp_path, monkeypatch):
+        """Editing a user profile mid-session reloads on next call."""
+        import time
+        from phantom._profiles import _profile_cache
+
+        _profile_cache.clear()
+        profile_data = _make_user_rock_profile()
+        profile_path = tmp_path / "rock.json"
+        profile_path.write_text(json.dumps(profile_data))
+        monkeypatch.setenv("PHANTOM_PROFILES_DIR", str(tmp_path))
+        monkeypatch.setenv("PHANTOM_PROFILE_OVERRIDE_QUIET", "1")
+
+        result1 = load_profile("rock")
+        assert result1.description == "Custom user rock"
+
+        time.sleep(0.05)
+        profile_data["description"] = "Updated mid-session"
+        profile_path.write_text(json.dumps(profile_data))
+
+        result2 = load_profile("rock")
+        assert result2.description == "Updated mid-session"

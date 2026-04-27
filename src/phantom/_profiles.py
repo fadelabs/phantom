@@ -14,6 +14,7 @@ from __future__ import annotations
 import importlib.resources
 import json
 import os
+import sys
 from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, ValidationError
@@ -80,6 +81,30 @@ class ReferenceProfile(BaseModel):
     stereo: StereoConventions
     spatial: SpatialConventions
     processing_notes: str
+
+
+# mtime-based cache: {resolved_name: (mtime, ReferenceProfile)}
+_profile_cache: dict[str, tuple[float, ReferenceProfile]] = {}
+
+
+def _get_user_profile_path(name: str) -> Path | None:
+    """Return the path to a user profile file, or None if not applicable."""
+    user_dir = os.environ.get("PHANTOM_PROFILES_DIR")
+    if not user_dir:
+        return None
+    path = Path(user_dir) / f"{name}.json"
+    resolved = path.resolve()
+    base = Path(user_dir).resolve()
+    if not str(resolved).startswith(str(base) + os.sep) and resolved != base:
+        return None
+    return resolved if resolved.is_file() else None
+
+
+def _has_builtin_profile(name: str) -> bool:
+    """Check if a built-in profile exists with this name."""
+    profiles_pkg = importlib.resources.files("phantom.profiles")
+    resource = profiles_pkg.joinpath(f"{name}.json")
+    return resource.is_file()
 
 
 # ---------------------------------------------------------------------------
@@ -227,18 +252,47 @@ def load_profile(name: str) -> ReferenceProfile:
     """
     resolved = _resolve_name(name)
 
-    # Search order: user directory first, then builtins (D-09)
-    raw = _load_user_profile(resolved)
-    if raw is None:
-        raw = _load_builtin_profile(resolved)
+    # mtime-based cache: check if user profile changed since last load
+    user_path = _get_user_profile_path(resolved)
+    if user_path and resolved in _profile_cache:
+        cached_mtime, cached_profile = _profile_cache[resolved]
+        current_mtime = user_path.stat().st_mtime
+        if current_mtime == cached_mtime:
+            return cached_profile
 
-    if raw is None:
+    # Search order: user directory first, then builtins (D-09)
+    user_raw = _load_user_profile(resolved)
+    builtin_raw = _load_builtin_profile(resolved)
+
+    if user_raw is not None and builtin_raw is not None:
+        if not os.environ.get("PHANTOM_PROFILE_OVERRIDE_QUIET"):
+            print(
+                f"[phantom] User profile '{resolved}' overrides built-in. "
+                f"Set PHANTOM_PROFILE_OVERRIDE_QUIET=1 to silence.",
+                file=sys.stderr,
+            )
+        if os.environ.get("PHANTOM_PROFILE_MERGE"):
+            merged = {**builtin_raw, **user_raw}
+            raw = merged
+        else:
+            raw = user_raw
+    elif user_raw is not None:
+        raw = user_raw
+    elif builtin_raw is not None:
+        raw = builtin_raw
+    else:
         available = list_profiles()
         raise ProfileLoadError(
             f"No profile found for '{name}'. Available profiles: {', '.join(available)}"
         )
 
     try:
-        return ReferenceProfile.model_validate(raw)
+        profile = ReferenceProfile.model_validate(raw)
     except ValidationError as exc:
         raise ProfileLoadError(f"Profile '{name}' is malformed: {exc}") from exc
+
+    # Cache with mtime for user profiles
+    if user_path:
+        _profile_cache[resolved] = (user_path.stat().st_mtime, profile)
+
+    return profile
