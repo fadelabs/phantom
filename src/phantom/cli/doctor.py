@@ -14,25 +14,8 @@ from rich.panel import Panel
 from rich.table import Table
 
 from phantom import __version__
+from phantom._diagnostics import CORE_DEPS, OPTIONAL_DEPS, try_import as _try_import
 from phantom.cli._formatting import get_console, output_json
-
-# Core deps: package name -> import name
-_CORE_DEPS = {
-    "numpy": "numpy",
-    "scipy": "scipy",
-    "soundfile": "soundfile",
-    "essentia": "essentia",
-    "pydantic": "pydantic",
-    "fastmcp": "fastmcp",
-}
-
-# Optional deps: package name -> import name
-_OPTIONAL_DEPS = {
-    "demucs": "demucs",
-    "matchering": "matchering",
-    "pedalboard": "pedalboard",
-    "librosa": "librosa",
-}
 
 _ENV_VARS = [
     "PHANTOM_AUDIO_DIR",
@@ -45,16 +28,6 @@ _ENV_VARS = [
 OK = "[green]OK[/green]"
 FAIL = "[red]FAIL[/red]"
 WARN = "[yellow]--[/yellow]"
-
-
-def _try_import(name: str) -> tuple[bool, str]:
-    """Try to import a package. Returns (success, version_or_error)."""
-    try:
-        mod = __import__(name)
-        version = getattr(mod, "__version__", getattr(mod, "VERSION", "?"))
-        return True, str(version)
-    except Exception as exc:
-        return False, str(exc)
 
 
 def _check_mcp_config(path: Path) -> bool | None:
@@ -85,7 +58,7 @@ def _collect_results() -> dict:
 
     # 2. Core deps
     core = {}
-    for pkg, imp in _CORE_DEPS.items():
+    for pkg, imp in CORE_DEPS.items():
         ok, ver = _try_import(imp)
         core[pkg] = {"ok": ok, "version": ver}
         if not ok:
@@ -94,8 +67,8 @@ def _collect_results() -> dict:
 
     # 3. Optional deps
     optional = {}
-    for pkg, imp in _OPTIONAL_DEPS.items():
-        ok, ver = _try_import(imp)
+    for pkg in OPTIONAL_DEPS:
+        ok, ver = _try_import(pkg)
         optional[pkg] = {"ok": ok, "version": ver}
     results["optional_deps"] = optional
 

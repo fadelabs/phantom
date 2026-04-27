@@ -473,6 +473,25 @@ def multi_stem_masking(file_paths: list[str]) -> dict:
 # ---------------------------------------------------------------------------
 
 
+def _startup_preflight() -> None:
+    """Log version and optional extras status to stderr on startup."""
+    import sys
+
+    from phantom import __version__
+    from phantom._diagnostics import OPTIONAL_DEPS, try_import
+
+    if os.environ.get("PHANTOM_QUIET"):
+        return
+
+    extras = {}
+    for pkg, extra_name in OPTIONAL_DEPS.items():
+        ok, _ = try_import(pkg)
+        extras[extra_name] = "OK" if ok else "missing"
+
+    extras_str = " ".join(f"{k}={v}" for k, v in extras.items())
+    print(f"[phantom-mcp] v{__version__} | {extras_str}", file=sys.stderr)
+
+
 def main():
     """Entry point for phantom-mcp CLI."""
     import sys
@@ -487,6 +506,7 @@ def main():
         for name in tools:
             print(name)
         return
+    _startup_preflight()
     mcp.run()
 
 
