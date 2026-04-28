@@ -552,3 +552,88 @@ async def test_mixed_paths_stripped_from_error(client):
     error = json.loads(str(exc_info.value))
     assert "/home/user" not in error["message"]
     assert "C:\\Users" not in error["message"]
+
+
+# ---------------------------------------------------------------------------
+# MCP protocol-level integration tests (issue #18)
+# ---------------------------------------------------------------------------
+
+
+async def test_tool_schemas_have_parameters(client):
+    """Every tool has a valid input schema with parameter definitions."""
+    tools = await client.list_tools()
+    for tool in tools:
+        schema = tool.inputSchema
+        assert schema is not None, f"Tool {tool.name} has no input schema"
+        assert schema.get("type") == "object", (
+            f"Tool {tool.name} schema type is {schema.get('type')}, expected 'object'"
+        )
+
+
+async def test_single_file_tools_require_file_path(client):
+    """Single-file analysis tools declare file_path as a required parameter."""
+    single_file_tools = [
+        "analyze_spectrum",
+        "analyze_loudness",
+        "analyze_dynamics",
+        "analyze_stereo",
+        "analyze_phase",
+        "detect_problems",
+        "full_diagnostic",
+    ]
+    tools = await client.list_tools()
+    tool_map = {t.name: t for t in tools}
+    for name in single_file_tools:
+        tool = tool_map[name]
+        props = tool.inputSchema.get("properties", {})
+        assert "file_path" in props, f"Tool {name} missing file_path parameter"
+
+
+async def test_error_context_contains_file_path(client):
+    """Error responses include the file_path in context for single-file tools."""
+    bad_path = "/nonexistent/test_context.wav"
+    with pytest.raises(ToolError) as exc_info:
+        await client.call_tool("analyze_spectrum", {"file_path": bad_path})
+    error = json.loads(str(exc_info.value))
+    assert "context" in error
+    assert "file_path" in error["context"]
+
+
+async def test_batch_diagnostic_rejects_empty_list(client):
+    """batch_diagnostic rejects an empty file list with a validation error."""
+    with pytest.raises(ToolError) as exc_info:
+        await client.call_tool("batch_diagnostic", {"file_paths": []})
+    error = json.loads(str(exc_info.value))
+    assert error["error_type"] == "ValidationError"
+    assert (
+        "1 file" in error["message"].lower() or "at least" in error["message"].lower()
+    )
+
+
+async def test_batch_diagnostic_rejects_over_50(client):
+    """batch_diagnostic rejects more than 50 files."""
+    paths = [f"/fake/file_{i}.wav" for i in range(51)]
+    with pytest.raises(ToolError) as exc_info:
+        await client.call_tool("batch_diagnostic", {"file_paths": paths})
+    error = json.loads(str(exc_info.value))
+    assert error["error_type"] == "ValidationError"
+    assert "50" in error["message"]
+
+
+async def test_multi_stem_masking_rejects_single_file(client):
+    """multi_stem_masking requires at least 2 files."""
+    with pytest.raises(ToolError) as exc_info:
+        await client.call_tool("multi_stem_masking", {"file_paths": ["/fake/one.wav"]})
+    error = json.loads(str(exc_info.value))
+    assert error["error_type"] == "ValidationError"
+    assert "2" in error["message"]
+
+
+async def test_multi_stem_masking_rejects_over_20(client):
+    """multi_stem_masking rejects more than 20 stems."""
+    paths = [f"/fake/stem_{i}.wav" for i in range(21)]
+    with pytest.raises(ToolError) as exc_info:
+        await client.call_tool("multi_stem_masking", {"file_paths": paths})
+    error = json.loads(str(exc_info.value))
+    assert error["error_type"] == "ValidationError"
+    assert "20" in error["message"]
