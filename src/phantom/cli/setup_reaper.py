@@ -151,7 +151,9 @@ def setup_reaper(install_dir: str | None, json_output: bool) -> None:
 
     if not reaper_found:
         if json_output:
-            output_json({"reaper_detected": False, "reaper_scripts_dir": str(scripts_dir)})
+            output_json(
+                {"reaper_detected": False, "reaper_scripts_dir": str(scripts_dir)}
+            )
         else:
             console.print(
                 f"[dim]Reaper not detected at {scripts_dir} — skipping setup.[/dim]"

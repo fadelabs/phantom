@@ -45,7 +45,9 @@ def test_setup_reaper_clone(runner, tmp_path):
 
     with (
         patch("phantom.cli.setup_reaper.shutil.which", return_value="/usr/bin/git"),
-        patch("phantom.cli.setup_reaper._get_reaper_scripts_dir", return_value=scripts_dir),
+        patch(
+            "phantom.cli.setup_reaper._get_reaper_scripts_dir", return_value=scripts_dir
+        ),
         patch("phantom.cli.setup_reaper.subprocess.run") as mock_run,
     ):
         mock_run.return_value = MagicMock(returncode=0)
@@ -72,6 +74,7 @@ def test_setup_reaper_skips_when_no_reaper(runner, tmp_path):
 
     assert result.exit_code == 0
     import json
+
     data = json.loads(result.output)
     assert data["reaper_detected"] is False
 
@@ -84,7 +87,9 @@ def test_setup_reaper_hardcoded_url(runner, tmp_path):
 
     with (
         patch("phantom.cli.setup_reaper.shutil.which", return_value="/usr/bin/git"),
-        patch("phantom.cli.setup_reaper._get_reaper_scripts_dir", return_value=scripts_dir),
+        patch(
+            "phantom.cli.setup_reaper._get_reaper_scripts_dir", return_value=scripts_dir
+        ),
         patch("phantom.cli.setup_reaper.subprocess.run") as mock_run,
     ):
         mock_run.return_value = MagicMock(returncode=0)
