@@ -191,6 +191,18 @@ def _load_builtin_profile(name: str) -> dict | None:
 
 
 # ---------------------------------------------------------------------------
+def _deep_merge(base: dict, override: dict) -> dict:
+    """Recursively merge override into base. Override values win."""
+    merged = {**base}
+    for k, v in override.items():
+        if k in merged and isinstance(merged[k], dict) and isinstance(v, dict):
+            merged[k] = _deep_merge(merged[k], v)
+        else:
+            merged[k] = v
+    return merged
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
@@ -272,8 +284,7 @@ def load_profile(name: str) -> ReferenceProfile:
                 file=sys.stderr,
             )
         if os.environ.get("PHANTOM_PROFILE_MERGE"):
-            merged = {**builtin_raw, **user_raw}
-            raw = merged
+            raw = _deep_merge(builtin_raw, user_raw)
         else:
             raw = user_raw
     elif user_raw is not None:

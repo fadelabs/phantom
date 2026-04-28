@@ -149,11 +149,11 @@ def _phantom_tool(fn):
         try:
             return fn(*args, **kwargs)
         except PhantomError as e:
-            raise _to_tool_error(e, context)
+            raise _to_tool_error(e, context) from e
         except ToolError:
             raise
         except Exception as e:
-            raise _to_tool_error(e, context)
+            raise _to_tool_error(e, context) from e
 
     return wrapper
 
@@ -502,7 +502,14 @@ def main():
         print(f"phantom-mcp {__version__}")
         return
     if "--tools" in sys.argv:
-        tools = sorted(t.name for t in mcp._tool_manager._tools.values())
+        try:
+            tools = sorted(t.name for t in mcp._tool_manager._tools.values())
+        except AttributeError:
+            print(
+                "Cannot list tools — FastMCP version may be incompatible",
+                file=sys.stderr,
+            )
+            sys.exit(1)
         for name in tools:
             print(name)
         return

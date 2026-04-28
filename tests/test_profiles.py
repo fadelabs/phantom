@@ -447,6 +447,23 @@ class TestProfileMerge:
         assert result.genre == "rock"
         assert result.loudness is not None
 
+    def test_deep_merge_preserves_nested_keys(self, tmp_path, monkeypatch):
+        """Overriding one nested key preserves sibling keys."""
+        from phantom._profiles import _profile_cache
+
+        _profile_cache.clear()
+        partial = {"loudness": {"lufs_range": [-20.0, -14.0]}}
+        profile_path = tmp_path / "rock.json"
+        profile_path.write_text(json.dumps(partial))
+        monkeypatch.setenv("PHANTOM_PROFILES_DIR", str(tmp_path))
+        monkeypatch.setenv("PHANTOM_PROFILE_MERGE", "1")
+        monkeypatch.setenv("PHANTOM_PROFILE_OVERRIDE_QUIET", "1")
+
+        result = load_profile("rock")
+        assert result.loudness.lufs_range == (-20.0, -14.0)
+        assert result.loudness.crest_factor_range is not None
+        assert result.loudness.true_peak_max_dbtp is not None
+
 
 class TestProfileMtimeCache:
     """Profile changes are picked up via mtime without server restart."""

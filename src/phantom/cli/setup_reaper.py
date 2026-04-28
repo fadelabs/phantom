@@ -164,11 +164,23 @@ def setup_reaper(install_dir: str | None, yes: bool, json_output: bool) -> None:
         except Exception:
             pass
 
-        if remote_url and "fadelabs" not in remote_url:
+        expected_remote = REAPER_MCP_REPO.removesuffix(".git")
+        is_fadelabs = remote_url and (
+            expected_remote in remote_url or "fadelabs/reaper-mcp" in remote_url
+        )
+        if remote_url and not is_fadelabs:
             if not json_output:
                 console.print(
-                    "[yellow]Existing clone is from upstream — replacing with fadelabs fork...[/yellow]"
+                    f"[yellow]Existing clone uses a different remote:[/yellow]\n"
+                    f"  [dim]{remote_url}[/dim]\n"
+                    f"[yellow]Will replace with fadelabs fork.[/yellow]"
                 )
+            if not yes and sys.stdin.isatty():
+                if not click.confirm(
+                    "Delete existing clone and re-clone?", default=True
+                ):
+                    console.print("[dim]Cancelled.[/dim]")
+                    return
             shutil.rmtree(install_path)
 
     if install_path.exists():
