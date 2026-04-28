@@ -166,29 +166,35 @@ Compound operation recipes for creating Reaper sessions from Phantom analysis re
 
 ## Reaper MCP Known Issues
 
-Critical issues discovered during real sessions that affect recipe execution. These are limitations of the TwelveTake Reaper MCP bridge (file-based communication mode) that cannot be worked around programmatically.
+Issues discovered during real sessions. Items marked **Fixed** were resolved in the Phantom-patched Lua bridge and no longer require workarounds.
 
 ### insert_audio_file track targeting
-**Status:** Fixed in Phantom's patched bridge.
+**Status:** Fixed.
 The upstream `InsertMedia` raw API call ignores the `track_index` parameter and always inserts on the first track. Phantom's `setup_reaper` command patches the Lua bridge to add an `InsertAudioFile` DSL function that correctly targets specific tracks using `AddMediaItemToTrack` + `PCM_Source_CreateFromFile` + `SetMediaItemTake_Source` in a single Lua call.
 
 ### insert_track name parameter
-**Issue:** The `name` parameter on `insert_track` is unreliable — Reaper often ignores it or overwrites it on audio import. **Always call `set_track_name` separately after `insert_track`.**
+**Status:** Fixed (arg-order bug corrected).
+The `name` parameter on `insert_track` previously set the name on the wrong track due to an extra argument in the MCP server call. This is fixed, but Reaper may still overwrite track names on audio import. **Best practice:** call `set_track_name` separately after `insert_track` when importing audio onto the same track.
 
 ### MIDI note insertion
-**Issue:** `add_midi_note` and `add_midi_notes_batch` call the raw `MIDI_InsertNote` API which fails with "MediaItem_Take expected" — the file bridge can't serialize take pointers. The DSL has `InsertMIDINote` but the Python server doesn't call it. **Workaround:** Generate a .mid file and have the user drag it onto the track.
+**Status:** Fixed.
+The Lua bridge now resolves track index → media item → active take within Lua itself, avoiding the pointer serialization problem. `add_midi_note` and `add_midi_notes_batch` work correctly through the file bridge.
 
 ### Item manipulation (split, move, set position/length)
-**Issue:** `split_item`, `set_item_position`, `set_item_length`, `set_item_volume` all fail with "MediaItem expected" — same pointer serialization issue. **No workaround.** These operations must be done manually in Reaper.
+**Status:** Fixed.
+`split_item`, `set_item_position`, `set_item_length`, `set_item_volume`, `set_item_mute`, `set_item_fade_in`, `set_item_fade_out` all resolve track → item within the Lua bridge. No pointer serialization issue.
 
 ### Envelope automation
-**Issue:** `add_envelope_point` fails with "Invalid envelope parameter." Volume and mute automation cannot be written programmatically. **Workaround:** Use mute/unmute on tracks for section-based control, or instruct the user to draw automation.
+**Status:** Fixed.
+`add_envelope_point`, `get_envelope_points`, `delete_envelope_point`, `clear_envelope`, and `arm_track_envelope` all resolve track → envelope by name within the Lua bridge. Volume, pan, and mute automation can be written programmatically.
 
 ### Peak metering
-**Issue:** `get_track_peak` fails with "MediaTrack expected." Real-time level monitoring is not available through the file bridge. **Workaround:** Render to WAV and analyze with Phantom MCP tools.
+**Status:** Fixed.
+`get_track_peak` resolves the track pointer within the Lua bridge. Returns both linear and dB values. Note: peak values are instantaneous snapshots — for reliable level measurement, render to WAV and analyze with Phantom MCP tools.
 
 ### Rendering
-**Issue:** `render_project` calls `RenderProject` which doesn't exist in the Lua bridge. Rendering requires the Reaper render dialog. **Workaround:** Instruct the user to render manually (Cmd+Alt+R on macOS).
+**Status:** Fixed.
+`render_project` configures render settings (output path, bounds, tail) and triggers Reaper's auto-close render action. The audio format uses the project's current render format settings — verify format in Reaper's render dialog (Cmd+Alt+R) if needed. `render_region` renders a specific region by looking up its time bounds and rendering that range.
 
 ### FX parameter verification
 **Issue:** Some plugins (notably iZotope Ozone 11 Maximizer) have internal parameter linking that overrides MCP-set values. Setting the Maximizer ceiling via param 119/122 gets reset by the linked input gain. **Workaround:** Set link param to 0 first, or instruct the user to set these values in the plugin GUI.
