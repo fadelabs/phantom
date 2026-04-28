@@ -40,9 +40,12 @@ def test_setup_reaper_missing_git(runner):
 def test_setup_reaper_clone(runner, tmp_path):
     """setup-reaper attempts to clone when install dir does not exist."""
     install_dir = tmp_path / "reaper-mcp"
+    scripts_dir = tmp_path / "reaper-scripts"
+    scripts_dir.mkdir()
 
     with (
         patch("phantom.cli.setup_reaper.shutil.which", return_value="/usr/bin/git"),
+        patch("phantom.cli.setup_reaper._get_reaper_scripts_dir", return_value=scripts_dir),
         patch("phantom.cli.setup_reaper.subprocess.run") as mock_run,
     ):
         mock_run.return_value = MagicMock(returncode=0)
@@ -51,18 +54,37 @@ def test_setup_reaper_clone(runner, tmp_path):
             ["setup-reaper", "--install-dir", str(install_dir), "--json"],
         )
 
-    # The clone call should have been made
     assert mock_run.called
     clone_call = mock_run.call_args_list[0]
     assert "clone" in clone_call[0][0]
 
 
+def test_setup_reaper_skips_when_no_reaper(runner, tmp_path):
+    """setup-reaper exits silently when Reaper is not installed."""
+    with (
+        patch("phantom.cli.setup_reaper.shutil.which", return_value="/usr/bin/git"),
+        patch(
+            "phantom.cli.setup_reaper._get_reaper_scripts_dir",
+            return_value=tmp_path / "nonexistent",
+        ),
+    ):
+        result = runner.invoke(cli, ["setup-reaper", "--json"])
+
+    assert result.exit_code == 0
+    import json
+    data = json.loads(result.output)
+    assert data["reaper_detected"] is False
+
+
 def test_setup_reaper_hardcoded_url(runner, tmp_path):
-    """Security: setup-reaper only uses the hardcoded TwelveTake-Studios URL."""
+    """Security: setup-reaper only uses the hardcoded fadelabs URL."""
     install_dir = tmp_path / "reaper-mcp"
+    scripts_dir = tmp_path / "reaper-scripts"
+    scripts_dir.mkdir()
 
     with (
         patch("phantom.cli.setup_reaper.shutil.which", return_value="/usr/bin/git"),
+        patch("phantom.cli.setup_reaper._get_reaper_scripts_dir", return_value=scripts_dir),
         patch("phantom.cli.setup_reaper.subprocess.run") as mock_run,
     ):
         mock_run.return_value = MagicMock(returncode=0)
@@ -71,7 +93,6 @@ def test_setup_reaper_hardcoded_url(runner, tmp_path):
             ["setup-reaper", "--install-dir", str(install_dir), "--json"],
         )
 
-    # Find the git clone call
     clone_calls = [c for c in mock_run.call_args_list if "clone" in c[0][0]]
     assert len(clone_calls) >= 1
     cmd_args = clone_calls[0][0][0]

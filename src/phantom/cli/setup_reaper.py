@@ -123,42 +123,25 @@ def _merge_mcp_config(mcp_config: dict, console, yes: bool) -> str | None:
     default=None,
     help="Directory to clone reaper-mcp into (default: ~/.phantom/reaper-mcp)",
 )
-@click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompts")
 @click.option("--json", "-j", "json_output", is_flag=True, help="Output raw JSON")
-def setup_reaper(install_dir: str | None, yes: bool, json_output: bool) -> None:
+def setup_reaper(install_dir: str | None, json_output: bool) -> None:
     """Set up Reaper MCP bridge for DAW integration.
 
-    Clones the reaper-mcp bridge, installs dependencies,
-    copies the Lua bridge to Reaper, and configures MCP.
+    Auto-detects Reaper installation, clones the bridge, copies Lua scripts,
+    configures auto-start, and writes MCP config. No prompts needed.
     """
     console = get_console(json_mode=json_output)
 
-    # --- Pre-flight checks ---
     if not _check_tool("git"):
-        console.print(
-            Panel(
-                "[bold]git[/bold] is required but not installed.\n\n"
-                "  macOS:   [green]xcode-select --install[/green]\n"
-                "  Ubuntu:  [green]sudo apt install git[/green]\n"
-                "  Windows: [green]https://git-scm.com/download/win[/green]",
-                title="Missing: git",
-                border_style="red",
-            )
+        raise click.ClickException(
+            "git is required. Install: xcode-select --install (macOS), "
+            "sudo apt install git (Linux), or https://git-scm.com (Windows)"
         )
-        sys.exit(1)
 
     if not _check_tool("uv"):
-        console.print(
-            Panel(
-                "[bold]uv[/bold] is required but not installed.\n\n"
-                "  macOS/Linux:  [green]curl -LsSf https://astral.sh/uv/install.sh | sh[/green]\n"
-                '  Windows:      [green]powershell -c "irm https://astral.sh/uv/install.ps1 | iex"[/green]\n\n'
-                "More info: https://docs.astral.sh/uv/",
-                title="Missing: uv",
-                border_style="red",
-            )
+        raise click.ClickException(
+            "uv is required. Install: curl -LsSf https://astral.sh/uv/install.sh | sh"
         )
-        sys.exit(1)
 
     install_path = Path(
         install_dir if install_dir else _DEFAULT_INSTALL_DIR
@@ -166,24 +149,14 @@ def setup_reaper(install_dir: str | None, yes: bool, json_output: bool) -> None:
     scripts_dir = _get_reaper_scripts_dir()
     reaper_found = scripts_dir.exists()
 
-    # --- Show plan ---
-    if not json_output:
-        plan_lines = [
-            f"  Clone to:       [cyan]{install_path}[/cyan]",
-            f"  Reaper scripts: [cyan]{scripts_dir}[/cyan]",
-        ]
-        if not reaper_found:
-            plan_lines.append(
-                "  [yellow]Reaper not detected — Lua copy will be skipped[/yellow]"
+    if not reaper_found:
+        if json_output:
+            output_json({"reaper_detected": False, "reaper_scripts_dir": str(scripts_dir)})
+        else:
+            console.print(
+                f"[dim]Reaper not detected at {scripts_dir} — skipping setup.[/dim]"
             )
-        console.print(
-            Panel("\n".join(plan_lines), title="Reaper MCP Setup", border_style="cyan")
-        )
-
-        if not yes and sys.stdin.isatty():
-            if not click.confirm("Proceed?", default=True):
-                console.print("[dim]Cancelled.[/dim]")
-                return
+        return
 
     # --- Clone or update ---
     if install_path.exists():
@@ -203,72 +176,48 @@ def setup_reaper(install_dir: str | None, yes: bool, json_output: bool) -> None:
             expected_remote in remote_url or "fadelabs/reaper-mcp" in remote_url
         )
         if remote_url and not is_fadelabs:
-            if not json_output:
-                console.print(
-                    f"[yellow]Existing clone uses a different remote:[/yellow]\n"
-                    f"  [dim]{remote_url}[/dim]\n"
-                    f"[yellow]Will replace with fadelabs fork.[/yellow]"
-                )
-            if not yes and sys.stdin.isatty():
-                if not click.confirm(
-                    "Delete existing clone and re-clone?", default=True
-                ):
-                    console.print("[dim]Cancelled.[/dim]")
-                    return
             shutil.rmtree(install_path)
 
     if install_path.exists():
-        with console.status("[bold blue]Pulling latest changes...", spinner="dots"):
-            _run_step(
-                ["git", "-C", str(install_path), "pull", "--ff-only"],
-                "Git pull",
-            )
+        if not json_output:
+            console.print("[dim]Updating reaper-mcp...[/dim]")
+        _run_step(
+            ["git", "-C", str(install_path), "pull", "--ff-only"],
+            "Git pull",
+        )
     else:
-        with console.status("[bold blue]Cloning reaper-mcp...", spinner="dots"):
-            install_path.parent.mkdir(parents=True, exist_ok=True)
-            _run_step(
-                ["git", "clone", "--depth", "1", REAPER_MCP_REPO, str(install_path)],
-                "Git clone",
-            )
+        if not json_output:
+            console.print("[dim]Installing reaper-mcp...[/dim]")
+        install_path.parent.mkdir(parents=True, exist_ok=True)
+        _run_step(
+            ["git", "clone", "--depth", "1", REAPER_MCP_REPO, str(install_path)],
+            "Git clone",
+        )
 
     # --- Install Python dependencies ---
     if (install_path / "pyproject.toml").exists():
-        with console.status("[bold blue]Installing dependencies...", spinner="dots"):
-            _run_step(
-                ["uv", "sync", "--directory", str(install_path)],
-                "Dependency install",
-            )
+        _run_step(
+            ["uv", "sync", "--directory", str(install_path)],
+            "Dependency install",
+        )
 
     # --- Copy Lua bridge to Reaper ---
     lua_copied: list[str] = []
     lua_files = list(install_path.rglob("*.lua"))
 
-    if lua_files and reaper_found:
-        for lua_file in lua_files:
-            dest = scripts_dir / lua_file.name
-            shutil.copy2(str(lua_file), str(dest))
-            lua_copied.append(str(dest))
-            if not json_output:
-                console.print(f"  Copied [green]{lua_file.name}[/green] -> {dest}")
-    elif lua_files and not reaper_found and not json_output:
-        console.print(
-            f"[yellow]Reaper not found at {scripts_dir} — skipping Lua copy.[/yellow]\n"
-            "[dim]Install Reaper, then re-run [green]phantom setup-reaper[/green].[/dim]"
-        )
+    for lua_file in lua_files:
+        dest = scripts_dir / lua_file.name
+        shutil.copy2(str(lua_file), str(dest))
+        lua_copied.append(str(dest))
 
     # --- Create bridge data directory ---
     bridge_data_dir = scripts_dir / "mcp_bridge_data"
-    if reaper_found:
-        bridge_data_dir.mkdir(parents=True, exist_ok=True)
+    bridge_data_dir.mkdir(parents=True, exist_ok=True)
 
     # --- Configure auto-start via __startup.lua ---
-    startup_configured = False
-    if reaper_found:
-        startup_configured = _configure_startup_script(
-            scripts_dir, console, json_output
-        )
+    _configure_startup_script(scripts_dir, console, json_output)
 
-    # --- Build MCP config ---
+    # --- Write MCP config ---
     mcp_config = {
         "mcpServers": {
             "reaper": {
@@ -286,10 +235,9 @@ def setup_reaper(install_dir: str | None, yes: bool, json_output: bool) -> None:
         }
     }
 
-    # --- Auto-install MCP config ---
     config_written_to = None
     if not json_output:
-        config_written_to = _merge_mcp_config(mcp_config, console, yes)
+        config_written_to = _merge_mcp_config(mcp_config, console, yes=True)
 
     # --- Output ---
     if json_output:
@@ -297,74 +245,26 @@ def setup_reaper(install_dir: str | None, yes: bool, json_output: bool) -> None:
             {
                 "install_dir": str(install_path),
                 "reaper_scripts_dir": str(scripts_dir),
-                "reaper_detected": reaper_found,
+                "reaper_detected": True,
                 "lua_copied": lua_copied,
-                "startup_configured": startup_configured,
+                "startup_configured": True,
                 "mcp_config": mcp_config,
                 "mcp_config_written_to": config_written_to,
             }
         )
         return
 
-    # Success summary
-    summary_lines = [
-        "[bold green]Reaper MCP bridge installed.[/bold green]",
-        "",
-        f"  Install dir:    {install_path}",
-    ]
-    if lua_copied:
-        summary_lines.append(f"  Lua scripts:    {scripts_dir}")
-    if startup_configured:
-        summary_lines.append("  Auto-start:     __startup.lua configured")
-    if config_written_to:
-        summary_lines.append(f"  MCP config:     {config_written_to}")
-
-    console.print(Panel("\n".join(summary_lines), title="Done", border_style="green"))
-
-    # Next steps
-    if reaper_found and startup_configured:
-        console.print(
-            Panel(
-                "The MCP bridge will start automatically when Reaper launches.\n"
-                "Just open Reaper and Claude can connect — no manual steps needed.\n\n"
-                "If Reaper is already running, restart it or load the bridge once manually:\n"
-                "  Actions > Show action list > Load ReaScript > reaper_mcp_bridge.lua",
-                title="Ready",
-                border_style="green",
-            )
+    console.print(
+        Panel(
+            "[bold green]Reaper MCP bridge ready.[/bold green]\n\n"
+            f"  Bridge:     {install_path}\n"
+            f"  Lua:        {scripts_dir}\n"
+            "  Auto-start: configured\n"
+            + (f"  MCP config: {config_written_to}" if config_written_to else ""),
+            title="Done",
+            border_style="green",
         )
-    elif reaper_found:
-        bridge_path = scripts_dir / "reaper_mcp_bridge.lua"
-        console.print(
-            Panel(
-                "[bold]Load the bridge script inside Reaper:[/bold]\n\n"
-                "  1. Open Reaper\n"
-                "  2. Actions > Show action list  (shortcut [green]?[/green])\n"
-                "  3. Click [bold]Load ReaScript...[/bold] at bottom-left\n"
-                f"  4. Select [cyan]{bridge_path}[/cyan]\n"
-                "  5. Click [bold]Run[/bold]\n\n"
-                "The bridge must be running in Reaper before Claude can connect.",
-                title="Next Step",
-                border_style="yellow",
-            )
-        )
-    else:
-        console.print(
-            Panel(
-                "MCP config is ready. After installing Reaper, run:\n\n"
-                "  [green]phantom setup-reaper[/green]\n\n"
-                "to copy the Lua bridge and finish setup.",
-                title="Next Step",
-                border_style="yellow",
-            )
-        )
-
-    if not config_written_to:
-        console.print()
-        console.print(
-            Panel(
-                "Add this to your .mcp.json:\n\n" + json.dumps(mcp_config, indent=2),
-                title="MCP Configuration",
-                border_style="cyan",
-            )
-        )
+    )
+    console.print(
+        "[dim]Restart Reaper if it's running. The bridge auto-starts on launch.[/dim]"
+    )
