@@ -46,6 +46,40 @@ def _run_step(cmd: list[str], step_name: str) -> None:
         raise click.ClickException(f"{step_name} failed:\n{stderr}")
 
 
+_STARTUP_MARKER = "-- [phantom] auto-start MCP bridge"
+
+_STARTUP_BLOCK = f"""{_STARTUP_MARKER}
+dofile(reaper.GetResourcePath() .. "/Scripts/reaper_mcp_bridge.lua")
+-- [/phantom]
+"""
+
+
+def _configure_startup_script(scripts_dir: Path, console, json_output: bool) -> bool:
+    """Add MCP bridge auto-start to Reaper's __startup.lua.
+
+    Reaper natively auto-executes __startup.lua on launch — no extensions required.
+    """
+    startup_file = scripts_dir / "__startup.lua"
+
+    if startup_file.exists():
+        content = startup_file.read_text()
+        if _STARTUP_MARKER in content:
+            if not json_output:
+                console.print("  Auto-start already configured in __startup.lua")
+            return True
+        # Append to existing startup file
+        new_content = content.rstrip() + "\n\n" + _STARTUP_BLOCK
+    else:
+        new_content = _STARTUP_BLOCK
+
+    startup_file.write_text(new_content)
+    if not json_output:
+        console.print(
+            "  Configured [green]__startup.lua[/green] — bridge will auto-start with Reaper"
+        )
+    return True
+
+
 def _merge_mcp_config(mcp_config: dict, console, yes: bool) -> str | None:
     """Merge reaper MCP config into .mcp.json. Returns path written to."""
     candidates = [Path.cwd() / ".mcp.json", Path.home() / ".mcp.json"]
@@ -227,6 +261,11 @@ def setup_reaper(install_dir: str | None, yes: bool, json_output: bool) -> None:
     if reaper_found:
         bridge_data_dir.mkdir(parents=True, exist_ok=True)
 
+    # --- Configure auto-start via __startup.lua ---
+    startup_configured = False
+    if reaper_found:
+        startup_configured = _configure_startup_script(scripts_dir, console, json_output)
+
     # --- Build MCP config ---
     mcp_config = {
         "mcpServers": {
@@ -258,6 +297,7 @@ def setup_reaper(install_dir: str | None, yes: bool, json_output: bool) -> None:
                 "reaper_scripts_dir": str(scripts_dir),
                 "reaper_detected": reaper_found,
                 "lua_copied": lua_copied,
+                "startup_configured": startup_configured,
                 "mcp_config": mcp_config,
                 "mcp_config_written_to": config_written_to,
             }
@@ -272,13 +312,26 @@ def setup_reaper(install_dir: str | None, yes: bool, json_output: bool) -> None:
     ]
     if lua_copied:
         summary_lines.append(f"  Lua scripts:    {scripts_dir}")
+    if startup_configured:
+        summary_lines.append("  Auto-start:     __startup.lua configured")
     if config_written_to:
         summary_lines.append(f"  MCP config:     {config_written_to}")
 
     console.print(Panel("\n".join(summary_lines), title="Done", border_style="green"))
 
     # Next steps
-    if reaper_found:
+    if reaper_found and startup_configured:
+        console.print(
+            Panel(
+                "The MCP bridge will start automatically when Reaper launches.\n"
+                "Just open Reaper and Claude can connect — no manual steps needed.\n\n"
+                "If Reaper is already running, restart it or load the bridge once manually:\n"
+                "  Actions > Show action list > Load ReaScript > reaper_mcp_bridge.lua",
+                title="Ready",
+                border_style="green",
+            )
+        )
+    elif reaper_found:
         bridge_path = scripts_dir / "reaper_mcp_bridge.lua"
         console.print(
             Panel(
@@ -288,9 +341,7 @@ def setup_reaper(install_dir: str | None, yes: bool, json_output: bool) -> None:
                 "  3. Click [bold]Load ReaScript...[/bold] at bottom-left\n"
                 f"  4. Select [cyan]{bridge_path}[/cyan]\n"
                 "  5. Click [bold]Run[/bold]\n\n"
-                "The bridge must be running in Reaper before Claude can connect.\n"
-                "To auto-start it, add the script to Reaper's startup actions\n"
-                "via [bold]Extensions > Startup actions > Set[/bold].",
+                "The bridge must be running in Reaper before Claude can connect.",
                 title="Next Step",
                 border_style="yellow",
             )

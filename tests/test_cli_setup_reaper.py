@@ -75,7 +75,7 @@ def test_setup_reaper_hardcoded_url(runner, tmp_path):
     clone_calls = [c for c in mock_run.call_args_list if "clone" in c[0][0]]
     assert len(clone_calls) >= 1
     cmd_args = clone_calls[0][0][0]
-    assert "https://github.com/TwelveTake-Studios/reaper-mcp.git" in cmd_args
+    assert "https://github.com/fadelabs/reaper-mcp.git" in cmd_args
 
 
 def test_get_reaper_scripts_dir_macos():
@@ -108,6 +108,50 @@ def test_get_reaper_scripts_dir_windows():
     path_str = str(path)
     assert "REAPER" in path_str
     assert "Scripts" in path_str
+
+
+# ---------------------------------------------------------------------------
+# __startup.lua auto-start tests
+# ---------------------------------------------------------------------------
+
+
+def test_configure_startup_creates_file(tmp_path):
+    """_configure_startup_script creates __startup.lua when it doesn't exist."""
+    from phantom.cli.setup_reaper import _configure_startup_script
+
+    console = MagicMock()
+    result = _configure_startup_script(tmp_path, console, json_output=False)
+    startup = tmp_path / "__startup.lua"
+    assert result is True
+    assert startup.exists()
+    content = startup.read_text()
+    assert "reaper_mcp_bridge.lua" in content
+    assert "[phantom]" in content
+
+
+def test_configure_startup_idempotent(tmp_path):
+    """Running _configure_startup_script twice doesn't duplicate the block."""
+    from phantom.cli.setup_reaper import _configure_startup_script
+
+    console = MagicMock()
+    _configure_startup_script(tmp_path, console, json_output=False)
+    _configure_startup_script(tmp_path, console, json_output=False)
+    content = (tmp_path / "__startup.lua").read_text()
+    assert content.count("[phantom]") == 1
+
+
+def test_configure_startup_preserves_existing(tmp_path):
+    """Existing __startup.lua content is preserved when appending."""
+    from phantom.cli.setup_reaper import _configure_startup_script
+
+    startup = tmp_path / "__startup.lua"
+    startup.write_text("-- user's custom startup code\nreaper.ShowConsoleMsg('hello')\n")
+
+    console = MagicMock()
+    _configure_startup_script(tmp_path, console, json_output=False)
+    content = startup.read_text()
+    assert "user's custom startup code" in content
+    assert "reaper_mcp_bridge.lua" in content
 
 
 # ---------------------------------------------------------------------------
