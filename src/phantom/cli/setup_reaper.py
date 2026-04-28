@@ -264,7 +264,9 @@ def setup_reaper(install_dir: str | None, yes: bool, json_output: bool) -> None:
     # --- Configure auto-start via __startup.lua ---
     startup_configured = False
     if reaper_found:
-        startup_configured = _configure_startup_script(scripts_dir, console, json_output)
+        startup_configured = _configure_startup_script(
+            scripts_dir, console, json_output
+        )
 
     # --- Build MCP config ---
     mcp_config = {

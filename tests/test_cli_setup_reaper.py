@@ -145,7 +145,9 @@ def test_configure_startup_preserves_existing(tmp_path):
     from phantom.cli.setup_reaper import _configure_startup_script
 
     startup = tmp_path / "__startup.lua"
-    startup.write_text("-- user's custom startup code\nreaper.ShowConsoleMsg('hello')\n")
+    startup.write_text(
+        "-- user's custom startup code\nreaper.ShowConsoleMsg('hello')\n"
+    )
 
     console = MagicMock()
     _configure_startup_script(tmp_path, console, json_output=False)
