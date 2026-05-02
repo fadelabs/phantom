@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import os
 import re
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
 
 from pydantic import BaseModel
 
@@ -95,9 +96,22 @@ def separate_stems(input_path: str, output_dir: str) -> SeparationResult:
         ref = wav.mean(0)
         wav = (wav - ref.mean()) / ref.std()
 
-        # Step 5: Run separation
-        with torch.no_grad():
-            sources = apply_model(model, wav[None], progress=False)
+        # Step 5: Run separation (with timeout to prevent indefinite hangs)
+        _SEPARATION_TIMEOUT = 600  # 10 minutes max for any file
+
+        def _run_model():
+            with torch.no_grad():
+                return apply_model(model, wav[None], progress=False)
+
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(_run_model)
+            try:
+                sources = future.result(timeout=_SEPARATION_TIMEOUT)
+            except FuturesTimeout:
+                raise AnalysisError(
+                    f"Source separation timed out after {_SEPARATION_TIMEOUT}s. "
+                    "Try a shorter audio file."
+                )
         sources = sources[0]
         sources = sources * ref.std() + ref.mean()
 
