@@ -91,6 +91,13 @@ try:
 except ImportError:
     pass
 
+try:
+    from phantom.cli.setup import setup as _setup_cmd
+
+    cli.add_command(_setup_cmd)
+except ImportError:
+    pass
+
 
 # ---------------------------------------------------------------------------
 # D-05 resolution: 'phantom serve' as MCP server alias
