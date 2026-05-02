@@ -73,7 +73,7 @@ You're looking for time alignment issues. Sound travels at roughly 1ms per foot 
 **Interpreting phase results:**
 - Correlation > +0.8: excellent mono compatibility, no issues
 - Correlation +0.5 to +0.8: good, normal stereo content -- no action needed
-- Correlation +0.3 to +0.5: wide stereo, approaching risky -- check on mono playback systems
+- Correlation +0.3 to +0.5: wide stereo, approaching risky -- check on mono playback systems. Mono listening is a time-tested diagnostic: if elements drop in level or disappear when summed to mono, there's a phase problem that needs fixing before mixing continues.
 - Correlation < +0.3: problem -- stereo width processing may be excessive, or there's a real phase issue
 - Sustained negative correlation: possible polarity inversion -- flip one channel. Occasional negative dips are normal with wide stereo content; sustained readings near -1 indicate definite inversion
 - "Sounds fine solo but thin/weird in context" = classic phase cancellation signature -- check correlation between the problem stem and everything it's layered with
@@ -93,7 +93,7 @@ Review the `detect_problems` results from the batch diagnostic. The tool runs 11
 **Significant** -- address early, before you start building the mix:
 - True peak > -1 dBTP (exceeds EBU R128 and streaming platform limits -- tight headroom that limits mastering options)
 - Noise floor between -60 and -50 dBFS (audible in quiet passages -- gate during silence or apply noise reduction in quiet sections)
-- Noise floor above -50 dBFS (significant noise -- dedicated noise reduction required before mixing)
+- Noise floor above -50 dBFS (significant noise -- dedicated noise reduction required before mixing). Remember that noise is cumulative: five stems each at -55 dBFS noise floor will sum to roughly -48 dBFS on the mix bus. Borderline noise on individual stems becomes significant noise in the mix.
 - DC offset present (remove with a dedicated DC offset removal tool, available in most DAWs and iZotope RX; if unavailable, use an HPF set very low at 5-20 Hz)
 - Mains hum detected at 50/60 Hz (notch filter at the fundamental plus harmonics: 50/100/150/200 Hz or 60/120/180/240 Hz). Note: the dominant hum frequency is often 2x the mains frequency (100 Hz or 120 Hz) because magnetic force is proportional to the square of the current. Listen to identify the loudest harmonic before notching.
 - False stereo detected (duplicate channels -- note: mono sources in stereo containers are normal, not a problem)
@@ -101,7 +101,7 @@ Review the `detect_problems` results from the batch diagnostic. The tool runs 11
 
 **Moderate** -- address during mixing:
 - Sibilance peaks in the 4-10 kHz range (most problematic at 5-8 kHz; male voices tend 3-6 kHz, female voices 6-8 kHz)
-- Mud accumulation in 200-500 Hz across multiple stems
+- Mud accumulation in 200-500 Hz across multiple stems. The single most effective cleanup step is a high-pass filter on every instrument that doesn't need low-end -- roll off below 80-100 Hz on guitars, vocals, keys, and anything that isn't kick or bass. This alone can clear more mud than surgical EQ.
 - Moderate harshness in 2-5 kHz
 - Room resonances at specific frequencies
 
@@ -119,6 +119,8 @@ This is where you find the conflicts that make mixes sound muddy or cluttered. R
 - Multiple vocal layers against each other
 
 The masking results rank pairs by severity and show the worst-offending frequency bands. High masking severity at 200-500 Hz between multiple pairs = your mix will sound muddy without complementary EQ. That's your roadmap for the mix engineer.
+
+**When masking is actually an arrangement problem.** If four or more stems show high masking in the same frequency band, no amount of EQ carving will fix it -- the arrangement has too many elements competing for the same space at the same time. Flag this as an arrangement issue and recommend the user thin out what's playing simultaneously, rather than trying to EQ five instruments into a space that fits three.
 
 ### Assess aggregate headroom
 
