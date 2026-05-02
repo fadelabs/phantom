@@ -41,7 +41,11 @@ def match_to_reference(
     reference_path = validate_input_path(reference_path)
 
     try:
-        import matchering as mg
+        import warnings
+
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=DeprecationWarning)
+            import matchering as mg
     except ImportError:
         raise DependencyMissingError(
             package="Matchering",
@@ -56,13 +60,23 @@ def match_to_reference(
             f"Reference file not found: {os.path.basename(reference_path)}"
         )
 
-    if os.path.exists(output_path):
+    # Atomic existence check: lock file prevents concurrent writes to same output
+    lock_path = output_path + ".lock"
+    try:
+        lock_fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError:
         raise AnalysisError(
-            f"Output file already exists: {os.path.basename(output_path)}. "
-            "Choose a different output path to avoid overwriting."
+            f"Output path is locked by another process: {os.path.basename(output_path)}. "
+            "Try again shortly or choose a different output path."
         )
 
     try:
+        if os.path.exists(output_path):
+            raise AnalysisError(
+                f"Output file already exists: {os.path.basename(output_path)}. "
+                "Choose a different output path to avoid overwriting."
+            )
+
         before_audio = load_audio(target_path)
         before_loudness = analyze_loudness(before_audio)
         before_spectrum = analyze_spectrum(before_audio)
@@ -116,3 +130,9 @@ def match_to_reference(
         raise
     except Exception as exc:
         raise AnalysisError(f"Reference matching failed: {exc}") from exc
+    finally:
+        os.close(lock_fd)
+        try:
+            os.unlink(lock_path)
+        except OSError:
+            pass

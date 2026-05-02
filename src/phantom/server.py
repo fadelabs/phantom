@@ -503,8 +503,11 @@ def main():
         return
     if "--tools" in sys.argv:
         try:
-            tools = sorted(t.name for t in mcp._tool_manager._tools.values())
-        except AttributeError:
+            if hasattr(mcp, "list_tools"):
+                tools = sorted(t.name for t in mcp.list_tools())
+            else:
+                tools = sorted(t.name for t in mcp._tool_manager._tools.values())
+        except (AttributeError, TypeError):
             print(
                 "Cannot list tools — FastMCP version may be incompatible",
                 file=sys.stderr,

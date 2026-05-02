@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
 
 from pydantic import BaseModel
 
@@ -94,17 +96,31 @@ def separate_stems(input_path: str, output_dir: str) -> SeparationResult:
         ref = wav.mean(0)
         wav = (wav - ref.mean()) / ref.std()
 
-        # Step 5: Run separation
-        with torch.no_grad():
-            sources = apply_model(model, wav[None], progress=False)
+        # Step 5: Run separation (with timeout to prevent indefinite hangs)
+        _SEPARATION_TIMEOUT = 600  # 10 minutes max for any file
+
+        def _run_model():
+            with torch.no_grad():
+                return apply_model(model, wav[None], progress=False)
+
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(_run_model)
+            try:
+                sources = future.result(timeout=_SEPARATION_TIMEOUT)
+            except FuturesTimeout:
+                raise AnalysisError(
+                    f"Source separation timed out after {_SEPARATION_TIMEOUT}s. "
+                    "Try a shorter audio file."
+                )
         sources = sources[0]
         sources = sources * ref.std() + ref.mean()
 
         # Step 6: Save each stem as WAV (per D-01, D-02)
+        _SAFE_NAME_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
         result = {}
         for i, stem_name in enumerate(model.sources):
             safe_name = os.path.basename(stem_name)
-            if not safe_name or safe_name.startswith("."):
+            if not _SAFE_NAME_RE.match(safe_name):
                 safe_name = f"stem_{int(hashlib.md5(stem_name.encode()).hexdigest()[:8], 16) % 10000}"
             stem_path = os.path.join(output_dir, f"{safe_name}.wav")
             real_stem = os.path.realpath(stem_path)
