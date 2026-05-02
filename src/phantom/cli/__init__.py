@@ -18,12 +18,31 @@ click.rich_click.STYLE_COMMANDS_TABLE_COLUMN_WIDTH_RATIO = (1, 2)
 
 @click.group()
 @click.version_option(version=__version__, prog_name="phantom")
-def cli() -> None:
+@click.pass_context
+def cli(ctx: click.Context) -> None:
     """Phantom: AI audio engineering toolkit.
 
     Analyze, compare, separate, and render audio files
     with professional terminal output.
     """
+    if ctx.invoked_subcommand not in (None, "version", "update"):
+        try:
+            from phantom.cli.update import _parse_version, check_for_update
+
+            result = check_for_update()
+            if result is not None:
+                latest, current = result
+                if _parse_version(latest) > _parse_version(current):
+                    click.echo(
+                        click.style(
+                            f"Update available: {current} → {latest}"
+                            ' — run "phantom update"',
+                            dim=True,
+                        ),
+                        err=True,
+                    )
+        except Exception:
+            pass
 
 
 # ---------------------------------------------------------------------------
@@ -50,6 +69,27 @@ for _module_path, (_attr_name, _cli_name) in _COMMANDS.items():
         pass  # Module genuinely doesn't exist yet (development)
     except ImportError as _exc:
         warnings.warn(f"Failed to load {_module_path}: {_exc}")
+
+
+# ---------------------------------------------------------------------------
+# Version & update commands (separate from _COMMANDS to avoid duplicate key)
+# ---------------------------------------------------------------------------
+
+try:
+    from phantom.cli.update import update as _update_cmd
+    from phantom.cli.update import version as _version_cmd
+
+    cli.add_command(_version_cmd)
+    cli.add_command(_update_cmd)
+except ImportError:
+    pass
+
+try:
+    from phantom.cli.uninstall import uninstall as _uninstall_cmd
+
+    cli.add_command(_uninstall_cmd)
+except ImportError:
+    pass
 
 
 # ---------------------------------------------------------------------------
