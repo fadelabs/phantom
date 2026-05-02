@@ -83,6 +83,19 @@ class ReferenceProfile(BaseModel):
     processing_notes: str
 
 
+def _json_depth(obj, current: int = 1) -> int:
+    """Return the maximum nesting depth of a parsed JSON structure."""
+    if isinstance(obj, dict):
+        if not obj:
+            return current
+        return max(_json_depth(v, current + 1) for v in obj.values())
+    if isinstance(obj, list):
+        if not obj:
+            return current
+        return max(_json_depth(v, current + 1) for v in obj)
+    return current
+
+
 # mtime-based cache: {resolved_name: (mtime, ReferenceProfile)}
 _profile_cache: dict[str, tuple[float, ReferenceProfile]] = {}
 
@@ -165,7 +178,12 @@ def _load_user_profile(name: str) -> dict | None:
 
     text = path.read_text(encoding="utf-8")
     try:
-        return json.loads(text)
+        # Depth guard: reject excessively nested JSON (could exhaust recursion)
+        decoder = json.JSONDecoder()
+        result = decoder.decode(text)
+        if _json_depth(result) > 10:
+            raise ProfileLoadError(f"Profile '{name}' exceeds maximum nesting depth")
+        return result
     except json.JSONDecodeError as exc:
         raise ProfileLoadError(
             f"Profile '{name}' contains invalid JSON: {exc}"
@@ -268,7 +286,10 @@ def load_profile(name: str) -> ReferenceProfile:
     user_path = _get_user_profile_path(resolved)
     if user_path and resolved in _profile_cache:
         cached_mtime, cached_profile = _profile_cache[resolved]
-        current_mtime = user_path.stat().st_mtime
+        try:
+            current_mtime = user_path.stat().st_mtime
+        except OSError:
+            current_mtime = None
         if current_mtime == cached_mtime:
             return cached_profile
 
@@ -302,8 +323,13 @@ def load_profile(name: str) -> ReferenceProfile:
     except ValidationError as exc:
         raise ProfileLoadError(f"Profile '{name}' is malformed: {exc}") from exc
 
-    # Cache with mtime for user profiles
+    # Cache with post-load mtime (avoids TOCTOU: if file changed during load,
+    # the next call sees a newer mtime and reloads)
     if user_path:
-        _profile_cache[resolved] = (user_path.stat().st_mtime, profile)
+        try:
+            post_load_mtime = user_path.stat().st_mtime
+        except OSError:
+            post_load_mtime = 0.0
+        _profile_cache[resolved] = (post_load_mtime, profile)
 
     return profile

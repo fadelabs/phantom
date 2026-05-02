@@ -90,6 +90,10 @@ asyncio_mode = "auto"
 markers = [
     "live: requires real audio in tests/fixtures/live/",
 ]
+filterwarnings = [
+    "ignore:authlib.jose module is deprecated:authlib.deprecate.AuthlibDeprecationWarning",
+    "ignore::DeprecationWarning:matchering.*",
+]
 
 [dependency-groups]
 dev = [
