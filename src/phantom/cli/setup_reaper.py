@@ -72,7 +72,10 @@ def _configure_startup_script(scripts_dir: Path, console, json_output: bool) -> 
     else:
         new_content = _STARTUP_BLOCK
 
-    startup_file.write_text(new_content)
+    # Atomic write: temp file + rename
+    tmp_path = str(startup_file) + ".tmp"
+    Path(tmp_path).write_text(new_content)
+    os.replace(tmp_path, str(startup_file))
     if not json_output:
         console.print(
             "  Configured [green]__startup.lua[/green] — bridge will auto-start with Reaper"
@@ -113,7 +116,10 @@ def _merge_mcp_config(mcp_config: dict, console, yes: bool) -> str | None:
                 return None
 
     servers["reaper"] = mcp_config["mcpServers"]["reaper"]
-    target.write_text(json.dumps(existing, indent=2) + "\n")
+    # Atomic write: temp file + rename
+    tmp_path = str(target) + ".tmp"
+    Path(tmp_path).write_text(json.dumps(existing, indent=2) + "\n")
+    os.replace(tmp_path, str(target))
     return str(target)
 
 
@@ -168,6 +174,7 @@ def setup_reaper(install_dir: str | None, json_output: bool) -> None:
                 ["git", "-C", str(install_path), "remote", "get-url", "origin"],
                 capture_output=True,
                 text=True,
+                timeout=10,
             )
             remote_url = result.stdout.strip()
         except Exception:
@@ -178,6 +185,11 @@ def setup_reaper(install_dir: str | None, json_output: bool) -> None:
             expected_remote in remote_url or "fadelabs/reaper-mcp" in remote_url
         )
         if remote_url and not is_fadelabs:
+            if not (install_path / ".git").is_dir():
+                raise click.ClickException(
+                    f"{install_path} exists but is not a git repository. "
+                    "Remove it manually or choose a different --install-dir."
+                )
             shutil.rmtree(install_path)
 
     if install_path.exists():

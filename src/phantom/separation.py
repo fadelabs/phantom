@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 
 from pydantic import BaseModel
 
@@ -101,10 +102,11 @@ def separate_stems(input_path: str, output_dir: str) -> SeparationResult:
         sources = sources * ref.std() + ref.mean()
 
         # Step 6: Save each stem as WAV (per D-01, D-02)
+        _SAFE_NAME_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
         result = {}
         for i, stem_name in enumerate(model.sources):
             safe_name = os.path.basename(stem_name)
-            if not safe_name or safe_name.startswith("."):
+            if not _SAFE_NAME_RE.match(safe_name):
                 safe_name = f"stem_{int(hashlib.md5(stem_name.encode()).hexdigest()[:8], 16) % 10000}"
             stem_path = os.path.join(output_dir, f"{safe_name}.wav")
             real_stem = os.path.realpath(stem_path)

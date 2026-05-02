@@ -83,6 +83,19 @@ class ReferenceProfile(BaseModel):
     processing_notes: str
 
 
+def _json_depth(obj, current: int = 1) -> int:
+    """Return the maximum nesting depth of a parsed JSON structure."""
+    if isinstance(obj, dict):
+        if not obj:
+            return current
+        return max(_json_depth(v, current + 1) for v in obj.values())
+    if isinstance(obj, list):
+        if not obj:
+            return current
+        return max(_json_depth(v, current + 1) for v in obj)
+    return current
+
+
 # mtime-based cache: {resolved_name: (mtime, ReferenceProfile)}
 _profile_cache: dict[str, tuple[float, ReferenceProfile]] = {}
 
@@ -165,7 +178,12 @@ def _load_user_profile(name: str) -> dict | None:
 
     text = path.read_text(encoding="utf-8")
     try:
-        return json.loads(text)
+        # Depth guard: reject excessively nested JSON (could exhaust recursion)
+        decoder = json.JSONDecoder()
+        result = decoder.decode(text)
+        if _json_depth(result) > 10:
+            raise ProfileLoadError(f"Profile '{name}' exceeds maximum nesting depth")
+        return result
     except json.JSONDecodeError as exc:
         raise ProfileLoadError(
             f"Profile '{name}' contains invalid JSON: {exc}"
