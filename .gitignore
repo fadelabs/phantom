@@ -51,3 +51,4 @@ docs/superpowers/
 
 # Skill evaluation workspaces (contain local paths)
 plugin/eval-workspaces/
+resources/
