@@ -235,6 +235,10 @@ The Reaper MCP server includes batch tools built for mixing workflows:
 
 These sit on top of 100+ individual tools for tracks, FX, MIDI, routing, markers, envelopes, transport, and rendering.
 
+## Known Limitations
+
+**iZotope Neutron and Ozone module exposure.** Neutron and Ozone use an internal module system where each processing module (EQ, Compressor, Exciter, etc.) must be manually added to the plugin's signal chain before its parameters become visible to external automation. This means Phantom and Reaper MCP cannot see or control a module until you've added it inside the plugin GUI. This is a limitation of how iZotope exposes VST parameters, not a Phantom issue. Once modules are added, their parameters are fully controllable.
+
 ## Configuration
 
 Environment variables for security and resource limits:
