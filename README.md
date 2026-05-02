@@ -271,4 +271,6 @@ Phantom is licensed under [AGPL-3.0](LICENSE).
 
 **Want to use Phantom in a proprietary product?** Commercial licensing is available. Contact hello@leesae.nz.
 
+**Patent Notice:** Phantom's weighted frequency masking analysis is patent pending (US Provisional Application 64/055,566). The AGPL-3.0 license includes an automatic patent grant — open source users are covered.
+
 The optional `matchering` dependency uses [GPLv3](https://github.com/sergree/matchering/blob/master/LICENSE), which is compatible with AGPL-3.0.
