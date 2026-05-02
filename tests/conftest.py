@@ -4,6 +4,7 @@ All test audio is generated in-memory as numpy arrays.
 No WAV files are committed to the repository (D-11, D-12).
 """
 
+
 from pathlib import Path
 
 import numpy as np
