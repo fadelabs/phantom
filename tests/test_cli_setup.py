@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from unittest.mock import patch
 
 import pytest
 from click.testing import CliRunner
@@ -53,3 +54,46 @@ class TestMcpConfig:
         data = json.loads(mcp.read_text())
         assert "other" in data["mcpServers"]
         assert "phantom" in data["mcpServers"]
+
+
+class TestPluginSetup:
+    def test_skips_when_claude_not_installed(self, runner, clean_env):
+        with patch("phantom.cli.setup.shutil.which", return_value=None):
+            result = runner.invoke(cli, ["setup", "--skip-reaper"])
+            assert result.exit_code == 0
+            assert "Claude Code not installed" in result.output
+
+    def test_skip_plugin_flag(self, runner, clean_env):
+        result = runner.invoke(cli, ["setup", "--skip-plugin", "--skip-reaper"])
+        assert result.exit_code == 0
+        assert "skipped" in result.output.lower()
+
+
+class TestReaperSetup:
+    def test_skips_when_reaper_not_detected(self, runner, clean_env):
+        with patch(
+            "phantom.cli.setup_reaper._get_reaper_scripts_dir",
+            return_value=clean_env / "nonexistent",
+        ):
+            result = runner.invoke(cli, ["setup", "--skip-plugin"])
+            assert result.exit_code == 0
+            assert "not detected" in result.output.lower()
+
+    def test_skip_reaper_flag(self, runner, clean_env):
+        result = runner.invoke(cli, ["setup", "--skip-plugin", "--skip-reaper"])
+        assert result.exit_code == 0
+        assert "skipped" in result.output.lower()
+
+
+class TestSetupCommand:
+    def test_help(self, runner):
+        result = runner.invoke(cli, ["setup", "--help"])
+        assert result.exit_code == 0
+        assert "Set up Phantom" in result.output
+
+    def test_json_output(self, runner, clean_env):
+        with patch("phantom.cli.setup.shutil.which", return_value=None):
+            result = runner.invoke(cli, ["setup", "--json", "--skip-reaper"])
+            data = json.loads(result.output)
+            assert "steps" in data
+            assert len(data["steps"]) == 3
