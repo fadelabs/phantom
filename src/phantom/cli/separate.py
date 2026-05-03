@@ -38,7 +38,7 @@ from phantom.cli._formatting import (
 def separate(file: str, output_dir: str | None, json_output: bool) -> None:
     """Separate audio into stems (vocals, drums, bass, other) using Demucs.
 
-    Requires the separation extra: pip install "phantom-audio[separation]"
+    Requires the separation extra: uv tool install "phantom-audio[separation]"
     """
     console = get_console(json_mode=json_output)
 

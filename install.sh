@@ -7,20 +7,22 @@ main() {
 
     # ── Cleanup trap (CR-03: kill orphan processes on Ctrl+C) ──
     SPAWNED_PID=""
+    TMPFILES=()
     cleanup() {
         if [ -n "$SPAWNED_PID" ] && kill -0 "$SPAWNED_PID" 2>/dev/null; then
             kill "$SPAWNED_PID" 2>/dev/null
             wait "$SPAWNED_PID" 2>/dev/null || true
         fi
+        for f in "${TMPFILES[@]}"; do rm -f "$f"; done
     }
     trap cleanup EXIT INT TERM
 
     # ── Colors (TTY-gated, NO_COLOR respected) ──────────────
     if [ -t 1 ] && [ -z "${NO_COLOR:-}" ] && [ "${TERM:-}" != "dumb" ]; then
-        BOLD='\033[1m'      DIM='\033[2m'
-        RED='\033[31m'      GREEN='\033[32m'
-        YELLOW='\033[33m'   CYAN='\033[36m'
-        RESET='\033[0m'
+        BOLD=$'\033[1m'      DIM=$'\033[2m'
+        RED=$'\033[31m'      GREEN=$'\033[32m'
+        YELLOW=$'\033[33m'   CYAN=$'\033[36m'
+        RESET=$'\033[0m'
     else
         BOLD='' DIM='' RED='' GREEN='' YELLOW='' CYAN='' RESET=''
     fi
@@ -37,6 +39,7 @@ main() {
         shift
         local logfile
         logfile=$(mktemp)
+        TMPFILES+=("$logfile")
 
         "$@" > "$logfile" 2>&1 &
         SPAWNED_PID=$!
@@ -69,7 +72,7 @@ main() {
         else
             # Check if uv reported success despite non-zero exit (WR-03)
             if grep -q "Installed.*executable" "$logfile" 2>/dev/null; then
-                warn "$msg (completed with warnings)"
+                warn "$msg (completed with warnings — exit code $exit_code)"
                 rm -f "$logfile"
                 return 0
             fi
@@ -104,14 +107,17 @@ main() {
 
     # ── Step 2: Check/install uv ────────────────────────────
     if command -v uv >/dev/null 2>&1; then
-        ok "uv $(uv --version 2>/dev/null | head -1)"
+        ok "$(uv --version 2>/dev/null | head -1)"
     else
         info "Installing uv..."
-        # WR-05: show errors from uv install, only suppress stdout noise
+        UV_VERSION="0.11.7"
+        local uv_log
+        uv_log=$(mktemp)
+        TMPFILES+=("$uv_log")
         if command -v curl >/dev/null 2>&1; then
-            curl -LsSf https://astral.sh/uv/install.sh | sh >/dev/null
+            curl -LsSf "https://astral.sh/uv/${UV_VERSION}/install.sh" | sh > "$uv_log" 2>&1
         elif command -v wget >/dev/null 2>&1; then
-            wget -qO- https://astral.sh/uv/install.sh | sh >/dev/null
+            wget -qO- "https://astral.sh/uv/${UV_VERSION}/install.sh" | sh > "$uv_log" 2>&1
         else
             err "curl or wget required. Install one and re-run."
         fi
@@ -122,25 +128,118 @@ main() {
         # shellcheck disable=SC1091
         [ -f "$HOME/.cargo/env" ] && . "$HOME/.cargo/env"
 
-        command -v uv >/dev/null 2>&1 || err "uv installation failed. See https://docs.astral.sh/uv/"
+        if ! command -v uv >/dev/null 2>&1; then
+            fail "uv installation failed"
+            printf "    %sLog: %s%s\n" "$DIM" "$uv_log" "$RESET" >&2
+            err "See https://docs.astral.sh/uv/ for manual install"
+        fi
         ok "uv installed"
     fi
 
     # ── Step 3: Install phantom ─────────────────────────────
     if command -v phantom >/dev/null 2>&1; then
-        EXISTING=$(phantom --version 2>/dev/null || echo "unknown")
-        warn "Existing install found: ${EXISTING} — upgrading"
+        EXISTING=$(uv tool list 2>/dev/null | grep phantom-audio | head -1 | sed 's/phantom-audio //' | sed 's/ .*//' || echo "unknown")
+        warn "Existing install found: phantom ${EXISTING} — upgrading"
+    fi
+
+    # ── Extras prompt (interactive TTY only) ───────────────
+    INSTALL_EXTRAS=""
+    if [ -t 0 ]; then
+        printf "\n"
+        printf "  %sWhat to install?%s\n" "$BOLD" "$RESET"
+        printf "\n"
+        printf "  Core %s(~50MB)%s gives you spectral, loudness, dynamics, stereo,\n" "$DIM" "$RESET"
+        printf "  phase, and problem analysis — enough for full mix diagnostics.\n"
+        printf "\n"
+        printf "  Extras unlock additional capabilities:\n"
+        printf "    %s•%s Stem separation %s— split a track into vocals, drums, bass, other%s\n" "$CYAN" "$RESET" "$DIM" "$RESET"
+        printf "    %s•%s Reference matching %s— auto-match your mix to a reference track%s\n" "$CYAN" "$RESET" "$DIM" "$RESET"
+        # TODO: uncomment when pedalboard integration is wired up
+        # printf "    %s•%s Audio processing %s— headless EQ, compression, effects without a DAW%s\n" "$CYAN" "$RESET" "$DIM" "$RESET"
+        printf "\n"
+        printf "    %s1)%s All extras %s(recommended)%s %s~2.5GB%s\n" "$CYAN" "$RESET" "$DIM" "$RESET" "$DIM" "$RESET"
+        printf "    %s2)%s Core only %s~50MB%s\n" "$CYAN" "$RESET" "$DIM" "$RESET"
+        printf "    %s3)%s Choose individually\n" "$CYAN" "$RESET"
+        printf "\n"
+        printf "  Enter choice [1]: "
+        read -r EXTRAS_CHOICE
+        EXTRAS_CHOICE="${EXTRAS_CHOICE:-1}"
+
+        case "$EXTRAS_CHOICE" in
+            1)
+                INSTALL_EXTRAS="all"
+                ;;
+            2)
+                INSTALL_EXTRAS=""
+                ;;
+            3)
+                INSTALL_EXTRAS=""
+                printf "\n"
+                printf "  %sStem separation%s %s~2.5GB%s\n" "$BOLD" "$RESET" "$DIM" "$RESET"
+                printf "  Split tracks into vocals, drums, bass, other (Demucs + PyTorch)\n"
+                printf "  Install? [Y/n]: "
+                read -r SEP_CHOICE
+                if [ "${SEP_CHOICE:-y}" != "n" ] && [ "${SEP_CHOICE:-y}" != "N" ]; then
+                    INSTALL_EXTRAS="separation"
+                fi
+
+                printf "\n"
+                printf "  %sReference matching%s %s~10MB, GPLv3 license%s\n" "$BOLD" "$RESET" "$YELLOW" "$RESET"
+                printf "  Auto-match your mix's loudness, EQ, and width to a reference track\n"
+                printf "  Install? [Y/n]: "
+                read -r MATCH_CHOICE
+                if [ "${MATCH_CHOICE:-y}" != "n" ] && [ "${MATCH_CHOICE:-y}" != "N" ]; then
+                    if [ -n "$INSTALL_EXTRAS" ]; then
+                        INSTALL_EXTRAS="${INSTALL_EXTRAS},matching"
+                    else
+                        INSTALL_EXTRAS="matching"
+                    fi
+                fi
+
+                # TODO: uncomment when pedalboard integration is wired up
+                # printf "\n"
+                # printf "  %sAudio processing%s %s~5MB%s\n" "$BOLD" "$RESET" "$DIM" "$RESET"
+                # printf "  Headless EQ, compression, and effects without a DAW (Pedalboard)\n"
+                # printf "  Install? [Y/n]: "
+                # read -r PROC_CHOICE
+                # if [ "${PROC_CHOICE:-y}" != "n" ] && [ "${PROC_CHOICE:-y}" != "N" ]; then
+                #     if [ -n "$INSTALL_EXTRAS" ]; then
+                #         INSTALL_EXTRAS="${INSTALL_EXTRAS},processing"
+                #     else
+                #         INSTALL_EXTRAS="processing"
+                #     fi
+                # fi
+                ;;
+            *)
+                INSTALL_EXTRAS="all"
+                ;;
+        esac
+    else
+        # Non-interactive: install all by default
+        INSTALL_EXTRAS="all"
+    fi
+
+    printf "\n"
+
+    if [ -n "$INSTALL_EXTRAS" ]; then
+        INSTALL_PKG="phantom-audio[${INSTALL_EXTRAS}]"
+    else
+        INSTALL_PKG="phantom-audio"
     fi
 
     if ! run_with_spinner "Installing phantom (this may take a minute)" \
-        uv tool install "phantom-audio[all]" --python 3.13 --force; then
+        uv tool install "$INSTALL_PKG" --python 3.13 --force; then
 
-        info "Full install failed, trying core only..."
-        if ! run_with_spinner "Installing phantom core" \
-            uv tool install phantom-audio --python 3.13 --force; then
+        if [ -n "$INSTALL_EXTRAS" ]; then
+            info "Full install failed, trying core only..."
+            if ! run_with_spinner "Installing phantom core" \
+                uv tool install phantom-audio --python 3.13 --force; then
+                err "Installation failed. Check Python 3.13: uv python list | grep 3.13"
+            fi
+            warn "Extras skipped — install later: uv tool install \"phantom-audio[all]\" --python 3.13 --force"
+        else
             err "Installation failed. Check Python 3.13: uv python list | grep 3.13"
         fi
-        warn "Extras skipped — install later: uv tool install \"phantom-audio[all]\" --python 3.13 --force"
     fi
 
     # ── Verify install ──────────────────────────────────────
@@ -148,16 +247,14 @@ main() {
     export PATH="$HOME/.local/bin:$PATH"
     command -v phantom >/dev/null 2>&1 || err "phantom not found on PATH. Add ~/.local/bin to your PATH."
 
-    INSTALLED_VERSION=$(phantom --version 2>/dev/null || echo "unknown")
+    INSTALLED_VERSION=$(uv tool list 2>/dev/null | grep phantom-audio | head -1 | sed 's/phantom-audio //' | sed 's/ .*//' || echo "unknown")
     ok "Phantom ${INSTALLED_VERSION}"
 
     # ── Step 4: Configure MCP server (CR-01: check exit code properly) ──
-    printf "\n"
-    printf "  %sConfiguring%s\n" "$BOLD" "$RESET"
-    printf "\n"
+    printf "\n  %sConfiguring%s\n\n" "$BOLD" "$RESET"
 
     run_with_spinner "MCP server" \
-        bash -c "set -o pipefail; cd \"$HOME\" && phantom setup --skip-plugin --skip-reaper 2>&1 | grep -v 'DeprecationWarning\|AuthlibDeprecation\|scipy.ndimage\|from authlib\|from scipy\|It will be compatible' > /dev/null" \
+        bash -c 'set -o pipefail; cd "$HOME" && phantom setup --skip-plugin --skip-reaper 2>&1 | grep -v "DeprecationWarning\|AuthlibDeprecation\|scipy.ndimage\|from authlib\|from scipy\|It will be compatible" > /dev/null' \
         || warn "MCP setup had issues — run 'phantom setup' to retry"
 
     # ── Step 5: Reaper bridge ───────────────────────────────
@@ -169,7 +266,7 @@ main() {
 
     if [ -d "$REAPER_SCRIPTS" ]; then
         run_with_spinner "Reaper bridge" \
-            bash -c "set -o pipefail; phantom setup-reaper 2>&1 | grep -v 'DeprecationWarning\|AuthlibDeprecation\|scipy.ndimage\|from authlib\|from scipy\|It will be compatible' > /dev/null" \
+            bash -c 'set -o pipefail; phantom setup-reaper 2>&1 | grep -v "DeprecationWarning\|AuthlibDeprecation\|scipy.ndimage\|from authlib\|from scipy\|It will be compatible" > /dev/null' \
             || warn "Reaper setup had issues — run 'phantom setup-reaper' to retry"
     else
         info "Reaper not detected — skipping bridge"
@@ -213,8 +310,7 @@ main() {
                     printf "    source ~/.bashrc\n"
                     ;;
                 fish)
-                    # WR-02: use fish syntax, not bash
-                    printf "    set -Ux fish_user_paths %s \$fish_user_paths\n" "$PHANTOM_DIR"
+                    printf "    fish_add_path %s\n" "$PHANTOM_DIR"
                     ;;
                 *)
                     printf "    echo 'export PATH=\"%s:\$PATH\"' >> %s/.profile\n" "$PHANTOM_DIR" "\$HOME"
