@@ -47,7 +47,7 @@ uvx phantom-audio analyze your-track.wav
 Or install it:
 
 ```bash
-pip install phantom-audio    # or: pip3 install phantom-audio
+uv tool install phantom-audio    # or: pip install phantom-audio
 phantom analyze examples/demo.wav
 ```
 
@@ -129,19 +129,19 @@ Then talk to Claude:
 **Core** (analysis + MCP server + CLI):
 
 ```bash
-pip install phantom-audio
+uv tool install phantom-audio
 ```
 
-> On macOS, use `pip3` if `pip` isn't found. Or use `uv`: `uv pip install phantom-audio`
+> Don't have `uv`? Install it with `curl -LsSf https://astral.sh/uv/install.sh | sh` or `brew install uv`. You can also use `pip install phantom-audio` if you have pip set up.
 
 **Optional extras:**
 
 ```bash
 # Stem separation (adds PyTorch ~2.5GB)
-pip install "phantom-audio[separation]"
+uv tool install "phantom-audio[separation]"
 
 # Reference matching (GPLv3 -- see License section)
-pip install "phantom-audio[matching]"
+uv tool install "phantom-audio[matching]"
 
 # Audio processing engine
 pip install "phantom-audio[processing]"
