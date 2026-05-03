@@ -86,39 +86,42 @@ def _setup_plugin(console, json_mode: bool) -> dict:
             "message": "claude CLI not found",
         }
 
-    plugin_dir = Path(__file__).resolve().parent.parent.parent.parent / "plugin"
-    if not (plugin_dir / ".claude-plugin" / "plugin.json").exists():
-        if not json_mode:
-            console.print(
-                f"  {WARN} Plugin not bundled in this install. "
-                "Install from the repo: [cyan]claude plugin install "
-                "https://github.com/fadelabs/phantom[/cyan]"
-            )
-        return {
-            "step": "plugin",
-            "status": "skipped",
-            "message": "plugin not bundled — install from GitHub repo",
-        }
+    _MARKETPLACE_URL = "https://github.com/fadelabs/phantom.git"
+    _PLUGIN_NAME = "phantom"
 
     try:
+        # Add marketplace if not already added
         proc = subprocess.run(
-            ["claude", "plugin", "install", str(plugin_dir)],
+            ["claude", "plugin", "marketplace", "add", _MARKETPLACE_URL],
             capture_output=True,
             text=True,
-            timeout=30,
+            timeout=60,
+        )
+        # Ignore errors if already added
+
+        # Install plugin
+        proc = subprocess.run(
+            ["claude", "plugin", "install", _PLUGIN_NAME],
+            capture_output=True,
+            text=True,
+            timeout=60,
         )
         if proc.returncode == 0:
             if not json_mode:
-                console.print(f"  {OK} Claude Code plugin registered")
+                console.print(f"  {OK} Claude Code plugin installed")
             return {"step": "plugin", "status": "configured"}
-        else:
-            msg = proc.stderr.strip()[:200] if proc.stderr else "unknown error"
+        elif "already installed" in (proc.stdout + proc.stderr).lower():
             if not json_mode:
-                console.print(f"  {WARN} Plugin registration failed: {msg}")
+                console.print(f"  {SKIP} Claude Code plugin already installed")
+            return {"step": "plugin", "status": "skipped"}
+        else:
+            msg = (proc.stderr or proc.stdout).strip()[:200] or "unknown error"
+            if not json_mode:
+                console.print(f"  {WARN} Plugin install failed: {msg}")
             return {"step": "plugin", "status": "error", "message": msg}
     except (subprocess.TimeoutExpired, OSError) as e:
         if not json_mode:
-            console.print(f"  {WARN} Plugin registration failed: {e}")
+            console.print(f"  {WARN} Plugin install failed: {e}")
         return {"step": "plugin", "status": "error", "message": str(e)}
 
 
@@ -132,11 +135,15 @@ def _setup_reaper(console, json_mode: bool) -> dict:
             console.print(f"  {SKIP} Reaper not detected — skipped")
         return {"step": "reaper", "status": "skipped", "message": "Reaper not detected"}
 
+    import io
+    import contextlib
+
     try:
         from phantom.cli.setup_reaper import setup_reaper as _run_reaper_setup
 
         ctx = click.Context(_run_reaper_setup, info_name="setup-reaper")
-        ctx.invoke(_run_reaper_setup, json_output=True)
+        with contextlib.redirect_stdout(io.StringIO()):
+            ctx.invoke(_run_reaper_setup, json_output=True)
         if not json_mode:
             console.print(f"  {OK} Reaper bridge configured")
         return {"step": "reaper", "status": "configured"}
