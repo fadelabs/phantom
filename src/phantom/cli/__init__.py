@@ -25,7 +25,35 @@ def cli(ctx: click.Context) -> None:
     Analyze, compare, separate, and render audio files
     with professional terminal output.
     """
-    if ctx.invoked_subcommand not in (None, "version", "update"):
+    # Auto-setup on first run (skip for setup/uninstall/version/update)
+    if ctx.invoked_subcommand not in ("setup", "uninstall", "version", "update"):
+        try:
+            import json
+            from pathlib import Path
+
+            mcp_home = Path.home() / ".mcp.json"
+            mcp_cwd = Path.cwd() / ".mcp.json"
+            phantom_configured = False
+            for mcp_path in (mcp_home, mcp_cwd):
+                if mcp_path.exists():
+                    data = json.loads(mcp_path.read_text())
+                    if "phantom" in data.get("mcpServers", {}):
+                        phantom_configured = True
+                        break
+            if not phantom_configured:
+                click.echo(
+                    click.style(
+                        "First run detected — running phantom setup...",
+                        bold=True,
+                    ),
+                    err=True,
+                )
+                ctx.invoke(cli.commands["setup"])
+        except Exception:
+            pass
+
+    # Check for updates
+    if ctx.invoked_subcommand not in (None, "version", "update", "setup", "uninstall"):
         try:
             from phantom.cli.update import _parse_version, check_for_update
 

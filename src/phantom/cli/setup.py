@@ -6,6 +6,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import rich_click as click
@@ -214,23 +215,63 @@ def setup(json_output: bool, skip_reaper: bool, skip_plugin: bool) -> None:
         output_json({"steps": results})
         return
 
-    # 4. Run doctor
+    # 4. Check for optional extras
     console.print()
-    from phantom.cli.doctor import _collect_results
+    extras = {
+        "separation": ("Stem separation (Demucs + PyTorch)", "~2.5GB download"),
+        "matching": ("Reference matching", "GPLv3 license"),
+        "processing": ("Audio processing engine (Pedalboard)", ""),
+    }
+    missing_extras = []
+    for extra, (label, note) in extras.items():
+        try:
+            if extra == "separation":
+                import demucs  # noqa: F401
+            elif extra == "matching":
+                import matchering  # noqa: F401
+            elif extra == "processing":
+                import pedalboard  # noqa: F401
+        except ImportError:
+            suffix = f" ({note})" if note else ""
+            missing_extras.append((extra, f"{label}{suffix}"))
 
-    doctor_results = _collect_results()
-    ok = doctor_results.get("ok", False)
-    if ok:
-        console.print(
-            Panel(
-                "[bold green]Setup complete. Run phantom doctor for details.[/bold green]",
-                border_style="green",
-            )
+    if missing_extras:
+        console.print("[bold]Optional extras not installed:[/bold]")
+        for extra, label in missing_extras:
+            console.print(f"  [dim]•[/dim] {label}")
+        console.print()
+        if sys.stdin.isatty() and click.confirm("Install optional extras now?", default=False):
+            # Map extras to their actual package names
+            extra_packages = {
+                "separation": "demucs",
+                "matching": "matchering",
+                "processing": "pedalboard",
+            }
+            with_args = []
+            for extra, _ in missing_extras:
+                pkg = extra_packages.get(extra, extra)
+                with_args.extend(["--with", pkg])
+
+            with Status("Installing extras (this may take a few minutes)...", console=console):
+                proc = subprocess.run(
+                    ["uv", "tool", "install", "phantom-audio",
+                     "--python", "3.13", "--force"] + with_args,
+                    capture_output=True,
+                    text=True,
+                    timeout=900,
+                )
+            if proc.returncode == 0:
+                for _, label in missing_extras:
+                    console.print(f"  {OK} {label}")
+            else:
+                pkgs = " ".join(f"--with {extra_packages.get(e, e)}" for e, _ in missing_extras)
+                console.print(f"  {WARN} Install failed. Run manually:")
+                console.print(f"    uv tool install phantom-audio --python 3.13 {pkgs}")
+
+    console.print()
+    console.print(
+        Panel(
+            "[bold green]Setup complete.[/bold green]",
+            border_style="green",
         )
-    else:
-        console.print(
-            Panel(
-                "[bold yellow]Setup complete with warnings. Run phantom doctor for details.[/bold yellow]",
-                border_style="yellow",
-            )
-        )
+    )

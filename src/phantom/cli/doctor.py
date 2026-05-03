@@ -234,7 +234,7 @@ def doctor(json_output: bool) -> None:
         console.print(
             Panel(
                 f"[bold red]Missing core dependencies:[/bold red] {', '.join(failed)}\n\n"
-                "Install with: [green]pip install phantom-audio[/green]",
+                "Install with: [green]uv tool install phantom-audio --python 3.13[/green]",
                 title="Action Required",
                 border_style="red",
             )

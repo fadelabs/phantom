@@ -40,13 +40,13 @@ class PathSecurityError(PhantomError):
 class DependencyMissingError(PhantomError):
     """Raised when an optional dependency is not installed.
 
-    Message includes a copy-pasteable pip install command (per D-10).
+    Message includes a copy-pasteable install command.
     """
 
     def __init__(self, package: str, extra: str, detail: str = "") -> None:
         self.package = package
         self.extra = extra
-        msg = f'{package} is not installed. Install it with: pip install "phantom-audio[{extra}]"'
+        msg = f'{package} is not installed. Install it with: uv tool install "phantom-audio[{extra}]" --python 3.13'
         if detail:
             msg += f"\n{detail}"
         super().__init__(msg)

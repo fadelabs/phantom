@@ -688,7 +688,7 @@ class TestMatchToReference:
 
         with pytest.raises(DependencyMissingError) as exc_info:
             match_to_reference("a.wav", "b.wav", "c.wav")
-        assert 'pip install "phantom-audio[matching]"' in str(exc_info.value)
+        assert 'uv tool install "phantom-audio[matching]"' in str(exc_info.value)
 
     def test_missing_target_raises_file_not_found(self, tmp_path, wav_file_factory):
         """AudioLoadError when target_path does not exist."""

@@ -47,11 +47,20 @@ uvx phantom-audio analyze your-track.wav
 Or install it:
 
 ```bash
-uv tool install phantom-audio --python 3.13
-phantom analyze your-track.wav
+curl -sSL https://raw.githubusercontent.com/fadelabs/phantom/main/install.sh | bash
 ```
 
-Point it at any WAV file. You'll get a full spectral, loudness, dynamics, stereo, phase, and problem analysis in about a second.
+**Windows (PowerShell):**
+```powershell
+irm https://raw.githubusercontent.com/fadelabs/phantom/main/install.ps1 | iex
+```
+
+The installer handles everything — installs uv and Python if needed, configures the MCP server, Claude Code plugin, and Reaper bridge.
+
+Point it at any WAV file:
+```bash
+phantom analyze your-track.wav
+```
 
 To use with Claude, add to your MCP config (`.mcp.json`):
 
@@ -136,26 +145,27 @@ uv tool install phantom-audio --python 3.13
 >
 > Don't have `uv`? Install it with `curl -LsSf https://astral.sh/uv/install.sh | sh` or `brew install uv`.
 
-Then run setup to configure the MCP server, Claude Code plugin, and Reaper bridge:
+Setup runs automatically on first use. To re-run manually: `phantom setup`
+
+**With all extras** (recommended — install everything upfront so stem separation, reference matching, and audio processing are available immediately):
 
 ```bash
-phantom setup
+uv tool install "phantom-audio[all]" --python 3.13
 ```
 
-**Optional extras:**
+> **Why install extras upfront?** `uv tool install` creates an isolated Python environment. If you install extras later, you'll need to reinstall with `--force` to add them to the same environment. Installing everything at once avoids this. Stem separation (Demucs) adds ~2.5GB for PyTorch.
+
+**Or pick only what you need:**
 
 ```bash
-# Stem separation (adds PyTorch ~2.5GB)
+# Stem separation only (Demucs + PyTorch ~2.5GB)
 uv tool install "phantom-audio[separation]" --python 3.13
 
-# Reference matching (GPLv3 -- see License section)
+# Reference matching only (GPLv3 -- see License section)
 uv tool install "phantom-audio[matching]" --python 3.13
 
-# Audio processing engine
+# Audio processing engine only
 uv tool install "phantom-audio[processing]" --python 3.13
-
-# Everything
-uv tool install "phantom-audio[all]" --python 3.13
 ```
 
 **Using uv** (recommended):
