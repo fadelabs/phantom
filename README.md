@@ -47,7 +47,7 @@ uvx phantom-audio analyze your-track.wav
 Or install it:
 
 ```bash
-pip install phantom-audio
+pip install phantom-audio    # or: pip3 install phantom-audio
 phantom analyze examples/demo.wav
 ```
 
@@ -131,6 +131,8 @@ Then talk to Claude:
 ```bash
 pip install phantom-audio
 ```
+
+> On macOS, use `pip3` if `pip` isn't found. Or use `uv`: `uv pip install phantom-audio`
 
 **Optional extras:**
 
