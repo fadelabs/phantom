@@ -85,7 +85,7 @@ def _configure_startup_script(scripts_dir: Path, console, json_output: bool) -> 
 
 def _merge_mcp_config(mcp_config: dict, console, yes: bool) -> str | None:
     """Merge reaper MCP config into .mcp.json. Returns path written to."""
-    candidates = [Path.cwd() / ".mcp.json", Path.home() / ".mcp.json"]
+    candidates = [Path.home() / ".mcp.json", Path.cwd() / ".mcp.json"]
     target = None
 
     for candidate in candidates:
@@ -249,9 +249,7 @@ def setup_reaper(install_dir: str | None, json_output: bool) -> None:
         }
     }
 
-    config_written_to = None
-    if not json_output:
-        config_written_to = _merge_mcp_config(mcp_config, console, yes=True)
+    config_written_to = _merge_mcp_config(mcp_config, console, yes=True)
 
     # --- Output ---
     if json_output:

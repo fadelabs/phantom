@@ -25,7 +25,7 @@ _PHANTOM_MCP_ENTRY = {
 
 
 def _mcp_candidates() -> list[Path]:
-    return [Path.cwd() / ".mcp.json", Path.home() / ".mcp.json"]
+    return [Path.home() / ".mcp.json", Path.cwd() / ".mcp.json"]
 
 
 def _setup_mcp_config(console, json_mode: bool) -> dict:
