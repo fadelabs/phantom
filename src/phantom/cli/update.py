@@ -6,7 +6,6 @@ import importlib.metadata
 import json
 import platform
 import subprocess
-import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.error import URLError
@@ -22,7 +21,7 @@ GITHUB_REPO = "fadelabs/phantom"
 RELEASES_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 TAGS_URL = f"https://api.github.com/repos/{GITHUB_REPO}/tags?per_page=1"
 RELEASES_PAGE = f"https://github.com/{GITHUB_REPO}/releases"
-PIP_INSTALL_URL = f"git+https://github.com/{GITHUB_REPO}"
+UV_INSTALL_PACKAGE = "phantom-audio"
 CACHE_DIR = Path("~/.phantom").expanduser()
 CACHE_FILE = CACHE_DIR / "update-check.json"
 CACHE_TTL_HOURS = 24
@@ -224,7 +223,7 @@ def update(yes: bool) -> None:
             Panel(
                 "You have an editable (development) install.\n"
                 "Update with:\n\n"
-                "  [green]git pull && pip install -e .[/green]",
+                "  [green]git pull && uv pip install -e .[/green]",
                 title="Development Install",
                 border_style="yellow",
             )
@@ -239,10 +238,33 @@ def update(yes: bool) -> None:
     console.print(f"[dim]Installing phantom-audio {latest}...[/dim]")
 
     proc = subprocess.run(
-        [sys.executable, "-m", "pip", "install", "--upgrade", PIP_INSTALL_URL],
+        ["uv", "tool", "upgrade", UV_INSTALL_PACKAGE],
         capture_output=True,
         text=True,
     )
+
+    if proc.returncode != 0 and "no such command" in proc.stderr.lower():
+        # Detect current extras so reinstall preserves them
+        installed_pkg = UV_INSTALL_PACKAGE
+        try:
+            list_proc = subprocess.run(
+                ["uv", "tool", "list", "--show-paths"],
+                capture_output=True,
+                text=True,
+            )
+            for line in list_proc.stdout.splitlines():
+                if "phantom-audio" in line and "[" in line:
+                    start = line.index("[")
+                    end = line.index("]") + 1
+                    installed_pkg = f"phantom-audio{line[start:end]}"
+                    break
+        except Exception:
+            pass
+        proc = subprocess.run(
+            ["uv", "tool", "install", "--force", installed_pkg],
+            capture_output=True,
+            text=True,
+        )
 
     if proc.returncode == 0:
         _clear_cache()
@@ -257,7 +279,7 @@ def update(yes: bool) -> None:
     else:
         console.print(
             Panel(
-                f"pip exited with code {proc.returncode}\n\n"
+                f"uv exited with code {proc.returncode}\n\n"
                 f"[dim]{proc.stderr.strip()[:500]}[/dim]",
                 title="Update Failed",
                 border_style="red",

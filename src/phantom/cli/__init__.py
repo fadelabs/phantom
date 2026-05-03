@@ -26,7 +26,7 @@ def cli(ctx: click.Context) -> None:
     with professional terminal output.
     """
     # Auto-setup on first run (skip for setup/uninstall/version/update)
-    if ctx.invoked_subcommand not in ("setup", "uninstall", "version", "update"):
+    if ctx.invoked_subcommand not in (None, "setup", "uninstall", "version", "update"):
         try:
             import json
             from pathlib import Path

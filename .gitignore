@@ -21,6 +21,7 @@ Thumbs.db
 
 # Claude local
 .claude.local.md
+REVIEW.md
 
 # Environment
 .env

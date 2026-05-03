@@ -7,7 +7,6 @@ import os
 import platform
 import shutil
 import subprocess
-import sys
 from pathlib import Path
 
 import rich_click as click
@@ -65,9 +64,7 @@ def _find_artifacts() -> dict:
             artifacts["reaper_bridge_data"] = str(bridge_data)
 
         lua_files = [
-            f
-            for f in scripts_dir.glob("*.lua")
-            if "mcp" in f.name.lower() or "reaper_mcp" in f.name.lower()
+            f for f in scripts_dir.glob("*.lua") if f.name == "reaper_mcp_bridge.lua"
         ]
         if lua_files:
             artifacts["reaper_lua_files"] = [str(f) for f in lua_files]
@@ -144,7 +141,7 @@ def uninstall(yes: bool, keep_config: bool) -> None:
     """Remove Phantom and all its artifacts.
 
     Removes ~/.phantom directory, MCP config entries, Reaper bridge
-    files, startup hooks, and the pip package itself.
+    files, startup hooks, and the uv package itself.
     """
     console = get_console()
     with Status("Scanning for Phantom artifacts...", console=console):
@@ -174,12 +171,12 @@ def uninstall(yes: bool, keep_config: bool) -> None:
     if "reaper_startup_hook" in artifacts:
         table.add_row("Reaper auto-start hook", artifacts["reaper_startup_hook"])
 
-    table.add_row("pip package", "phantom-audio")
+    table.add_row("uv package", "phantom-audio")
 
     console.print(table)
 
     if not artifacts and not yes:
-        console.print("\n[dim]No Phantom artifacts found beyond the pip package.[/dim]")
+        console.print("\n[dim]No Phantom artifacts found beyond the uv package.[/dim]")
 
     if not yes:
         console.print()

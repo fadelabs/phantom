@@ -136,7 +136,7 @@ def render(
         console.print(
             Panel(
                 "[bold]ffmpeg-progress-yield[/bold] is not available.\n\n"
-                "Install with: [green]pip install ffmpeg-progress-yield[/green]",
+                "Install with: [green]uv pip install ffmpeg-progress-yield[/green]",
                 title="Missing Dependency",
                 border_style="yellow",
             )

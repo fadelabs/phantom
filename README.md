@@ -55,7 +55,7 @@ curl -sSL https://raw.githubusercontent.com/fadelabs/phantom/main/install.sh | b
 irm https://raw.githubusercontent.com/fadelabs/phantom/main/install.ps1 | iex
 ```
 
-The installer handles everything — installs uv and Python if needed, configures the MCP server, Claude Code plugin, and Reaper bridge.
+The installer handles everything — installs uv and Python if needed, lets you choose which extras to install, and configures the MCP server, Claude Code plugin, and Reaper bridge.
 
 Point it at any WAV file:
 ```bash
@@ -147,7 +147,7 @@ uv tool install phantom-audio --python 3.13
 
 Setup runs automatically on first use. To re-run manually: `phantom setup`
 
-**With all extras** (recommended — install everything upfront so stem separation, reference matching, and audio processing are available immediately):
+**With all extras** (recommended — install everything upfront so stem separation and reference matching are available immediately):
 
 ```bash
 uv tool install "phantom-audio[all]" --python 3.13
@@ -163,9 +163,6 @@ uv tool install "phantom-audio[separation]" --python 3.13
 
 # Reference matching only (GPLv3 -- see License section)
 uv tool install "phantom-audio[matching]" --python 3.13
-
-# Audio processing engine only
-uv tool install "phantom-audio[processing]" --python 3.13
 ```
 
 **Using uv** (recommended):

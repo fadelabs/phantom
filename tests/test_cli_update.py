@@ -303,7 +303,7 @@ class TestUpdateCommand:
             assert "editable" in result.output.lower()
             assert "git pull" in result.output
 
-    def test_runs_pip_on_confirm(self, runner, cache_dir):
+    def test_runs_uv_on_confirm(self, runner, cache_dir):
         mock_proc = MagicMock()
         mock_proc.returncode = 0
         with (
@@ -321,7 +321,7 @@ class TestUpdateCommand:
             assert "Success" in result.output or "Updated" in result.output
             mock_run.assert_called_once()
             cmd = mock_run.call_args[0][0]
-            assert "pip" in cmd[1] or cmd[2] == "pip"
+            assert "uv" in cmd[0] or cmd[0] == "uv"
 
     def test_cancelled_by_user(self, runner, cache_dir):
         with (
@@ -335,10 +335,10 @@ class TestUpdateCommand:
             assert result.exit_code == 0
             assert "cancelled" in result.output.lower()
 
-    def test_pip_failure(self, runner, cache_dir):
+    def test_uv_failure(self, runner, cache_dir):
         mock_proc = MagicMock()
         mock_proc.returncode = 1
-        mock_proc.stderr = "ERROR: some pip error"
+        mock_proc.stderr = "ERROR: some uv error"
         with (
             patch(
                 "phantom.cli.update.check_for_update",
