@@ -240,7 +240,9 @@ def setup(json_output: bool, skip_reaper: bool, skip_plugin: bool) -> None:
         for extra, label in missing_extras:
             console.print(f"  [dim]•[/dim] {label}")
         console.print()
-        if sys.stdin.isatty() and click.confirm("Install optional extras now?", default=False):
+        if sys.stdin.isatty() and click.confirm(
+            "Install optional extras now?", default=False
+        ):
             # Map extras to their actual package names
             extra_packages = {
                 "separation": "demucs",
@@ -252,10 +254,20 @@ def setup(json_output: bool, skip_reaper: bool, skip_plugin: bool) -> None:
                 pkg = extra_packages.get(extra, extra)
                 with_args.extend(["--with", pkg])
 
-            with Status("Installing extras (this may take a few minutes)...", console=console):
+            with Status(
+                "Installing extras (this may take a few minutes)...", console=console
+            ):
                 proc = subprocess.run(
-                    ["uv", "tool", "install", "phantom-audio",
-                     "--python", "3.13", "--force"] + with_args,
+                    [
+                        "uv",
+                        "tool",
+                        "install",
+                        "phantom-audio",
+                        "--python",
+                        "3.13",
+                        "--force",
+                    ]
+                    + with_args,
                     capture_output=True,
                     text=True,
                     timeout=900,
@@ -264,7 +276,9 @@ def setup(json_output: bool, skip_reaper: bool, skip_plugin: bool) -> None:
                 for _, label in missing_extras:
                     console.print(f"  {OK} {label}")
             else:
-                pkgs = " ".join(f"--with {extra_packages.get(e, e)}" for e, _ in missing_extras)
+                pkgs = " ".join(
+                    f"--with {extra_packages.get(e, e)}" for e, _ in missing_extras
+                )
                 console.print(f"  {WARN} Install failed. Run manually:")
                 console.print(f"    uv tool install phantom-audio --python 3.13 {pkgs}")
 
