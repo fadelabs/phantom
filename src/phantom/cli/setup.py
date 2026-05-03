@@ -10,6 +10,7 @@ from pathlib import Path
 
 import rich_click as click
 from rich.panel import Panel
+from rich.status import Status
 
 from phantom.cli._formatting import get_console, output_json
 
@@ -168,7 +169,11 @@ def setup(json_output: bool, skip_reaper: bool, skip_plugin: bool) -> None:
         console.print(Panel("[bold]Setting up Phantom[/bold]", border_style="cyan"))
 
     # 1. MCP config
-    results.append(_setup_mcp_config(console, json_output))
+    if not json_output:
+        with Status("Configuring MCP server...", console=console):
+            results.append(_setup_mcp_config(console, json_output))
+    else:
+        results.append(_setup_mcp_config(console, json_output))
 
     # 2. Claude Code plugin
     if skip_plugin:
@@ -178,7 +183,11 @@ def setup(json_output: bool, skip_reaper: bool, skip_plugin: bool) -> None:
             {"step": "plugin", "status": "skipped", "message": "--skip-plugin"}
         )
     else:
-        results.append(_setup_plugin(console, json_output))
+        if not json_output:
+            with Status("Registering Claude Code plugin...", console=console):
+                results.append(_setup_plugin(console, json_output))
+        else:
+            results.append(_setup_plugin(console, json_output))
 
     # 3. Reaper
     if skip_reaper:
@@ -188,7 +197,11 @@ def setup(json_output: bool, skip_reaper: bool, skip_plugin: bool) -> None:
             {"step": "reaper", "status": "skipped", "message": "--skip-reaper"}
         )
     else:
-        results.append(_setup_reaper(console, json_output))
+        if not json_output:
+            with Status("Setting up Reaper bridge...", console=console):
+                results.append(_setup_reaper(console, json_output))
+        else:
+            results.append(_setup_reaper(console, json_output))
 
     if json_output:
         output_json({"steps": results})
