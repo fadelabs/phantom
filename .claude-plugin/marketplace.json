@@ -1,0 +1,24 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "phantom",
+  "description": "AI audio engineering skills for Claude Code. Professional mixing, mastering, effects, diagnostics, and session setup backed by Phantom MCP analysis tools.",
+  "owner": {
+    "name": "Fade Labs",
+    "email": "support@fadelabs.com"
+  },
+  "plugins": [
+    {
+      "name": "phantom",
+      "description": "AI audio engineering skills for mixing, mastering, effects, diagnostics, and session setup. Pairs with the Phantom MCP server for audio analysis.",
+      "author": {
+        "name": "Phantom Contributors"
+      },
+      "category": "audio",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/fadelabs/phantom.git",
+        "path": "plugin"
+      }
+    }
+  ]
+}
