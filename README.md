@@ -47,7 +47,7 @@ uvx phantom-audio analyze your-track.wav
 Or install it:
 
 ```bash
-uv tool install phantom-audio    # or: pip install phantom-audio
+uv tool install phantom-audio --python 3.13
 phantom analyze examples/demo.wav
 ```
 
@@ -129,25 +129,27 @@ Then talk to Claude:
 **Core** (analysis + MCP server + CLI):
 
 ```bash
-uv tool install phantom-audio
+uv tool install phantom-audio --python 3.13
 ```
 
-> Don't have `uv`? Install it with `curl -LsSf https://astral.sh/uv/install.sh | sh` or `brew install uv`. You can also use `pip install phantom-audio` if you have pip set up.
+> **Python 3.13 required.** Essentia (the analysis engine) doesn't support Python 3.14+ yet. The `--python 3.13` flag tells uv to use the right version automatically.
+>
+> Don't have `uv`? Install it with `curl -LsSf https://astral.sh/uv/install.sh | sh` or `brew install uv`.
 
 **Optional extras:**
 
 ```bash
 # Stem separation (adds PyTorch ~2.5GB)
-uv tool install "phantom-audio[separation]"
+uv tool install "phantom-audio[separation]" --python 3.13
 
 # Reference matching (GPLv3 -- see License section)
-uv tool install "phantom-audio[matching]"
+uv tool install "phantom-audio[matching]" --python 3.13
 
 # Audio processing engine
-pip install "phantom-audio[processing]"
+uv tool install "phantom-audio[processing]" --python 3.13
 
 # Everything
-pip install "phantom-audio[all]"
+uv tool install "phantom-audio[all]" --python 3.13
 ```
 
 **Using uv** (recommended):
