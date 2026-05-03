@@ -221,7 +221,7 @@ def render_error(exc: Exception, console: Console) -> None:
         console.print(
             Panel(
                 f"[bold]{exc.package}[/bold] is not installed.\n\n"
-                f"Install with: [green]pip install phantom\\[{exc.extra}\\][/green]",
+                f'Install with: [green]uv tool install "phantom-audio\\[{exc.extra}\\]" --python 3.13[/green]',
                 title="Missing Dependency",
                 border_style="yellow",
             )

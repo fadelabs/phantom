@@ -14,6 +14,8 @@ import rich_click as click
 from rich.panel import Panel
 from rich.table import Table
 
+from rich.status import Status
+
 from phantom.cli._formatting import get_console
 
 _PHANTOM_DIR = Path("~/.phantom").expanduser()
@@ -145,7 +147,8 @@ def uninstall(yes: bool, keep_config: bool) -> None:
     files, startup hooks, and the pip package itself.
     """
     console = get_console()
-    artifacts = _find_artifacts()
+    with Status("Scanning for Phantom artifacts...", console=console):
+        artifacts = _find_artifacts()
 
     table = Table(title="Phantom Artifacts Found")
     table.add_column("Item", style="bold")
@@ -211,16 +214,20 @@ def uninstall(yes: bool, keep_config: bool) -> None:
         removed.append("Reaper auto-start hook")
 
     proc = subprocess.run(
-        [sys.executable, "-m", "pip", "uninstall", "phantom-audio", "-y"],
+        ["uv", "tool", "uninstall", "phantom-audio"],
         capture_output=True,
         text=True,
     )
+    uv_output = (proc.stdout + proc.stderr).lower()
 
-    if proc.returncode == 0:
+    if proc.returncode == 0 or "uninstalled" in uv_output:
         removed.append("phantom-audio package")
+    elif "not installed" in uv_output:
+        removed.append("phantom-audio package (already removed)")
     else:
         console.print(
-            f"[yellow]pip uninstall warning: {proc.stderr.strip()[:200]}[/yellow]"
+            "[yellow]Could not uninstall package automatically. "
+            "Run: uv tool uninstall phantom-audio[/yellow]"
         )
 
     console.print(

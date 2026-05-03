@@ -75,7 +75,7 @@ class TestDependencyMissingError:
 
     def test_message_contains_pip_install_command(self):
         err = DependencyMissingError("demucs", "separation")
-        assert 'pip install "phantom-audio[separation]"' in str(err)
+        assert 'uv tool install "phantom-audio[separation]"' in str(err)
 
     def test_detail_appended_to_message(self):
         err = DependencyMissingError(
@@ -83,7 +83,7 @@ class TestDependencyMissingError:
         )
         msg = str(err)
         assert "demucs is not installed" in msg
-        assert 'pip install "phantom-audio[separation]"' in msg
+        assert 'uv tool install "phantom-audio[separation]"' in msg
         assert "Required for stem separation." in msg
 
     def test_caught_by_phantom_error(self):
