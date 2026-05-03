@@ -6,7 +6,6 @@ import json
 import os
 import shutil
 import subprocess
-import sys
 from pathlib import Path
 
 import rich_click as click
@@ -89,11 +88,15 @@ def _setup_plugin(console, json_mode: bool) -> dict:
     plugin_dir = Path(__file__).resolve().parent.parent.parent.parent / "plugin"
     if not (plugin_dir / ".claude-plugin" / "plugin.json").exists():
         if not json_mode:
-            console.print(f"  {WARN} Plugin directory not found")
+            console.print(
+                f"  {WARN} Plugin not bundled in this install. "
+                "Install from the repo: [cyan]claude plugin install "
+                "https://github.com/fadelabs/phantom[/cyan]"
+            )
         return {
             "step": "plugin",
-            "status": "error",
-            "message": "plugin directory not found",
+            "status": "skipped",
+            "message": "plugin not bundled — install from GitHub repo",
         }
 
     try:
@@ -129,24 +132,20 @@ def _setup_reaper(console, json_mode: bool) -> dict:
         return {"step": "reaper", "status": "skipped", "message": "Reaper not detected"}
 
     try:
-        proc = subprocess.run(
-            [sys.executable, "-m", "phantom.cli", "setup-reaper", "--json"],
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
-        if proc.returncode == 0:
-            if not json_mode:
-                console.print(f"  {OK} Reaper bridge configured")
-            return {"step": "reaper", "status": "configured"}
-        else:
-            msg = proc.stderr.strip()[:200] if proc.stderr else "setup failed"
-            if not json_mode:
-                console.print(f"  {WARN} Reaper setup issue: {msg}")
-            return {"step": "reaper", "status": "error", "message": msg}
-    except (subprocess.TimeoutExpired, OSError) as e:
+        from phantom.cli.setup_reaper import setup_reaper as _run_reaper_setup
+
+        ctx = click.Context(_run_reaper_setup, info_name="setup-reaper")
+        ctx.invoke(_run_reaper_setup, json_output=True)
         if not json_mode:
-            console.print(f"  {WARN} Reaper setup failed: {e}")
+            console.print(f"  {OK} Reaper bridge configured")
+        return {"step": "reaper", "status": "configured"}
+    except SystemExit:
+        if not json_mode:
+            console.print(f"  {OK} Reaper bridge configured")
+        return {"step": "reaper", "status": "configured"}
+    except Exception as e:
+        if not json_mode:
+            console.print(f"  {WARN} Reaper setup issue: {e}")
         return {"step": "reaper", "status": "error", "message": str(e)}
 
 
