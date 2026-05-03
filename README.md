@@ -48,10 +48,10 @@ Or install it:
 
 ```bash
 uv tool install phantom-audio --python 3.13
-phantom analyze examples/demo.wav
+phantom analyze your-track.wav
 ```
 
-That runs a full spectral, loudness, dynamics, stereo, phase, and problem analysis. You'll see results in about a second.
+Point it at any WAV file. You'll get a full spectral, loudness, dynamics, stereo, phase, and problem analysis in about a second.
 
 To use with Claude, add to your MCP config (`.mcp.json`):
 
