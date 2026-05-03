@@ -136,6 +136,12 @@ uv tool install phantom-audio --python 3.13
 >
 > Don't have `uv`? Install it with `curl -LsSf https://astral.sh/uv/install.sh | sh` or `brew install uv`.
 
+Then run setup to configure the MCP server, Claude Code plugin, and Reaper bridge:
+
+```bash
+phantom setup
+```
+
 **Optional extras:**
 
 ```bash
