@@ -1,5 +1,4 @@
 # Audio files — managed outside git
-songs/
 *.wav
 *.mp3
 *.flac
@@ -51,4 +50,15 @@ docs/superpowers/
 
 # Skill evaluation workspaces (contain local paths)
 plugin/eval-workspaces/
+
+# Local skill development
+plugin/skills-local/
+
+# Reference materials
 resources/
+
+# autoresearch runs
+.autoresearch/
+
+# Local working files
+.superpowers/
