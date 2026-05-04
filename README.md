@@ -4,6 +4,8 @@
 
 [Documentation](https://fadelab.net/docs/overview?utm_source=github&utm_medium=readme) · [Getting Started](https://fadelab.net/docs/getting-started?utm_source=github&utm_medium=readme) · [Tool Reference](https://fadelab.net/docs/tools-index?utm_source=github&utm_medium=readme) · [Website](https://fadelab.net?utm_source=github&utm_medium=readme)
 
+[![Star](https://img.shields.io/github/stars/fadelabs/phantom?style=social)](https://github.com/fadelabs/phantom) &nbsp; [![Support](https://img.shields.io/badge/Buy%20me%20a%20coffee-PayPal-blue?logo=paypal)](https://paypal.me/inkbox)
+
 <!-- TODO: Add terminal screenshot of `phantom analyze` output -->
 
 Phantom gives Claude ears. It's an audio engineering system that combines measurement tools, professional mixing and mastering methodology, genre reference profiles, and Reaper DAW integration. Everything works through Claude Code.
