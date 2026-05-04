@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "phantom-audio"
-version = "1.2.0"
+version = "1.2.1"
 description = "AI audio engineering system -- makes Claude a professional audio engineer"
 readme = "README.md"
 license = "AGPL-3.0-or-later"
