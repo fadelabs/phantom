@@ -31,7 +31,8 @@ main() {
     fail() { printf "  %s✗%s %s\n" "$RED" "$RESET" "$1" >&2; }
     info() { printf "  %s▸%s %s\n" "$CYAN" "$RESET" "$1"; }
     warn() { printf "  %s!%s %s\n" "$YELLOW" "$RESET" "$1"; }
-    err()  { fail "$1"; exit 1; }
+    _ping() { :; }
+    err()  { fail "$1"; _ping "install_failed" 2>/dev/null; exit 1; }
 
     # ── Spinner (CR-03: tracks PID for cleanup, WR-04: ASCII fallback) ──
     run_with_spinner() {
@@ -104,6 +105,13 @@ main() {
     esac
 
     ok "Detected ${PLATFORM} ${ARCH_LABEL}"
+
+    # ── Telemetry (opt-out via PHANTOM_NO_TELEMETRY=1) ─────
+    _ping() {
+        if [ "${PHANTOM_NO_TELEMETRY:-0}" = "1" ]; then return; fi
+        curl -sfL "https://fadelab.net/api/ping?event=$1&os=${PLATFORM}&arch=${ARCH_LABEL}&version=${2:-unknown}&extras=${INSTALL_EXTRAS:-none}" > /dev/null 2>&1 &
+    }
+    _ping "install_started"
 
     # ── Step 2: Check/install uv ────────────────────────────
     if command -v uv >/dev/null 2>&1; then
@@ -248,6 +256,7 @@ main() {
     command -v phantom >/dev/null 2>&1 || err "phantom not found on PATH. Add ~/.local/bin to your PATH."
 
     INSTALLED_VERSION=$(uv tool list 2>/dev/null | grep phantom-audio | head -1 | sed 's/phantom-audio //' | sed 's/ .*//' || echo "unknown")
+    _ping "install_complete" "$INSTALLED_VERSION"
     ok "Phantom ${INSTALLED_VERSION}"
 
     # ── Step 4: Configure MCP server (CR-01: check exit code properly) ──
