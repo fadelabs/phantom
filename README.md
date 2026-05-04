@@ -2,6 +2,8 @@
 
 > Makes Claude a professional audio engineer.
 
+[Documentation](https://fadelab.net/docs/overview?utm_source=github&utm_medium=readme) · [Getting Started](https://fadelab.net/docs/getting-started?utm_source=github&utm_medium=readme) · [Tool Reference](https://fadelab.net/docs/tools-index?utm_source=github&utm_medium=readme) · [Website](https://fadelab.net?utm_source=github&utm_medium=readme)
+
 <!-- TODO: Add terminal screenshot of `phantom analyze` output -->
 
 Phantom gives Claude ears. It's an audio engineering system that combines measurement tools, professional mixing and mastering methodology, genre reference profiles, and Reaper DAW integration. Everything works through Claude Code.
@@ -47,7 +49,7 @@ uvx phantom-audio analyze your-track.wav
 Or install it:
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/fadelabs/phantom/main/install.sh | bash
+curl -sSL https://fadelab.net/install | bash
 ```
 
 **Windows (PowerShell):**
@@ -286,7 +288,7 @@ Phantom is licensed under [AGPL-3.0](LICENSE).
 - If you distribute a modified version, same thing. Publish the source.
 - Using Phantom unmodified as a tool in your workflow does not trigger this
 
-**Want to use Phantom in a proprietary product?** Commercial licensing is available. Contact hello@leesae.nz.
+**Want to use Phantom in a proprietary product?** [Commercial licensing](https://fadelab.net?utm_source=github&utm_medium=readme#footer) is available. Contact hello@fadelab.net.
 
 **Patent Notice:** Phantom's weighted frequency masking analysis is patent pending (US Provisional Application 64/055,566). The AGPL-3.0 license includes an automatic patent grant — open source users are covered.
 
