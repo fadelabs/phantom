@@ -601,17 +601,23 @@ def match_to_reference(
             f"Reference file not found: {os.path.basename(reference_path)}"
         )
 
-    # Atomic existence check: lock file prevents concurrent writes to same output
-    lock_path = output_path + ".lock"
-    try:
-        lock_fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-    except FileExistsError:
-        raise AnalysisError(
-            f"Output path is locked by another process: {os.path.basename(output_path)}. "
-            "Try again shortly or choose a different output path."
-        )
+    # Advisory lock prevents concurrent writes to the same output path.
+    # Uses fcntl.flock which auto-releases on process crash (unlike O_EXCL
+    # lock files which leave stale .lock files behind).
+    import fcntl
 
+    lock_path = output_path + ".lock"
+    lock_file = open(lock_path, "w")  # noqa: SIM115
     try:
+        try:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            lock_file.close()
+            raise AnalysisError(
+                f"Output path is locked by another process: {os.path.basename(output_path)}. "
+                "Try again shortly or choose a different output path."
+            )
+
         if os.path.exists(output_path):
             raise AnalysisError(
                 f"Output file already exists: {os.path.basename(output_path)}. "
@@ -664,10 +670,7 @@ def match_to_reference(
         return MatchResult(output_path=output_path, adjustments=adjustments)
 
     finally:
-        try:
-            os.close(lock_fd)
-        except OSError:
-            pass
+        lock_file.close()
         try:
             os.unlink(lock_path)
         except OSError:
