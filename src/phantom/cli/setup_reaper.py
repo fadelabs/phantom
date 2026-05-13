@@ -288,6 +288,7 @@ def setup_reaper(install_dir: str | None, json_output: bool, yes: bool) -> None:
         _run_step(
             ["uv", "sync", "--directory", str(install_path)],
             "Dependency install",
+            timeout=120,  # 2-minute timeout for dependency install
         )
 
     # --- Copy Lua bridge to Reaper ---
