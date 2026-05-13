@@ -40,6 +40,10 @@ from phantom.comparison import compare_to_profile as _compare_to_profile
 from phantom.comparison import compare_to_reference as _compare_to_reference
 from phantom.comparison import match_to_reference as _match_to_reference
 from phantom.separation import separate_stems as _separate_stems
+from phantom.processing import (
+    fix_audio as _fix_audio,
+    apply_processing as _apply_processing,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -130,9 +134,7 @@ def _phantom_tool(fn):
             sig = inspect.signature(fn)
             bound = sig.bind(*args, **kwargs)
             bound.apply_defaults()
-            context = {
-                k: v for k, v in bound.arguments.items() if isinstance(v, str)
-            }
+            context = {k: v for k, v in bound.arguments.items() if isinstance(v, str)}
             try:
                 return await fn(*args, **kwargs)
             except PhantomError as e:
@@ -288,6 +290,35 @@ def separate_stems(file_path: str, output_dir: str) -> dict:
 def match_to_reference(target_path: str, reference_path: str, output_path: str) -> dict:
     """Match target audio to reference spectral/loudness/width characteristics via Matchering. Requires phantom-audio[matching]."""
     return _match_to_reference(target_path, reference_path, output_path).model_dump()
+
+
+# ---------------------------------------------------------------------------
+# Processing tools (Tools 18-19)
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool
+@_phantom_tool
+def fix_audio(
+    file_path: str,
+    problems: list[str] | None = None,
+    output_path: str | None = None,
+) -> dict:
+    """Fix detected audio problems using corrective processing. Requires phantom-audio[processing]."""
+    return _fix_audio(
+        file_path, problems=problems, output_path=output_path
+    ).model_dump()
+
+
+@mcp.tool
+@_phantom_tool
+def apply_processing(
+    file_path: str,
+    operations: list[dict],
+    output_path: str,
+) -> dict:
+    """Apply custom audio processing chain. Requires phantom-audio[processing]."""
+    return _apply_processing(file_path, operations, output_path).model_dump()
 
 
 # ---------------------------------------------------------------------------

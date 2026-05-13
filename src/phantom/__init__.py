@@ -58,6 +58,7 @@ from phantom.comparison import (
     MatchResult,
 )
 from phantom.separation import separate_stems, SeparationResult
+from phantom.processing import fix_audio, apply_processing, FixResult, FixComparison
 
 __all__ = [
     "AudioData",
@@ -115,4 +116,9 @@ __all__ = [
     "ReferenceComparisonResult",
     "MatchResult",
     "SeparationResult",
+    # Processing
+    "fix_audio",
+    "apply_processing",
+    "FixResult",
+    "FixComparison",
 ]
