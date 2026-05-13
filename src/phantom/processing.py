@@ -56,7 +56,6 @@ class FixResult(BaseModel):
     regressions: list[FixComparison] = []
 
 
-
 # ---------------------------------------------------------------------------
 # Recipe dataclass
 # ---------------------------------------------------------------------------
@@ -298,8 +297,7 @@ def apply_processing(
             package="Pedalboard",
             extra="processing",
             detail=(
-                "Pedalboard provides audio effects processing for "
-                "corrective fixes."
+                "Pedalboard provides audio effects processing for corrective fixes."
             ),
         )
 
