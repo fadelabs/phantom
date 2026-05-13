@@ -123,6 +123,27 @@ def _phantom_tool(fn):
     import functools
     import inspect
 
+    if inspect.iscoroutinefunction(fn):
+
+        @functools.wraps(fn)
+        async def async_wrapper(*args, **kwargs):
+            sig = inspect.signature(fn)
+            bound = sig.bind(*args, **kwargs)
+            bound.apply_defaults()
+            context = {
+                k: v for k, v in bound.arguments.items() if isinstance(v, str)
+            }
+            try:
+                return await fn(*args, **kwargs)
+            except PhantomError as e:
+                raise _to_tool_error(e, context) from e
+            except ToolError:
+                raise
+            except Exception as e:
+                raise _to_tool_error(e, context) from e
+
+        return async_wrapper
+
     @functools.wraps(fn)
     def wrapper(*args, **kwargs):
         sig = inspect.signature(fn)
