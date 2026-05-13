@@ -16,6 +16,7 @@ from rich.table import Table
 from phantom import __version__
 from phantom._diagnostics import CORE_DEPS, OPTIONAL_DEPS, try_import as _try_import
 from phantom.cli._formatting import get_console, output_json
+from phantom.exceptions import RECOMMENDED_PYTHON
 
 _ENV_VARS = [
     "PHANTOM_AUDIO_DIR",
@@ -234,7 +235,7 @@ def doctor(json_output: bool) -> None:
         console.print(
             Panel(
                 f"[bold red]Missing core dependencies:[/bold red] {', '.join(failed)}\n\n"
-                "Install with: [green]uv tool install phantom-audio --python 3.13[/green]",
+                f"Install with: [green]uv tool install phantom-audio --python {RECOMMENDED_PYTHON}[/green]",
                 title="Action Required",
                 border_style="red",
             )

@@ -15,6 +15,7 @@ import importlib.resources
 import json
 import os
 import sys
+import threading
 from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, ValidationError
@@ -98,6 +99,7 @@ def _json_depth(obj, current: int = 1) -> int:
 
 # mtime-based cache: {resolved_name: (mtime, ReferenceProfile)}
 _profile_cache: dict[str, tuple[float, ReferenceProfile]] = {}
+_profile_cache_lock = threading.Lock()
 
 
 def _get_user_profile_path(name: str) -> Path | None:
@@ -284,14 +286,15 @@ def load_profile(name: str) -> ReferenceProfile:
 
     # mtime-based cache: check if user profile changed since last load
     user_path = _get_user_profile_path(resolved)
-    if user_path and resolved in _profile_cache:
-        cached_mtime, cached_profile = _profile_cache[resolved]
-        try:
-            current_mtime = user_path.stat().st_mtime
-        except OSError:
-            current_mtime = None
-        if current_mtime == cached_mtime:
-            return cached_profile
+    with _profile_cache_lock:
+        if user_path and resolved in _profile_cache:
+            cached_mtime, cached_profile = _profile_cache[resolved]
+            try:
+                current_mtime = user_path.stat().st_mtime
+            except OSError:
+                current_mtime = None
+            if current_mtime == cached_mtime:
+                return cached_profile
 
     # Search order: user directory first, then builtins (D-09)
     user_raw = _load_user_profile(resolved)
@@ -325,11 +328,12 @@ def load_profile(name: str) -> ReferenceProfile:
 
     # Cache with post-load mtime (avoids TOCTOU: if file changed during load,
     # the next call sees a newer mtime and reloads)
-    if user_path:
-        try:
-            post_load_mtime = user_path.stat().st_mtime
-        except OSError:
-            post_load_mtime = 0.0
-        _profile_cache[resolved] = (post_load_mtime, profile)
+    with _profile_cache_lock:
+        if user_path:
+            try:
+                post_load_mtime = user_path.stat().st_mtime
+            except OSError:
+                post_load_mtime = 0.0
+            _profile_cache[resolved] = (post_load_mtime, profile)
 
     return profile
