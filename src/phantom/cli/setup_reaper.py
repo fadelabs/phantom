@@ -26,7 +26,9 @@ def _get_reaper_scripts_dir() -> Path:
     if system == "Darwin":
         return Path.home() / "Library" / "Application Support" / "REAPER" / "Scripts"
     elif system == "Windows":
-        appdata = os.environ.get("APPDATA", "")
+        appdata = os.environ.get("APPDATA")
+        if not appdata:
+            return Path.home() / "AppData" / "Roaming" / "REAPER" / "Scripts"
         return Path(appdata) / "REAPER" / "Scripts"
     else:
         return Path.home() / ".config" / "REAPER" / "Scripts"
@@ -136,7 +138,8 @@ def _merge_mcp_config(mcp_config: dict, console, yes: bool) -> str | None:
     help="Directory to clone reaper-mcp into (default: ~/.phantom/reaper-mcp)",
 )
 @click.option("--json", "-j", "json_output", is_flag=True, help="Output raw JSON")
-def setup_reaper(install_dir: str | None, json_output: bool) -> None:
+@click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompts")
+def setup_reaper(install_dir: str | None, json_output: bool, yes: bool) -> None:
     """Set up Reaper MCP bridge for DAW integration.
 
     Auto-detects Reaper installation, clones the bridge, copies Lua scripts,
@@ -174,6 +177,14 @@ def setup_reaper(install_dir: str | None, json_output: bool) -> None:
 
     # --- Clone or update ---
     if install_path.exists():
+        is_git_repo = (install_path / ".git").is_dir()
+
+        if not is_git_repo:
+            raise click.ClickException(
+                f"{install_path} exists but is not a git repository. "
+                "Remove it manually or choose a different --install-dir."
+            )
+
         remote_url = ""
         try:
             result = subprocess.run(
@@ -190,12 +201,16 @@ def setup_reaper(install_dir: str | None, json_output: bool) -> None:
         is_fadelabs = remote_url and (
             expected_remote in remote_url or "fadelabs/reaper-mcp" in remote_url
         )
-        if remote_url and not is_fadelabs:
-            if not (install_path / ".git").is_dir():
-                raise click.ClickException(
-                    f"{install_path} exists but is not a git repository. "
-                    "Remove it manually or choose a different --install-dir."
-                )
+        if not is_fadelabs:
+            if not yes and sys.stdin.isatty():
+                if not click.confirm(
+                    f"{install_path} has a different remote ({remote_url or 'unknown'}). "
+                    "Remove and re-clone?",
+                    default=False,
+                ):
+                    raise click.ClickException(
+                        "Aborted. Choose a different --install-dir."
+                    )
             shutil.rmtree(install_path)
 
     if install_path.exists():
@@ -225,7 +240,8 @@ def setup_reaper(install_dir: str | None, json_output: bool) -> None:
 
     # --- Copy Lua bridge to Reaper ---
     lua_copied: list[str] = []
-    lua_files = list(install_path.rglob("*.lua"))
+    # Only copy top-level .lua files — avoid test/example scripts in subdirectories
+    lua_files = list(install_path.glob("*.lua"))
 
     for lua_file in lua_files:
         dest = scripts_dir / lua_file.name
@@ -257,7 +273,7 @@ def setup_reaper(install_dir: str | None, json_output: bool) -> None:
         }
     }
 
-    config_written_to = _merge_mcp_config(mcp_config, console, yes=True)
+    config_written_to = _merge_mcp_config(mcp_config, console, yes=yes)
 
     # --- Output ---
     if json_output:
