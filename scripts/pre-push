@@ -30,4 +30,8 @@ echo "==> Format check (ruff format)..."
 uv tool run ruff format --check src/ tests/
 
 echo ""
+echo "==> Running tests (pytest)..."
+uv run pytest tests/ -x -q --tb=short
+
+echo ""
 echo "=== All pre-push checks passed. ==="
