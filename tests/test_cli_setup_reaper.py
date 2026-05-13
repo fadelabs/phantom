@@ -272,3 +272,225 @@ class TestRunStepTimeout:
         # The clone call should have timeout=_GIT_TIMEOUT_SECONDS
         clone_kwargs = clone_calls[0][1] if clone_calls[0][1] else {}
         assert clone_kwargs.get("timeout") == _GIT_TIMEOUT_SECONDS
+
+
+# ---------------------------------------------------------------------------
+# D-01 / D-03: Version pinning tests
+# ---------------------------------------------------------------------------
+
+
+class TestVersionPinning:
+    """Tests for version-pinned clone and tag-based update (D-01, D-03)."""
+
+    def test_version_pin_fresh_clone(self, runner, tmp_path):
+        """D-01: Fresh clone includes --branch v{__version__} arguments."""
+        install_dir = tmp_path / "reaper-mcp"
+        scripts_dir = tmp_path / "reaper-scripts"
+        scripts_dir.mkdir()
+
+        with (
+            patch("phantom.cli.setup_reaper.shutil.which", return_value="/usr/bin/git"),
+            patch(
+                "phantom.cli.setup_reaper._get_reaper_scripts_dir",
+                return_value=scripts_dir,
+            ),
+            patch("phantom.cli.setup_reaper.subprocess.run") as mock_run,
+        ):
+            mock_run.return_value = MagicMock(returncode=0)
+            runner.invoke(
+                cli,
+                ["setup-reaper", "--install-dir", str(install_dir), "--json"],
+            )
+
+        # Find the clone call
+        clone_calls = [c for c in mock_run.call_args_list if "clone" in str(c)]
+        assert len(clone_calls) >= 1
+        cmd_args = clone_calls[0][0][0]
+        assert "--branch" in cmd_args
+        # Version tag should start with 'v'
+        branch_idx = cmd_args.index("--branch")
+        assert cmd_args[branch_idx + 1].startswith("v")
+
+    def test_version_pin_update_uses_fetch_checkout(self, runner, tmp_path):
+        """D-01: Update path uses fetch --tags + checkout v{version}, not pull --ff-only."""
+        install_dir = tmp_path / "reaper-mcp"
+        install_dir.mkdir()
+        (install_dir / ".git").mkdir()  # Make it look like a git repo
+        scripts_dir = tmp_path / "reaper-scripts"
+        scripts_dir.mkdir()
+
+        with (
+            patch("phantom.cli.setup_reaper.shutil.which", return_value="/usr/bin/git"),
+            patch(
+                "phantom.cli.setup_reaper._get_reaper_scripts_dir",
+                return_value=scripts_dir,
+            ),
+            patch("phantom.cli.setup_reaper.subprocess.run") as mock_run,
+        ):
+            # text=True in the remote URL check means stdout is a string, not bytes
+            mock_run.return_value = MagicMock(
+                returncode=0,
+                stdout="https://github.com/fadelabs/reaper-mcp.git\n",
+            )
+            runner.invoke(
+                cli,
+                ["setup-reaper", "--install-dir", str(install_dir), "--json"],
+            )
+
+        all_cmds = [c[0][0] for c in mock_run.call_args_list]
+        # Should have fetch and checkout commands, not pull --ff-only
+        has_fetch = any("fetch" in cmd for cmd in all_cmds)
+        has_checkout = any("checkout" in cmd for cmd in all_cmds)
+        has_pull_ff = any("pull" in cmd and "--ff-only" in cmd for cmd in all_cmds)
+        assert has_fetch, f"Expected fetch command in {all_cmds}"
+        assert has_checkout, f"Expected checkout command in {all_cmds}"
+        assert not has_pull_ff, f"Should not use pull --ff-only, found in {all_cmds}"
+
+    def test_version_pin_fallback_on_missing_tag(self, runner, tmp_path):
+        """D-03: When pinned clone fails, falls back to HEAD with warning."""
+        install_dir = tmp_path / "reaper-mcp"
+        scripts_dir = tmp_path / "reaper-scripts"
+        scripts_dir.mkdir()
+
+        call_count = 0
+
+        def side_effect_fn(cmd, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            # First clone call (with --branch) should fail
+            if "clone" in cmd and "--branch" in cmd:
+                raise subprocess.CalledProcessError(
+                    128, cmd, stderr=b"fatal: Remote branch v99.99.99 not found"
+                )
+            # All other calls succeed
+            return MagicMock(returncode=0, stdout=b"")
+
+        with (
+            patch("phantom.cli.setup_reaper.shutil.which", return_value="/usr/bin/git"),
+            patch(
+                "phantom.cli.setup_reaper._get_reaper_scripts_dir",
+                return_value=scripts_dir,
+            ),
+            patch(
+                "phantom.cli.setup_reaper.subprocess.run", side_effect=side_effect_fn
+            ),
+        ):
+            result = runner.invoke(
+                cli,
+                ["setup-reaper", "--install-dir", str(install_dir)],
+            )
+
+        # Should contain warning about unverified version
+        output_lower = result.output.lower()
+        assert "unverified" in output_lower or "warning" in output_lower, (
+            f"Expected fallback warning in output: {result.output}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# D-06 / D-07: Lua whitelist tests
+# ---------------------------------------------------------------------------
+
+
+class TestLuaWhitelist:
+    """Tests for Lua filename whitelist (D-06, D-07)."""
+
+    def test_whitelist_copies_expected_file(self, runner, tmp_path):
+        """D-06: Whitelisted file reaper_mcp_bridge.lua IS copied to scripts_dir."""
+        install_dir = tmp_path / "reaper-mcp"
+        install_dir.mkdir()
+        (install_dir / ".git").mkdir()  # Make it look like a git repo
+        scripts_dir = tmp_path / "reaper-scripts"
+        scripts_dir.mkdir()
+
+        # Pre-create the expected Lua file in install dir
+        (install_dir / "reaper_mcp_bridge.lua").write_text("-- bridge script")
+
+        with (
+            patch("phantom.cli.setup_reaper.shutil.which", return_value="/usr/bin/git"),
+            patch(
+                "phantom.cli.setup_reaper._get_reaper_scripts_dir",
+                return_value=scripts_dir,
+            ),
+            patch("phantom.cli.setup_reaper._run_step"),  # Skip actual git
+            patch("phantom.cli.setup_reaper.subprocess.run") as mock_run,
+        ):
+            mock_run.return_value = MagicMock(
+                returncode=0,
+                stdout="https://github.com/fadelabs/reaper-mcp.git\n",
+            )
+            runner.invoke(
+                cli,
+                ["setup-reaper", "--install-dir", str(install_dir), "--json"],
+            )
+
+        assert (scripts_dir / "reaper_mcp_bridge.lua").exists()
+
+    def test_whitelist_blocks_unexpected_file(self, runner, tmp_path):
+        """D-06: Unexpected Lua file evil_payload.lua is NOT copied."""
+        install_dir = tmp_path / "reaper-mcp"
+        install_dir.mkdir()
+        (install_dir / ".git").mkdir()  # Make it look like a git repo
+        scripts_dir = tmp_path / "reaper-scripts"
+        scripts_dir.mkdir()
+
+        # Create both expected and unexpected Lua files
+        (install_dir / "reaper_mcp_bridge.lua").write_text("-- bridge script")
+        (install_dir / "evil_payload.lua").write_text("-- malicious payload")
+
+        with (
+            patch("phantom.cli.setup_reaper.shutil.which", return_value="/usr/bin/git"),
+            patch(
+                "phantom.cli.setup_reaper._get_reaper_scripts_dir",
+                return_value=scripts_dir,
+            ),
+            patch("phantom.cli.setup_reaper._run_step"),  # Skip actual git
+            patch("phantom.cli.setup_reaper.subprocess.run") as mock_run,
+        ):
+            mock_run.return_value = MagicMock(
+                returncode=0,
+                stdout="https://github.com/fadelabs/reaper-mcp.git\n",
+            )
+            runner.invoke(
+                cli,
+                ["setup-reaper", "--install-dir", str(install_dir), "--json"],
+            )
+
+        # Only the whitelisted file should be copied
+        assert (scripts_dir / "reaper_mcp_bridge.lua").exists()
+        assert not (scripts_dir / "evil_payload.lua").exists()
+
+    def test_unexpected_lua_warning(self, runner, tmp_path):
+        """D-07: Unexpected Lua files produce a warning in output."""
+        install_dir = tmp_path / "reaper-mcp"
+        install_dir.mkdir()
+        (install_dir / ".git").mkdir()  # Make it look like a git repo
+        scripts_dir = tmp_path / "reaper-scripts"
+        scripts_dir.mkdir()
+
+        # Create expected + unexpected Lua files
+        (install_dir / "reaper_mcp_bridge.lua").write_text("-- bridge script")
+        (install_dir / "sneaky.lua").write_text("-- sneaky script")
+
+        with (
+            patch("phantom.cli.setup_reaper.shutil.which", return_value="/usr/bin/git"),
+            patch(
+                "phantom.cli.setup_reaper._get_reaper_scripts_dir",
+                return_value=scripts_dir,
+            ),
+            patch("phantom.cli.setup_reaper._run_step"),  # Skip actual git
+            patch("phantom.cli.setup_reaper.subprocess.run") as mock_run,
+        ):
+            mock_run.return_value = MagicMock(
+                returncode=0,
+                stdout="https://github.com/fadelabs/reaper-mcp.git\n",
+            )
+            result = runner.invoke(
+                cli,
+                ["setup-reaper", "--install-dir", str(install_dir)],
+            )
+
+        output_lower = result.output.lower()
+        assert (
+            "skipping unexpected" in output_lower or "unexpected lua" in output_lower
+        ), f"Expected warning about unexpected Lua files in output: {result.output}"

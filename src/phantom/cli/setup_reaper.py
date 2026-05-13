@@ -14,10 +14,12 @@ import rich_click as click
 from rich.panel import Panel
 
 from phantom.cli._formatting import get_console, output_json
+from phantom import __version__
 
 REAPER_MCP_REPO = "https://github.com/fadelabs/reaper-mcp.git"
 _DEFAULT_INSTALL_DIR = "~/.phantom/reaper-mcp"
 _GIT_TIMEOUT_SECONDS = 30
+EXPECTED_LUA_FILES = ["reaper_mcp_bridge.lua"]
 
 
 def _get_reaper_scripts_dir() -> Path:
@@ -217,19 +219,52 @@ def setup_reaper(install_dir: str | None, json_output: bool, yes: bool) -> None:
         if not json_output:
             console.print("[dim]Updating reaper-mcp...[/dim]")
         _run_step(
-            ["git", "-C", str(install_path), "pull", "--ff-only"],
-            "Git pull",
+            ["git", "-C", str(install_path), "fetch", "--tags"],
+            "Git fetch",
             timeout=_GIT_TIMEOUT_SECONDS,
         )
+        try:
+            _run_step(
+                ["git", "-C", str(install_path), "checkout", f"v{__version__}"],
+                "Git checkout version tag",
+                timeout=_GIT_TIMEOUT_SECONDS,
+            )
+        except click.ClickException:
+            if not json_output:
+                console.print(
+                    f"[yellow]Warning: tag v{__version__} not found — "
+                    "staying on current version (unverified).[/yellow]"
+                )
     else:
         if not json_output:
             console.print("[dim]Installing reaper-mcp...[/dim]")
         install_path.parent.mkdir(parents=True, exist_ok=True)
-        _run_step(
-            ["git", "clone", "--depth", "1", REAPER_MCP_REPO, str(install_path)],
-            "Git clone",
-            timeout=_GIT_TIMEOUT_SECONDS,
-        )
+        try:
+            _run_step(
+                [
+                    "git",
+                    "clone",
+                    "--depth",
+                    "1",
+                    "--branch",
+                    f"v{__version__}",
+                    REAPER_MCP_REPO,
+                    str(install_path),
+                ],
+                "Git clone (version-pinned)",
+                timeout=_GIT_TIMEOUT_SECONDS,
+            )
+        except click.ClickException:
+            if not json_output:
+                console.print(
+                    f"[yellow]Warning: tag v{__version__} not found — "
+                    "cloning HEAD (unverified version).[/yellow]"
+                )
+            _run_step(
+                ["git", "clone", "--depth", "1", REAPER_MCP_REPO, str(install_path)],
+                "Git clone (HEAD fallback)",
+                timeout=_GIT_TIMEOUT_SECONDS,
+            )
 
     # --- Install Python dependencies ---
     if (install_path / "pyproject.toml").exists():
@@ -244,6 +279,12 @@ def setup_reaper(install_dir: str | None, json_output: bool, yes: bool) -> None:
     lua_files = list(install_path.glob("*.lua"))
 
     for lua_file in lua_files:
+        if lua_file.name not in EXPECTED_LUA_FILES:
+            if not json_output:
+                console.print(
+                    f"[yellow]Skipping unexpected Lua file: {lua_file.name}[/yellow]"
+                )
+            continue
         dest = scripts_dir / lua_file.name
         shutil.copy2(str(lua_file), str(dest))
         lua_copied.append(str(dest))
