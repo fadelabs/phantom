@@ -601,6 +601,17 @@ class TestProfileComparisonUnmeasuredBands:
 class TestReferenceComparisonUnionBands:
     """S-WR-06: Reference comparison uses band union."""
 
+    @pytest.fixture(autouse=True)
+    def clear_cache(self):
+        """Clear analysis cache so mocked functions are actually called."""
+        from phantom._cache import analysis_cache
+
+        with analysis_cache._lock:
+            analysis_cache._store.clear()
+        yield
+        with analysis_cache._lock:
+            analysis_cache._store.clear()
+
     def test_reference_comparison_union_bands(self):
         """When spectrum analysis produces different band sets, all appear in result."""
         sr = 44100
