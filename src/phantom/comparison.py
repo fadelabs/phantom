@@ -637,7 +637,10 @@ def match_to_reference(
         return MatchResult(output_path=output_path, adjustments=adjustments)
 
     finally:
-        os.close(lock_fd)
+        try:
+            os.close(lock_fd)
+        except OSError:
+            pass
         try:
             os.unlink(lock_path)
         except OSError:
