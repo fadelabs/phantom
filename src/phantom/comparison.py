@@ -9,7 +9,12 @@ import numpy as np
 from pydantic import BaseModel, field_validator
 
 from phantom._rounding import round_db, round_hz, round_ratio
-from phantom._utils import is_near_silent, validate_input_path, validate_output_path, wrap_errors
+from phantom._utils import (
+    is_near_silent,
+    validate_input_path,
+    validate_output_path,
+    wrap_errors,
+)
 from phantom.audio import AudioData, load_audio
 from phantom.dynamics import analyze_dynamics
 from phantom.exceptions import AnalysisError, AudioLoadError, DependencyMissingError
@@ -515,9 +520,7 @@ def compare_to_reference(
         val_a = getattr(stereo_a, key)
         val_b = getattr(stereo_b, key)
         if val_a is not None and val_b is not None:
-            stereo_devs[key] = _rate_deviation_ref(
-                val_a, val_b, round_fn=round_ratio
-            )
+            stereo_devs[key] = _rate_deviation_ref(val_a, val_b, round_fn=round_ratio)
         else:
             stereo_devs[key] = _unmeasurable_deviation("reference")
 
