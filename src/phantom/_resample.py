@@ -66,9 +66,10 @@ def resample_to_match(audio: AudioData, target_sr: int) -> AudioData:
         resampled_channels.append(channel_data.astype(np.float32))
 
     # Stack channels back into [num_samples, num_channels] shape
-    resampled = np.column_stack(resampled_channels)
-    if resampled.ndim == 1:
-        resampled = resampled.reshape(-1, 1)
+    if num_channels == 1:
+        resampled = resampled_channels[0].reshape(-1, 1)
+    else:
+        resampled = np.column_stack(resampled_channels)
 
     num_samples = resampled.shape[0]
     duration = num_samples / target_sr
