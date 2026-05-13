@@ -17,7 +17,8 @@
       "source": {
         "source": "git-subdir",
         "url": "https://github.com/fadelabs/phantom.git",
-        "path": "plugin"
+        "path": "plugin",
+        "ref": "v1.2.2"
       }
     }
   ]

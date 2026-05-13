@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -97,3 +98,28 @@ class TestSetupCommand:
             data = json.loads(result.output)
             assert "steps" in data
             assert len(data["steps"]) == 3
+
+
+class TestMarketplaceVersionPin:
+    """Verify marketplace.json ref field stays in sync with plugin version (D-01)."""
+
+    def test_marketplace_ref_matches_version(self):
+        """marketplace.json source.ref must equal 'v' + plugin version."""
+        repo_root = Path(__file__).parent.parent
+
+        marketplace_path = repo_root / ".claude-plugin" / "marketplace.json"
+        with open(marketplace_path) as f:
+            marketplace = json.load(f)
+
+        plugin_path = repo_root / "plugin" / ".claude-plugin" / "plugin.json"
+        with open(plugin_path) as f:
+            plugin = json.load(f)
+
+        plugin_version = plugin["version"]
+        source = marketplace["plugins"][0]["source"]
+
+        assert "ref" in source, "marketplace.json source must contain a 'ref' field"
+        assert source["ref"] == f"v{plugin_version}", (
+            f"marketplace.json ref '{source['ref']}' does not match "
+            f"plugin version 'v{plugin_version}'"
+        )
