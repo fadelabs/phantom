@@ -104,6 +104,11 @@ def fix(
                         for i in indices
                         if 0 <= i < len(fixable_problems)
                     ]
+                    if not problems_filter:
+                        console.print(
+                            "[yellow]No valid selections -- fixing all problems."
+                        )
+                        problems_filter = None
                 except (ValueError, IndexError):
                     console.print("[yellow]Invalid selection -- fixing all problems.")
                     problems_filter = None
