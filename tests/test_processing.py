@@ -364,7 +364,9 @@ class TestCompareResults:
 
         before = ProblemsResult(
             problems=[
-                ProblemItem(type="mud", severity="moderate", message="Mud detected", details={})
+                ProblemItem(
+                    type="mud", severity="moderate", message="Mud detected", details={}
+                )
             ],
             clean=False,
         )
@@ -385,13 +387,23 @@ class TestCompareResults:
 
         before = ProblemsResult(
             problems=[
-                ProblemItem(type="harshness", severity="significant", message="Harsh", details={})
+                ProblemItem(
+                    type="harshness",
+                    severity="significant",
+                    message="Harsh",
+                    details={},
+                )
             ],
             clean=False,
         )
         after = ProblemsResult(
             problems=[
-                ProblemItem(type="harshness", severity="minor", message="Mild harshness", details={})
+                ProblemItem(
+                    type="harshness",
+                    severity="minor",
+                    message="Mild harshness",
+                    details={},
+                )
             ],
             clean=False,
         )
@@ -415,7 +427,9 @@ class TestCompareResults:
         )
         after = ProblemsResult(
             problems=[
-                ProblemItem(type="mud", severity="moderate", message="Mud still", details={})
+                ProblemItem(
+                    type="mud", severity="moderate", message="Mud still", details={}
+                )
             ],
             clean=False,
         )
@@ -437,7 +451,12 @@ class TestCompareResults:
         )
         after = ProblemsResult(
             problems=[
-                ProblemItem(type="mud", severity="dealbreaker", message="Mud worsened", details={})
+                ProblemItem(
+                    type="mud",
+                    severity="dealbreaker",
+                    message="Mud worsened",
+                    details={},
+                )
             ],
             clean=False,
         )
@@ -457,7 +476,12 @@ class TestCompareResults:
         before = ProblemsResult(
             problems=[
                 ProblemItem(type="mud", severity="moderate", message="Mud", details={}),
-                ProblemItem(type="harshness", severity="significant", message="Harsh", details={}),
+                ProblemItem(
+                    type="harshness",
+                    severity="significant",
+                    message="Harsh",
+                    details={},
+                ),
                 ProblemItem(type="hum", severity="moderate", message="Hum", details={}),
             ],
             clean=False,
@@ -465,8 +489,12 @@ class TestCompareResults:
         after = ProblemsResult(
             problems=[
                 # mud resolved (not present)
-                ProblemItem(type="harshness", severity="minor", message="Mild harsh", details={}),
-                ProblemItem(type="hum", severity="dealbreaker", message="Hum worse", details={}),
+                ProblemItem(
+                    type="harshness", severity="minor", message="Mild harsh", details={}
+                ),
+                ProblemItem(
+                    type="hum", severity="dealbreaker", message="Hum worse", details={}
+                ),
             ],
             clean=False,
         )
@@ -517,7 +545,9 @@ class TestBuildChainFromProblems:
         from phantom.problems import ProblemItem
 
         problems = [
-            ProblemItem(type="clipping", severity="dealbreaker", message="Clipped", details={})
+            ProblemItem(
+                type="clipping", severity="dealbreaker", message="Clipped", details={}
+            )
         ]
         chain = _build_chain_from_problems(problems)
         assert len(chain) == 0
@@ -530,12 +560,16 @@ class TestBuildChainFromProblems:
 
         # harshness (PeakFilter) + mud (HPF + LowShelf) -- HPF should come first
         problems = [
-            ProblemItem(type="harshness", severity="moderate", message="Harsh", details={}),
+            ProblemItem(
+                type="harshness", severity="moderate", message="Harsh", details={}
+            ),
             ProblemItem(type="mud", severity="moderate", message="Mud", details={}),
         ]
         chain = _build_chain_from_problems(problems)
         # Find first HPF index and first PeakFilter index
-        hpf_indices = [i for i, p in enumerate(chain) if isinstance(p, pb.HighpassFilter)]
+        hpf_indices = [
+            i for i, p in enumerate(chain) if isinstance(p, pb.HighpassFilter)
+        ]
         peak_indices = [i for i, p in enumerate(chain) if isinstance(p, pb.PeakFilter)]
         assert len(hpf_indices) > 0
         assert len(peak_indices) > 0
@@ -549,13 +583,24 @@ class TestBuildChainFromProblems:
 
         # hum (notch Q=30) + harshness (peak Q=1.5)
         problems = [
-            ProblemItem(type="harshness", severity="moderate", message="Harsh", details={}),
-            ProblemItem(type="hum", severity="moderate", message="Hum", details={"frequencies_hz": [60.0]}),
+            ProblemItem(
+                type="harshness", severity="moderate", message="Harsh", details={}
+            ),
+            ProblemItem(
+                type="hum",
+                severity="moderate",
+                message="Hum",
+                details={"frequencies_hz": [60.0]},
+            ),
         ]
         chain = _build_chain_from_problems(problems)
         # Find notch (Q>10) and peak (Q<=10) positions
-        notch_indices = [i for i, p in enumerate(chain) if isinstance(p, pb.PeakFilter) and p.q > 10]
-        peak_indices = [i for i, p in enumerate(chain) if isinstance(p, pb.PeakFilter) and p.q <= 10]
+        notch_indices = [
+            i for i, p in enumerate(chain) if isinstance(p, pb.PeakFilter) and p.q > 10
+        ]
+        peak_indices = [
+            i for i, p in enumerate(chain) if isinstance(p, pb.PeakFilter) and p.q <= 10
+        ]
         assert len(notch_indices) > 0
         assert len(peak_indices) > 0
         assert notch_indices[0] < peak_indices[0]
@@ -566,8 +611,12 @@ class TestBuildChainFromProblems:
         from phantom.problems import ProblemItem
 
         problems = [
-            ProblemItem(type="clipping", severity="dealbreaker", message="Clipped", details={}),
-            ProblemItem(type="noise_floor", severity="minor", message="Noisy", details={}),
+            ProblemItem(
+                type="clipping", severity="dealbreaker", message="Clipped", details={}
+            ),
+            ProblemItem(
+                type="noise_floor", severity="minor", message="Noisy", details={}
+            ),
         ]
         chain = _build_chain_from_problems(problems)
         assert chain == []
@@ -579,7 +628,9 @@ class TestBuildChainFromProblems:
 
         problems = [
             ProblemItem(type="mud", severity="moderate", message="Mud", details={}),
-            ProblemItem(type="harshness", severity="moderate", message="Harsh", details={}),
+            ProblemItem(
+                type="harshness", severity="moderate", message="Harsh", details={}
+            ),
         ]
         chain = _build_chain_from_problems(problems)
         # mud=2 plugins + harshness=1 plugin = 3 total
@@ -649,7 +700,9 @@ class TestFixAudio:
 
         before_result = ProblemsResult(
             problems=[
-                ProblemItem(type="mud", severity="moderate", message="Mud detected", details={})
+                ProblemItem(
+                    type="mud", severity="moderate", message="Mud detected", details={}
+                )
             ],
             clean=False,
         )
@@ -679,7 +732,12 @@ class TestFixAudio:
         before_result = ProblemsResult(
             problems=[
                 ProblemItem(type="mud", severity="moderate", message="Mud", details={}),
-                ProblemItem(type="harshness", severity="significant", message="Harsh", details={}),
+                ProblemItem(
+                    type="harshness",
+                    severity="significant",
+                    message="Harsh",
+                    details={},
+                ),
             ],
             clean=False,
         )
@@ -700,7 +758,9 @@ class TestFixAudio:
         assert "harshness" in result.fixes_applied
         assert "mud" not in result.fixes_applied
 
-    def test_fix_audio_problems_filter_no_match(self, stereo_wav, tmp_path, monkeypatch):
+    def test_fix_audio_problems_filter_no_match(
+        self, stereo_wav, tmp_path, monkeypatch
+    ):
         """problems filter that matches no detected problems -> no processing."""
         from phantom.processing import fix_audio
         from phantom.problems import ProblemsResult, ProblemItem
@@ -740,7 +800,9 @@ class TestFixAudio:
         )
         after_result = ProblemsResult(
             problems=[
-                ProblemItem(type="mud", severity="dealbreaker", message="Mud worse", details={})
+                ProblemItem(
+                    type="mud", severity="dealbreaker", message="Mud worse", details={}
+                )
             ],
             clean=False,
         )
@@ -767,7 +829,12 @@ class TestFixAudio:
 
         before_result = ProblemsResult(
             problems=[
-                ProblemItem(type="clipping", severity="dealbreaker", message="Clipped", details={}),
+                ProblemItem(
+                    type="clipping",
+                    severity="dealbreaker",
+                    message="Clipped",
+                    details={},
+                ),
                 ProblemItem(type="mud", severity="moderate", message="Mud", details={}),
             ],
             clean=False,
