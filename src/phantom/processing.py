@@ -50,9 +50,9 @@ class FixComparison(BaseModel):
     """Comparison of a single problem type before and after processing."""
 
     problem_type: str
-    before_severity: str
+    before_severity: str | None  # None = new problem not present before
     after_severity: str | None  # None = resolved
-    status: str  # "resolved", "improved", "unchanged", "worsened"
+    status: str  # "resolved", "improved", "unchanged", "worsened", "new_problem"
 
 
 class FixResult(BaseModel):
@@ -413,6 +413,19 @@ def _compare_results(
                     )
                 )
             # else: unchanged -- not added to either list
+
+    # Second pass: detect new problems that were not present before processing
+    before_by_type = {p.type for p in before.problems}
+    for p in after.problems:
+        if p.type not in before_by_type:
+            regressions.append(
+                FixComparison(
+                    problem_type=p.type,
+                    before_severity=None,
+                    after_severity=p.severity,
+                    status="new_problem",
+                )
+            )
 
     return improvements, regressions
 
