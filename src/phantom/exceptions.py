@@ -7,6 +7,10 @@ Error messages are written in plain English for musicians (D-08).
 """
 
 
+# Recommended Python version for install hints across CLI and MCP tools.
+RECOMMENDED_PYTHON = "3.13"
+
+
 class PhantomError(Exception):
     """Base exception for all Phantom errors."""
 
@@ -46,7 +50,7 @@ class DependencyMissingError(PhantomError):
     def __init__(self, package: str, extra: str, detail: str = "") -> None:
         self.package = package
         self.extra = extra
-        msg = f'{package} is not installed. Install it with: uv tool install "phantom-audio[{extra}]" --python 3.13'
+        msg = f'{package} is not installed. Install it with: uv tool install "phantom-audio[{extra}]" --python {RECOMMENDED_PYTHON}'
         if detail:
             msg += f"\n{detail}"
         super().__init__(msg)
