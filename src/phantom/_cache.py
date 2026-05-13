@@ -21,6 +21,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Sentinel object used to distinguish a cache miss from a cached ``None`` result.
+_MISSING = object()
+
 
 class AnalysisCache:
     """Thread-safe LRU cache for analysis results.
@@ -62,11 +65,12 @@ class AnalysisCache:
     # Public API
     # ------------------------------------------------------------------
 
-    def get(self, audio: AudioData, func_name: str) -> Any | None:
+    def get(self, audio: AudioData, func_name: str) -> Any:
         """Retrieve a cached analysis result.
 
-        Returns ``None`` on cache miss.  On hit, the entry is moved to
-        the end of the LRU queue (most recently used).
+        Returns the module-level ``_MISSING`` sentinel on cache miss.
+        On hit, the entry is moved to the end of the LRU queue
+        (most recently used).
         """
         key = self._hash_audio(audio, func_name)
         with self._lock:
@@ -74,7 +78,7 @@ class AnalysisCache:
                 self._store.move_to_end(key)
                 logger.debug("Cache hit for %s (key=%s...)", func_name, key[:12])
                 return self._store[key]
-        return None
+        return _MISSING
 
     def put(self, audio: AudioData, func_name: str, result: Any) -> None:
         """Store an analysis result in the cache.

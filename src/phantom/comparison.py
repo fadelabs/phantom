@@ -16,7 +16,7 @@ from phantom._utils import (
     wrap_errors,
 )
 from phantom.audio import AudioData, load_audio
-from phantom._cache import analysis_cache
+from phantom._cache import _MISSING, analysis_cache
 from phantom.dynamics import analyze_dynamics
 from phantom.exceptions import AnalysisError, AudioLoadError, DependencyMissingError
 from phantom.loudness import analyze_loudness
@@ -175,7 +175,7 @@ def _cached_analysis(audio: AudioData, func_name: str, func) -> object:
     stores the result for subsequent calls with the same audio.
     """
     result = analysis_cache.get(audio, func_name)
-    if result is not None:
+    if result is not _MISSING:
         return result
     result = func(audio)
     analysis_cache.put(audio, func_name, result)

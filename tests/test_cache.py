@@ -6,7 +6,7 @@ import threading
 
 import numpy as np
 
-from phantom._cache import AnalysisCache
+from phantom._cache import _MISSING, AnalysisCache
 from phantom.audio import AudioData
 
 
@@ -29,10 +29,10 @@ def _make_audio(samples_1d: np.ndarray, sr: int, num_channels: int = 1) -> Audio
 class TestCacheGetPut:
     """Basic get/put semantics."""
 
-    def test_get_on_empty_cache_returns_none(self) -> None:
+    def test_get_on_empty_cache_returns_missing(self) -> None:
         cache = AnalysisCache(max_entries=4)
         audio = _make_audio(np.zeros(100, dtype=np.float32), sr=44100)
-        assert cache.get(audio, "spectrum") is None
+        assert cache.get(audio, "spectrum") is _MISSING
 
     def test_put_then_get_returns_stored_result(self) -> None:
         cache = AnalysisCache(max_entries=4)
@@ -41,12 +41,12 @@ class TestCacheGetPut:
         cache.put(audio, "spectrum", result)
         assert cache.get(audio, "spectrum") == {"centroid": 1200.0}
 
-    def test_different_func_name_returns_none(self) -> None:
+    def test_different_func_name_returns_missing(self) -> None:
         """Same audio, different func_name should not collide."""
         cache = AnalysisCache(max_entries=4)
         audio = _make_audio(np.zeros(100, dtype=np.float32), sr=44100)
         cache.put(audio, "spectrum", {"centroid": 1200.0})
-        assert cache.get(audio, "loudness") is None
+        assert cache.get(audio, "loudness") is _MISSING
 
 
 class TestCacheKeyDifferentiation:
@@ -89,7 +89,7 @@ class TestLRUEviction:
             cache.put(audio, "spectrum", {"idx": i})
 
         # Entry 0 (oldest) should be evicted
-        assert cache.get(audios[0], "spectrum") is None
+        assert cache.get(audios[0], "spectrum") is _MISSING
         # Entry 8 (newest) should still be present
         assert cache.get(audios[8], "spectrum") == {"idx": 8}
         # Entry 1 should still be present (second oldest, but within limit)
@@ -115,7 +115,7 @@ class TestLRUEviction:
         cache.put(audio_d, "spectrum", "D")
 
         assert cache.get(audio_a, "spectrum") == "A"  # survived eviction
-        assert cache.get(audio_b, "spectrum") is None  # evicted
+        assert cache.get(audio_b, "spectrum") is _MISSING  # evicted
         assert cache.get(audio_c, "spectrum") == "C"
         assert cache.get(audio_d, "spectrum") == "D"
 
