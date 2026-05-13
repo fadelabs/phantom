@@ -26,6 +26,9 @@ from phantom._utils import validate_input_path
 MIN_SAMPLE_RATE = 8000  # 8 kHz -- telephone quality floor
 MAX_SAMPLE_RATE = 384000  # 384 kHz -- DSD/high-res ceiling
 
+# Formats that users commonly attempt but libsndfile cannot read
+_UNSUPPORTED_EXTENSIONS = {".mp3", ".aac", ".m4a", ".wma"}
+
 
 class AudioData(BaseModel):
     """Pydantic model holding audio samples and metadata.
@@ -126,6 +129,15 @@ def load_audio(
     """
     # Step 1: Path validation (SEC-01, D-04)
     path = validate_input_path(path)
+
+    # Step 1.5: Unsupported format detection — check extension before sf.info
+    ext = os.path.splitext(path)[1].lower()
+    if ext in _UNSUPPORTED_EXTENSIONS:
+        fmt_name = ext.lstrip(".").upper()
+        raise AudioLoadError(
+            f"{fmt_name} format is not supported. Convert to WAV first:\n"
+            f"  phantom render {os.path.basename(path)} --format wav"
+        )
 
     # Step 2: Read header -- validates existence and readability (existing)
     try:
