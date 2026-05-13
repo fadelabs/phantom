@@ -458,8 +458,6 @@ def multi_stem_masking(file_paths: list[str]) -> dict:
 
 def _startup_preflight() -> None:
     """Log version and optional extras status to stderr on startup."""
-    import sys
-
     from phantom import __version__
     from phantom._diagnostics import OPTIONAL_DEPS, try_import
 
@@ -477,8 +475,6 @@ def _startup_preflight() -> None:
 
 def main():
     """Entry point for phantom-mcp CLI."""
-    import sys
-
     if "--version" in sys.argv:
         from phantom import __version__
 
