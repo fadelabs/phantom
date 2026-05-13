@@ -753,3 +753,131 @@ class TestDebugOutputRestriction:
         error = json.loads(str(exc_info.value))
         assert error["message"] == "Audio file is too short for analysis"
         assert error["error_type"] == "PhantomError"
+
+
+# ---------------------------------------------------------------------------
+# Processing tools: fix_audio and apply_processing (Phase 23, Plan 03)
+# ---------------------------------------------------------------------------
+
+
+async def test_fix_audio_tool_registered(client):
+    """fix_audio MCP tool is registered and listed."""
+    tools = await client.list_tools()
+    tool_names = {t.name for t in tools}
+    assert "fix_audio" in tool_names
+
+
+async def test_apply_processing_tool_registered(client):
+    """apply_processing MCP tool is registered and listed."""
+    tools = await client.list_tools()
+    tool_names = {t.name for t in tools}
+    assert "apply_processing" in tool_names
+
+
+async def test_fix_audio_tool_returns_result(client, mono_sine_440hz, make_wav):
+    """fix_audio MCP tool returns dict with output_path key."""
+    from unittest.mock import patch
+    from phantom.processing import FixResult
+    from phantom.problems import ProblemsResult
+
+    samples, sr = mono_sine_440hz
+    path = make_wav(samples, sr)
+
+    mock_result = FixResult(
+        output_path=path.replace(".wav", "_fixed.wav"),
+        fixes_applied=["mud"],
+        before=ProblemsResult(problems=[], clean=True),
+        after=ProblemsResult(problems=[], clean=True),
+        improvements=[],
+        regressions=[],
+    )
+
+    with patch("phantom.server._fix_audio", return_value=mock_result):
+        result = await client.call_tool(
+            "fix_audio", {"file_path": path}
+        )
+    data = _data(result)
+    assert "output_path" in data
+    assert "fixes_applied" in data
+
+
+async def test_apply_processing_tool_returns_result(client, mono_sine_440hz, make_wav):
+    """apply_processing MCP tool returns dict with output_path key."""
+    from unittest.mock import patch
+    from phantom.processing import FixResult
+
+    samples, sr = mono_sine_440hz
+    path = make_wav(samples, sr)
+    output_path = path.replace(".wav", "_processed.wav")
+
+    mock_result = FixResult(
+        output_path=output_path,
+        fixes_applied=["custom"],
+    )
+
+    with patch("phantom.server._apply_processing", return_value=mock_result):
+        result = await client.call_tool(
+            "apply_processing",
+            {
+                "file_path": path,
+                "operations": [{"type": "Gain", "gain_db": -1.0}],
+                "output_path": output_path,
+            },
+        )
+    data = _data(result)
+    assert "output_path" in data
+    assert "fixes_applied" in data
+
+
+async def test_fix_audio_with_problems_parameter(client, mono_sine_440hz, make_wav):
+    """fix_audio with problems parameter passes through to processing.fix_audio."""
+    from unittest.mock import patch
+    from phantom.processing import FixResult
+    from phantom.problems import ProblemsResult
+
+    samples, sr = mono_sine_440hz
+    path = make_wav(samples, sr)
+
+    mock_result = FixResult(
+        output_path=path.replace(".wav", "_fixed.wav"),
+        fixes_applied=["harshness"],
+        before=ProblemsResult(problems=[], clean=True),
+        after=ProblemsResult(problems=[], clean=True),
+        improvements=[],
+        regressions=[],
+    )
+
+    with patch("phantom.server._fix_audio", return_value=mock_result) as mock_fn:
+        result = await client.call_tool(
+            "fix_audio",
+            {"file_path": path, "problems": ["harshness"]},
+        )
+    data = _data(result)
+    assert "output_path" in data
+    mock_fn.assert_called_once()
+    call_kwargs = mock_fn.call_args
+    assert call_kwargs[1].get("problems") == ["harshness"] or (
+        len(call_kwargs[0]) > 1 and call_kwargs[0][1] == ["harshness"]
+    )
+
+
+@pytest.mark.skipif(
+    _has_module("pedalboard"),
+    reason="pedalboard is installed -- test requires it to be absent",
+)
+async def test_fix_audio_missing_dep(client):
+    """fix_audio raises ToolError with DependencyMissingError when Pedalboard not installed."""
+    with pytest.raises(ToolError) as exc_info:
+        await client.call_tool(
+            "fix_audio",
+            {"file_path": "/tmp/test.wav"},
+        )
+    error = json.loads(str(exc_info.value))
+    assert error["error_type"] == "DependencyMissingError"
+    assert "not installed" in error["message"].lower()
+
+
+async def test_tool_count_includes_processing_tools(client):
+    """Tool listing includes all 19 tools (17 original + 2 processing)."""
+    tools = await client.list_tools()
+    assert len(tools) >= 19
