@@ -149,10 +149,15 @@ def _setup_reaper(console, json_mode: bool) -> dict:
         if not json_mode:
             console.print(f"  {OK} Reaper bridge configured")
         return {"step": "reaper", "status": "configured"}
-    except SystemExit:
-        if not json_mode:
-            console.print(f"  {OK} Reaper bridge configured")
-        return {"step": "reaper", "status": "configured"}
+    except SystemExit as e:
+        if e.code == 0 or e.code is None:
+            if not json_mode:
+                console.print(f"  {OK} Reaper bridge configured")
+            return {"step": "reaper", "status": "configured"}
+        else:
+            if not json_mode:
+                console.print(f"  {WARN} Reaper setup failed (exit code {e.code})")
+            return {"step": "reaper", "status": "error", "message": f"exit code {e.code}"}
     except Exception as e:
         if not json_mode:
             console.print(f"  {WARN} Reaper setup issue: {e}")

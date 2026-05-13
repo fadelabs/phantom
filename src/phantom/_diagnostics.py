@@ -9,6 +9,8 @@ CORE_DEPS = {
     "essentia": "essentia",
     "pydantic": "pydantic",
     "fastmcp": "fastmcp",
+    "plotext": "plotext",
+    "rich_click": "rich_click",
 }
 
 OPTIONAL_DEPS = {

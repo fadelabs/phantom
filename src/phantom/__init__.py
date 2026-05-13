@@ -1,10 +1,11 @@
 """Phantom: AI audio engineering system."""
 
 try:
+    from importlib.metadata import PackageNotFoundError
     from importlib.metadata import version as _metadata_version
 
     __version__ = _metadata_version("phantom-audio")
-except Exception:
+except PackageNotFoundError:
     __version__ = "unknown"
 
 from phantom.audio import AudioData, load_audio
