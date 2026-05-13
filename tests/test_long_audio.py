@@ -6,11 +6,8 @@ All audio is synthetic (session-scoped fixture from conftest.py).
 
 from __future__ import annotations
 
-import json
-
 import pytest
 from fastmcp import Client
-from fastmcp.exceptions import ToolError
 
 from phantom.audio import load_audio
 from phantom.problems import detect_problems
