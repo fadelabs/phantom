@@ -793,9 +793,7 @@ async def test_fix_audio_tool_returns_result(client, mono_sine_440hz, make_wav):
     )
 
     with patch("phantom.server._fix_audio", return_value=mock_result):
-        result = await client.call_tool(
-            "fix_audio", {"file_path": path}
-        )
+        result = await client.call_tool("fix_audio", {"file_path": path})
     data = _data(result)
     assert "output_path" in data
     assert "fixes_applied" in data
