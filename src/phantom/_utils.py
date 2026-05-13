@@ -101,6 +101,8 @@ def _block_rms_db(
         raise ValueError(f"block_size must be positive, got {block_size}")
     if hop <= 0:
         raise ValueError(f"hop must be positive, got {hop}")
+    if not np.issubdtype(mono.dtype, np.floating):
+        mono = mono.astype(np.float64)
     levels: list[float] = []
     for i in range(0, len(mono) - block_size + 1, hop):
         block = mono[i : i + block_size]
@@ -115,6 +117,8 @@ def is_near_silent(mono: np.ndarray) -> bool:
 
     Returns True if the RMS level is below SILENCE_THRESHOLD_DB.
     """
+    if not np.issubdtype(mono.dtype, np.floating):
+        mono = mono.astype(np.float64)
     rms = float(np.sqrt(np.mean(mono**2)))
     if rms == 0:
         return True
