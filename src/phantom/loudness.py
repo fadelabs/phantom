@@ -19,7 +19,7 @@ from pydantic import BaseModel, field_validator
 from phantom.audio import AudioData
 from phantom.exceptions import AnalysisError
 from phantom._rounding import round_db
-from phantom._utils import is_near_silent
+from phantom._utils import is_near_silent, wrap_errors
 
 
 class LufsStats(BaseModel):
@@ -92,6 +92,7 @@ def _silent_loudness_result() -> LoudnessResult:
     return LoudnessResult()
 
 
+@wrap_errors("Loudness analysis failed")
 def analyze_loudness(audio: AudioData) -> LoudnessResult:
     """Analyze loudness characteristics of an audio signal.
 
@@ -124,57 +125,51 @@ def analyze_loudness(audio: AudioData) -> LoudnessResult:
     if is_near_silent(mono):
         return _silent_loudness_result()
 
-    try:
-        # -- EBU R128 loudness (LOUD-01, LOUD-03, LOUD-04) --
-        # LoudnessEBUR128 requires stereo input.
-        # For mono audio, duplicate to both channels per EBU Tech 3341 s5.
-        # This is the correct behavior: mono content measures identically
-        # whether played from one or both speakers at the same level.
-        if audio.num_channels == 1:
-            stereo = np.column_stack([mono, mono])
-        else:
-            stereo = np.column_stack([audio.samples[:, 0], audio.samples[:, 1]])
+    # -- EBU R128 loudness (LOUD-01, LOUD-03, LOUD-04) --
+    # LoudnessEBUR128 requires stereo input.
+    # For mono audio, duplicate to both channels per EBU Tech 3341 s5.
+    # This is the correct behavior: mono content measures identically
+    # whether played from one or both speakers at the same level.
+    if audio.num_channels == 1:
+        stereo = np.column_stack([mono, mono])
+    else:
+        stereo = np.column_stack([audio.samples[:, 0], audio.samples[:, 1]])
 
-        loudness_algo = es.LoudnessEBUR128(
-            hopSize=0.1,
+    loudness_algo = es.LoudnessEBUR128(
+        hopSize=0.1,
+        sampleRate=sample_rate,
+        startAtZero=True,
+    )
+    momentary, short_term, integrated, lra = loudness_algo(stereo)
+
+    integrated_lufs = float(integrated)
+    loudness_range_lu = float(lra)
+    short_term_lufs = LufsStats.from_array([float(v) for v in short_term])
+    momentary_lufs = LufsStats.from_array([float(v) for v in momentary])
+
+    # -- True peak (LOUD-02) --
+    # Measure true peak per channel and take the maximum.
+    # ITU-R BS.1770-4 specifies that true peak is the maximum
+    # true peak level across all channels.
+    eps = np.finfo(np.float32).eps
+    channel_peaks = []
+    for ch in range(audio.num_channels):
+        tp_algo = es.TruePeakDetector(
+            version=4,
             sampleRate=sample_rate,
-            startAtZero=True,
+            oversamplingFactor=4,
         )
-        momentary, short_term, integrated, lra = loudness_algo(stereo)
+        channel_signal = audio.samples[:, ch]
+        _, tp_output = tp_algo(channel_signal)
+        channel_peaks.append(float(np.max(np.abs(tp_output))))
 
-        integrated_lufs = float(integrated)
-        loudness_range_lu = float(lra)
-        short_term_lufs = LufsStats.from_array([float(v) for v in short_term])
-        momentary_lufs = LufsStats.from_array([float(v) for v in momentary])
+    max_tp = max(channel_peaks)
+    true_peak_dbtp = float(20 * np.log10(max_tp + eps))
 
-        # -- True peak (LOUD-02) --
-        # Measure true peak per channel and take the maximum.
-        # ITU-R BS.1770-4 specifies that true peak is the maximum
-        # true peak level across all channels.
-        eps = np.finfo(np.float32).eps
-        channel_peaks = []
-        for ch in range(audio.num_channels):
-            tp_algo = es.TruePeakDetector(
-                version=4,
-                sampleRate=sample_rate,
-                oversamplingFactor=4,
-            )
-            channel_signal = audio.samples[:, ch]
-            _, tp_output = tp_algo(channel_signal)
-            channel_peaks.append(float(np.max(np.abs(tp_output))))
-
-        max_tp = max(channel_peaks)
-        true_peak_dbtp = float(20 * np.log10(max_tp + eps))
-
-        return LoudnessResult(
-            integrated_lufs=integrated_lufs,
-            true_peak_dbtp=true_peak_dbtp,
-            loudness_range_lu=loudness_range_lu,
-            short_term_lufs=short_term_lufs,
-            momentary_lufs=momentary_lufs,
-        )
-
-    except AnalysisError:
-        raise
-    except Exception as exc:
-        raise AnalysisError(f"Loudness analysis failed: {exc}") from exc
+    return LoudnessResult(
+        integrated_lufs=integrated_lufs,
+        true_peak_dbtp=true_peak_dbtp,
+        loudness_range_lu=loudness_range_lu,
+        short_term_lufs=short_term_lufs,
+        momentary_lufs=momentary_lufs,
+    )
