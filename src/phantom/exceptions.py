@@ -6,7 +6,6 @@ any Phantom-specific failure with a single except clause.
 Error messages are written in plain English for musicians (D-08).
 """
 
-
 # Recommended Python version for install hints across CLI and MCP tools.
 RECOMMENDED_PYTHON = "3.13"
 
