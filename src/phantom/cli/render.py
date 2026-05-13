@@ -110,6 +110,16 @@ def render(
         )
         sys.exit(1)
 
+    # Validate input path against PHANTOM_AUDIO_DIR restriction
+    from phantom._utils import validate_input_path, validate_output_path
+    from phantom.exceptions import PathSecurityError
+
+    try:
+        file = validate_input_path(file)
+    except PathSecurityError as e:
+        render_error(e, console)
+        sys.exit(1)
+
     # Validate input file exists
     if not os.path.isfile(file):
         console.print(
@@ -120,6 +130,13 @@ def render(
     # Determine output path
     if output_path is None:
         output_path = os.path.splitext(file)[0] + "." + output_format
+
+    # Validate output path against PHANTOM_OUTPUT_DIR restriction
+    try:
+        output_path = validate_output_path(output_path)
+    except PathSecurityError as e:
+        render_error(e, console)
+        sys.exit(1)
 
     # Build ffmpeg command as list (NEVER shell=True -- T-12-11)
     cmd = ["ffmpeg", "-y", "-i", file]
