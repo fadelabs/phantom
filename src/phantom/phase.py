@@ -26,7 +26,7 @@ from scipy.fft import fft, ifft
 from phantom.audio import AudioData
 from phantom.exceptions import AnalysisError
 from phantom._rounding import round_ms, round_ratio
-from phantom._utils import is_near_silent, wrap_errors
+from phantom._utils import _get_env_float, is_near_silent, wrap_errors
 
 
 class PhaseResult(BaseModel):
@@ -129,9 +129,11 @@ def _gcc_phat_delay(
     Returns (delay_samples, delay_ms).
     Positive delay means sig2 lags sig1.
     """
-    # Truncate to max 30 seconds -- only 50ms of cross-correlation is used,
-    # and full-length FFT would allocate multi-GB arrays for long files.
-    max_samples = sample_rate * 30
+    # Truncate to configurable window (default 10s) -- only 50ms of
+    # cross-correlation is used, and full-length FFT would allocate
+    # multi-GB arrays for long files.
+    phat_window_s = _get_env_float("PHANTOM_PHAT_WINDOW_S", 10.0)
+    max_samples = int(sample_rate * phat_window_s)
     if len(sig1) > max_samples:
         sig1 = sig1[:max_samples]
     if len(sig2) > max_samples:
