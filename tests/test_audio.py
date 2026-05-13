@@ -595,5 +595,7 @@ class TestUnsupportedFormats:
         """Error message includes 'phantom render track.mp3 --format wav'."""
         path = str(tmp_path / "track.mp3")
         Path(path).touch()
-        with pytest.raises(AudioLoadError, match=r"phantom render track\.mp3 --format wav"):
+        with pytest.raises(
+            AudioLoadError, match=r"phantom render track\.mp3 --format wav"
+        ):
             load_audio(path)
