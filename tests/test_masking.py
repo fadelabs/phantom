@@ -11,6 +11,7 @@ from phantom.audio import AudioData
 from phantom.masking import (
     analyze_masking,
     analyze_masking_matrix,
+    _compute_band_energies,
     MaskingResult,
     MaskingMatrixResult,
 )
@@ -457,3 +458,49 @@ class TestMatrixRanking:
                     "severity",
                     "overlap_score",
                 }
+
+
+# ---------------------------------------------------------------------------
+# Band Energies Edge Cases (sub-frame audio)
+# ---------------------------------------------------------------------------
+
+
+class TestBandEnergiesEdgeCases:
+    """Audio shorter than one FFT frame (4096 samples) should return zeros."""
+
+    def test_short_audio_returns_zeros(self):
+        """100-sample audio returns np.zeros(10)."""
+        sr = 44100
+        n_samples = 100
+        t = np.linspace(0, n_samples / sr, n_samples, endpoint=False, dtype=np.float32)
+        signal = np.sin(2 * np.pi * 440 * t).astype(np.float32)
+        result = _compute_band_energies(signal, sr)
+        assert result.shape == (10,)
+        assert np.all(result == 0.0)
+
+    def test_just_under_frame_size_returns_zeros(self):
+        """4095 samples (just under frame_size=4096) returns np.zeros(10)."""
+        sr = 44100
+        n_samples = 4095
+        t = np.linspace(0, n_samples / sr, n_samples, endpoint=False, dtype=np.float32)
+        signal = np.sin(2 * np.pi * 440 * t).astype(np.float32)
+        result = _compute_band_energies(signal, sr)
+        assert result.shape == (10,)
+        assert np.all(result == 0.0)
+
+    def test_at_frame_size_returns_nonzero(self):
+        """4096 samples (exactly frame_size) returns non-zero array."""
+        sr = 44100
+        n_samples = 4096
+        t = np.linspace(0, n_samples / sr, n_samples, endpoint=False, dtype=np.float32)
+        signal = (0.5 * np.sin(2 * np.pi * 440 * t)).astype(np.float32)
+        result = _compute_band_energies(signal, sr)
+        assert result.shape == (10,)
+        assert np.sum(result) > 0
+
+    def test_empty_audio_returns_zeros(self):
+        """0-sample audio returns np.zeros(10)."""
+        signal = np.array([], dtype=np.float32)
+        result = _compute_band_energies(signal, 44100)
+        assert result.shape == (10,)
+        assert np.all(result == 0.0)
