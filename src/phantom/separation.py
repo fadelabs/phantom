@@ -121,7 +121,7 @@ def separate_stems(input_path: str, output_dir: str) -> SeparationResult:
     for i, stem_name in enumerate(model.sources):
         safe_name = os.path.basename(stem_name)
         if not _SAFE_NAME_RE.match(safe_name):
-            safe_name = f"stem_{int(hashlib.md5(stem_name.encode()).hexdigest()[:8], 16) % 10000}"
+            safe_name = f"stem_{int(hashlib.sha256(stem_name.encode()).hexdigest()[:8], 16) % 10000}"
         stem_path = os.path.join(output_dir, f"{safe_name}.wav")
         real_stem = os.path.realpath(stem_path)
         real_outdir = os.path.realpath(output_dir)
