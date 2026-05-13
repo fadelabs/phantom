@@ -166,6 +166,13 @@ def validate_output_path(path: str) -> str:
     real_base = os.path.realpath(output_dir)
     real_path = os.path.realpath(path)
 
+    # Directory existence check (consistent with validate_input_path)
+    if not os.path.isdir(real_base):
+        raise PathSecurityError(
+            "PHANTOM_OUTPUT_DIR points to a directory that does not exist: "
+            "check the path and create the directory."
+        )
+
     if not (real_path.startswith(real_base + os.sep) or real_path == real_base):
         raise PathSecurityError(
             "Access denied: output path is outside the allowed directory. "
