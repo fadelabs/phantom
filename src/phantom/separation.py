@@ -125,10 +125,7 @@ def separate_stems(input_path: str, output_dir: str) -> SeparationResult:
         stem_path = os.path.join(output_dir, f"{safe_name}.wav")
         real_stem = os.path.realpath(stem_path)
         real_outdir = os.path.realpath(output_dir)
-        if (
-            not real_stem.startswith(real_outdir + os.sep)
-            and real_stem != real_outdir
-        ):
+        if not real_stem.startswith(real_outdir + os.sep) and real_stem != real_outdir:
             raise AnalysisError(
                 f"Stem name '{stem_name}' would write outside output directory"
             )
