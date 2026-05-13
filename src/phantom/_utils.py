@@ -13,6 +13,38 @@ from phantom.exceptions import AnalysisError, PathSecurityError, PhantomError
 SILENCE_THRESHOLD_DB = -80.0
 
 
+def _get_env_int(name: str, default: int) -> int:
+    """Read an integer from an environment variable, falling back to *default*.
+
+    Returns *default* when the variable is unset or blank.  Raises
+    ``AnalysisError`` with a musician-friendly message if the value is
+    present but not a valid integer.
+    """
+    env_val = os.environ.get(name)
+    if env_val is not None and env_val.strip():
+        try:
+            return int(env_val)
+        except ValueError:
+            raise AnalysisError(f"{name} must be an integer, got: '{env_val}'")
+    return default
+
+
+def _get_env_float(name: str, default: float) -> float:
+    """Read a float from an environment variable, falling back to *default*.
+
+    Returns *default* when the variable is unset or blank.  Raises
+    ``AnalysisError`` with a musician-friendly message if the value is
+    present but not a valid number.
+    """
+    env_val = os.environ.get(name)
+    if env_val is not None and env_val.strip():
+        try:
+            return float(env_val)
+        except ValueError:
+            raise AnalysisError(f"{name} must be a number, got: '{env_val}'")
+    return default
+
+
 def wrap_errors(message_prefix: str):
     """Decorator that wraps unexpected exceptions in AnalysisError.
 
