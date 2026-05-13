@@ -3,6 +3,8 @@
 All audio is generated synthetically in-memory -- no WAV files in repo.
 """
 
+from pathlib import Path
+
 import numpy as np
 import pytest
 
@@ -548,3 +550,50 @@ class TestInputValidationEdgeCases:
         sf.write(path, samples, sr)
         result = load_audio(path)
         assert result.sample_rate == 384000
+
+
+# ── Unsupported format detection tests ────────────────────────────────
+
+
+class TestUnsupportedFormats:
+    """Tests for clear error messages when loading unsupported audio formats."""
+
+    def test_mp3_raises_with_format_name(self, tmp_path):
+        """load_audio('track.mp3') raises AudioLoadError with 'MP3' in message."""
+        path = str(tmp_path / "track.mp3")
+        Path(path).touch()
+        with pytest.raises(AudioLoadError, match="MP3"):
+            load_audio(path)
+
+    def test_aac_raises_with_format_name(self, tmp_path):
+        """load_audio('track.aac') raises AudioLoadError with 'AAC' in message."""
+        path = str(tmp_path / "track.aac")
+        Path(path).touch()
+        with pytest.raises(AudioLoadError, match="AAC"):
+            load_audio(path)
+
+    def test_m4a_raises_with_format_name(self, tmp_path):
+        """load_audio('track.m4a') raises AudioLoadError with 'M4A' in message."""
+        path = str(tmp_path / "track.m4a")
+        Path(path).touch()
+        with pytest.raises(AudioLoadError, match="M4A"):
+            load_audio(path)
+
+    def test_wma_raises_with_format_name(self, tmp_path):
+        """load_audio('track.wma') raises AudioLoadError with 'WMA' in message."""
+        path = str(tmp_path / "track.wma")
+        Path(path).touch()
+        with pytest.raises(AudioLoadError, match="WMA"):
+            load_audio(path)
+
+    def test_nonexistent_wav_still_raises_generic(self):
+        """load_audio for a nonexistent .wav still raises AudioLoadError with generic message."""
+        with pytest.raises(AudioLoadError, match="Cannot read"):
+            load_audio("/nonexistent/path/audio.wav")
+
+    def test_error_includes_render_command(self, tmp_path):
+        """Error message includes 'phantom render track.mp3 --format wav'."""
+        path = str(tmp_path / "track.mp3")
+        Path(path).touch()
+        with pytest.raises(AudioLoadError, match=r"phantom render track\.mp3 --format wav"):
+            load_audio(path)
