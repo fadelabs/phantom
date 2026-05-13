@@ -347,3 +347,508 @@ class TestApplyProcessing:
             "NoiseGate",
         }
         assert set(ALLOWED_OPERATIONS.keys()) == expected_keys
+
+
+# ---------------------------------------------------------------------------
+# TestCompareResults -- Before/after comparison classification
+# ---------------------------------------------------------------------------
+
+
+class TestCompareResults:
+    """_compare_results classifies each problem as resolved/improved/unchanged/worsened."""
+
+    def test_resolved_when_problem_gone(self):
+        """Problem in before but not in after -> status='resolved'."""
+        from phantom.processing import _compare_results, FixComparison
+        from phantom.problems import ProblemsResult, ProblemItem
+
+        before = ProblemsResult(
+            problems=[
+                ProblemItem(type="mud", severity="moderate", message="Mud detected", details={})
+            ],
+            clean=False,
+        )
+        after = ProblemsResult(problems=[], clean=True)
+
+        improvements, regressions = _compare_results(before, after)
+        assert len(improvements) == 1
+        assert len(regressions) == 0
+        assert improvements[0].problem_type == "mud"
+        assert improvements[0].status == "resolved"
+        assert improvements[0].before_severity == "moderate"
+        assert improvements[0].after_severity is None
+
+    def test_improved_when_severity_decreased(self):
+        """Same problem type with lower severity after -> status='improved'."""
+        from phantom.processing import _compare_results
+        from phantom.problems import ProblemsResult, ProblemItem
+
+        before = ProblemsResult(
+            problems=[
+                ProblemItem(type="harshness", severity="significant", message="Harsh", details={})
+            ],
+            clean=False,
+        )
+        after = ProblemsResult(
+            problems=[
+                ProblemItem(type="harshness", severity="minor", message="Mild harshness", details={})
+            ],
+            clean=False,
+        )
+
+        improvements, regressions = _compare_results(before, after)
+        assert len(improvements) == 1
+        assert improvements[0].status == "improved"
+        assert improvements[0].before_severity == "significant"
+        assert improvements[0].after_severity == "minor"
+
+    def test_unchanged_when_same_severity(self):
+        """Same problem type with same severity -> status='unchanged'."""
+        from phantom.processing import _compare_results
+        from phantom.problems import ProblemsResult, ProblemItem
+
+        before = ProblemsResult(
+            problems=[
+                ProblemItem(type="mud", severity="moderate", message="Mud", details={})
+            ],
+            clean=False,
+        )
+        after = ProblemsResult(
+            problems=[
+                ProblemItem(type="mud", severity="moderate", message="Mud still", details={})
+            ],
+            clean=False,
+        )
+
+        improvements, regressions = _compare_results(before, after)
+        assert len(improvements) == 0
+        assert len(regressions) == 0
+
+    def test_worsened_when_severity_increased(self):
+        """Same problem with higher severity after -> status='worsened', in regressions."""
+        from phantom.processing import _compare_results
+        from phantom.problems import ProblemsResult, ProblemItem
+
+        before = ProblemsResult(
+            problems=[
+                ProblemItem(type="mud", severity="moderate", message="Mud", details={})
+            ],
+            clean=False,
+        )
+        after = ProblemsResult(
+            problems=[
+                ProblemItem(type="mud", severity="dealbreaker", message="Mud worsened", details={})
+            ],
+            clean=False,
+        )
+
+        improvements, regressions = _compare_results(before, after)
+        assert len(improvements) == 0
+        assert len(regressions) == 1
+        assert regressions[0].problem_type == "mud"
+        assert regressions[0].status == "worsened"
+        assert regressions[0].after_severity == "dealbreaker"
+
+    def test_multiple_problems_mixed_status(self):
+        """Multiple problems with different status outcomes."""
+        from phantom.processing import _compare_results
+        from phantom.problems import ProblemsResult, ProblemItem
+
+        before = ProblemsResult(
+            problems=[
+                ProblemItem(type="mud", severity="moderate", message="Mud", details={}),
+                ProblemItem(type="harshness", severity="significant", message="Harsh", details={}),
+                ProblemItem(type="hum", severity="moderate", message="Hum", details={}),
+            ],
+            clean=False,
+        )
+        after = ProblemsResult(
+            problems=[
+                # mud resolved (not present)
+                ProblemItem(type="harshness", severity="minor", message="Mild harsh", details={}),
+                ProblemItem(type="hum", severity="dealbreaker", message="Hum worse", details={}),
+            ],
+            clean=False,
+        )
+
+        improvements, regressions = _compare_results(before, after)
+        # mud resolved + harshness improved = 2 improvements
+        assert len(improvements) == 2
+        types_improved = {c.problem_type for c in improvements}
+        assert types_improved == {"mud", "harshness"}
+        # hum worsened = 1 regression
+        assert len(regressions) == 1
+        assert regressions[0].problem_type == "hum"
+
+    def test_severity_order_dealbreaker_highest(self):
+        """Severity ordering: dealbreaker > significant > moderate > minor."""
+        from phantom.processing import _SEVERITY_ORDER
+
+        assert _SEVERITY_ORDER["dealbreaker"] > _SEVERITY_ORDER["significant"]
+        assert _SEVERITY_ORDER["significant"] > _SEVERITY_ORDER["moderate"]
+        assert _SEVERITY_ORDER["moderate"] > _SEVERITY_ORDER["minor"]
+
+
+# ---------------------------------------------------------------------------
+# TestBuildChainFromProblems -- Signal chain ordering
+# ---------------------------------------------------------------------------
+
+
+class TestBuildChainFromProblems:
+    """_build_chain_from_problems orders plugins in signal chain priority."""
+
+    def test_single_problem_returns_recipe_chain(self):
+        """Single fixable problem returns its recipe's plugin chain."""
+        import pedalboard as pb
+        from phantom.processing import _build_chain_from_problems
+        from phantom.problems import ProblemItem
+
+        problems = [
+            ProblemItem(type="mud", severity="moderate", message="Mud", details={})
+        ]
+        chain = _build_chain_from_problems(problems)
+        assert len(chain) == 2  # HPF + LowShelf from mud recipe
+        assert isinstance(chain[0], pb.HighpassFilter)
+        assert isinstance(chain[1], pb.LowShelfFilter)
+
+    def test_unfixable_problems_skipped(self):
+        """Unfixable problem types produce no plugins."""
+        from phantom.processing import _build_chain_from_problems
+        from phantom.problems import ProblemItem
+
+        problems = [
+            ProblemItem(type="clipping", severity="dealbreaker", message="Clipped", details={})
+        ]
+        chain = _build_chain_from_problems(problems)
+        assert len(chain) == 0
+
+    def test_hpf_ordered_before_peak_filters(self):
+        """HPF plugins come before peak/shelf plugins in chain."""
+        import pedalboard as pb
+        from phantom.processing import _build_chain_from_problems
+        from phantom.problems import ProblemItem
+
+        # harshness (PeakFilter) + mud (HPF + LowShelf) -- HPF should come first
+        problems = [
+            ProblemItem(type="harshness", severity="moderate", message="Harsh", details={}),
+            ProblemItem(type="mud", severity="moderate", message="Mud", details={}),
+        ]
+        chain = _build_chain_from_problems(problems)
+        # Find first HPF index and first PeakFilter index
+        hpf_indices = [i for i, p in enumerate(chain) if isinstance(p, pb.HighpassFilter)]
+        peak_indices = [i for i, p in enumerate(chain) if isinstance(p, pb.PeakFilter)]
+        assert len(hpf_indices) > 0
+        assert len(peak_indices) > 0
+        assert hpf_indices[0] < peak_indices[0]
+
+    def test_notch_before_peak_in_chain(self):
+        """Notch filters (Q>10) come before peak filters (Q<=10)."""
+        import pedalboard as pb
+        from phantom.processing import _build_chain_from_problems
+        from phantom.problems import ProblemItem
+
+        # hum (notch Q=30) + harshness (peak Q=1.5)
+        problems = [
+            ProblemItem(type="harshness", severity="moderate", message="Harsh", details={}),
+            ProblemItem(type="hum", severity="moderate", message="Hum", details={"frequencies_hz": [60.0]}),
+        ]
+        chain = _build_chain_from_problems(problems)
+        # Find notch (Q>10) and peak (Q<=10) positions
+        notch_indices = [i for i, p in enumerate(chain) if isinstance(p, pb.PeakFilter) and p.q > 10]
+        peak_indices = [i for i, p in enumerate(chain) if isinstance(p, pb.PeakFilter) and p.q <= 10]
+        assert len(notch_indices) > 0
+        assert len(peak_indices) > 0
+        assert notch_indices[0] < peak_indices[0]
+
+    def test_empty_for_no_fixable_problems(self):
+        """No fixable problems returns empty chain."""
+        from phantom.processing import _build_chain_from_problems
+        from phantom.problems import ProblemItem
+
+        problems = [
+            ProblemItem(type="clipping", severity="dealbreaker", message="Clipped", details={}),
+            ProblemItem(type="noise_floor", severity="minor", message="Noisy", details={}),
+        ]
+        chain = _build_chain_from_problems(problems)
+        assert chain == []
+
+    def test_multiple_recipes_flattened(self):
+        """Multiple fixable problems flatten into single chain."""
+        from phantom.processing import _build_chain_from_problems
+        from phantom.problems import ProblemItem
+
+        problems = [
+            ProblemItem(type="mud", severity="moderate", message="Mud", details={}),
+            ProblemItem(type="harshness", severity="moderate", message="Harsh", details={}),
+        ]
+        chain = _build_chain_from_problems(problems)
+        # mud=2 plugins + harshness=1 plugin = 3 total
+        assert len(chain) == 3
+
+
+# ---------------------------------------------------------------------------
+# TestFixAudio -- End-to-end fix_audio function
+# ---------------------------------------------------------------------------
+
+
+class TestFixAudio:
+    """fix_audio orchestrates detect_problems -> recipe -> process -> compare."""
+
+    @pytest.fixture()
+    def stereo_wav(self, tmp_path):
+        """Create a stereo WAV file with a 440Hz sine."""
+        sr = 44100
+        duration = 0.5
+        n = int(sr * duration)
+        t = np.linspace(0, duration, n, endpoint=False, dtype=np.float32)
+        samples = (0.5 * np.sin(2 * np.pi * 440 * t)).astype(np.float32)
+        samples_2d = np.column_stack([samples, samples])
+        path = str(tmp_path / "input.wav")
+        sf.write(path, samples_2d, sr)
+        return path
+
+    def test_fix_audio_returns_fix_result(self, stereo_wav, tmp_path, monkeypatch):
+        """fix_audio returns a FixResult with all required fields."""
+        from phantom.processing import fix_audio, FixResult
+        from phantom.problems import ProblemsResult
+
+        # Mock detect_problems to return no problems (clean audio)
+        monkeypatch.setattr(
+            "phantom.processing.detect_problems",
+            lambda audio: ProblemsResult(problems=[], clean=True),
+        )
+
+        output = str(tmp_path / "output.wav")
+        result = fix_audio(stereo_wav, output_path=output)
+        assert isinstance(result, FixResult)
+        assert result.output_path == output
+        assert isinstance(result.before, ProblemsResult)
+        assert isinstance(result.after, ProblemsResult)
+        assert isinstance(result.improvements, list)
+        assert isinstance(result.regressions, list)
+
+    def test_fix_audio_no_problems_writes_copy(self, stereo_wav, tmp_path, monkeypatch):
+        """When no fixable problems detected, output is a copy of input."""
+        from phantom.processing import fix_audio
+        from phantom.problems import ProblemsResult
+
+        monkeypatch.setattr(
+            "phantom.processing.detect_problems",
+            lambda audio: ProblemsResult(problems=[], clean=True),
+        )
+
+        output = str(tmp_path / "output.wav")
+        result = fix_audio(stereo_wav, output_path=output)
+        assert os.path.isfile(output)
+        assert result.fixes_applied == []
+
+    def test_fix_audio_with_detected_problem(self, stereo_wav, tmp_path, monkeypatch):
+        """fix_audio with detected fixable problem applies recipe and reports fix."""
+        from phantom.processing import fix_audio
+        from phantom.problems import ProblemsResult, ProblemItem
+
+        before_result = ProblemsResult(
+            problems=[
+                ProblemItem(type="mud", severity="moderate", message="Mud detected", details={})
+            ],
+            clean=False,
+        )
+        after_result = ProblemsResult(problems=[], clean=True)
+        call_count = {"n": 0}
+
+        def mock_detect(audio):
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                return before_result
+            return after_result
+
+        monkeypatch.setattr("phantom.processing.detect_problems", mock_detect)
+
+        output = str(tmp_path / "output.wav")
+        result = fix_audio(stereo_wav, output_path=output)
+        assert "mud" in result.fixes_applied
+        assert os.path.isfile(output)
+        # detect_problems called twice: before and after
+        assert call_count["n"] == 2
+
+    def test_fix_audio_problems_filter(self, stereo_wav, tmp_path, monkeypatch):
+        """problems parameter filters which problem types to fix."""
+        from phantom.processing import fix_audio
+        from phantom.problems import ProblemsResult, ProblemItem
+
+        before_result = ProblemsResult(
+            problems=[
+                ProblemItem(type="mud", severity="moderate", message="Mud", details={}),
+                ProblemItem(type="harshness", severity="significant", message="Harsh", details={}),
+            ],
+            clean=False,
+        )
+        after_result = ProblemsResult(problems=[], clean=True)
+        call_count = {"n": 0}
+
+        def mock_detect(audio):
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                return before_result
+            return after_result
+
+        monkeypatch.setattr("phantom.processing.detect_problems", mock_detect)
+
+        output = str(tmp_path / "output.wav")
+        # Only fix harshness, not mud
+        result = fix_audio(stereo_wav, problems=["harshness"], output_path=output)
+        assert "harshness" in result.fixes_applied
+        assert "mud" not in result.fixes_applied
+
+    def test_fix_audio_problems_filter_no_match(self, stereo_wav, tmp_path, monkeypatch):
+        """problems filter that matches no detected problems -> no processing."""
+        from phantom.processing import fix_audio
+        from phantom.problems import ProblemsResult, ProblemItem
+
+        before_result = ProblemsResult(
+            problems=[
+                ProblemItem(type="mud", severity="moderate", message="Mud", details={})
+            ],
+            clean=False,
+        )
+        after_result = ProblemsResult(problems=[], clean=True)
+        call_count = {"n": 0}
+
+        def mock_detect(audio):
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                return before_result
+            return after_result
+
+        monkeypatch.setattr("phantom.processing.detect_problems", mock_detect)
+
+        output = str(tmp_path / "output.wav")
+        result = fix_audio(stereo_wav, problems=["harshness"], output_path=output)
+        assert result.fixes_applied == []
+        assert os.path.isfile(output)
+
+    def test_fix_audio_regression_detection(self, stereo_wav, tmp_path, monkeypatch):
+        """Worsened problems appear in FixResult.regressions."""
+        from phantom.processing import fix_audio
+        from phantom.problems import ProblemsResult, ProblemItem
+
+        before_result = ProblemsResult(
+            problems=[
+                ProblemItem(type="mud", severity="moderate", message="Mud", details={})
+            ],
+            clean=False,
+        )
+        after_result = ProblemsResult(
+            problems=[
+                ProblemItem(type="mud", severity="dealbreaker", message="Mud worse", details={})
+            ],
+            clean=False,
+        )
+        call_count = {"n": 0}
+
+        def mock_detect(audio):
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                return before_result
+            return after_result
+
+        monkeypatch.setattr("phantom.processing.detect_problems", mock_detect)
+
+        output = str(tmp_path / "output.wav")
+        result = fix_audio(stereo_wav, output_path=output)
+        assert len(result.regressions) == 1
+        assert result.regressions[0].problem_type == "mud"
+        assert result.regressions[0].status == "worsened"
+
+    def test_fix_audio_unfixable_skipped(self, stereo_wav, tmp_path, monkeypatch):
+        """Unfixable problems are skipped, not passed to recipe lookup."""
+        from phantom.processing import fix_audio
+        from phantom.problems import ProblemsResult, ProblemItem
+
+        before_result = ProblemsResult(
+            problems=[
+                ProblemItem(type="clipping", severity="dealbreaker", message="Clipped", details={}),
+                ProblemItem(type="mud", severity="moderate", message="Mud", details={}),
+            ],
+            clean=False,
+        )
+        after_result = ProblemsResult(problems=[], clean=True)
+        call_count = {"n": 0}
+
+        def mock_detect(audio):
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                return before_result
+            return after_result
+
+        monkeypatch.setattr("phantom.processing.detect_problems", mock_detect)
+
+        output = str(tmp_path / "output.wav")
+        result = fix_audio(stereo_wav, output_path=output)
+        # Only mud should be fixed, not clipping
+        assert "mud" in result.fixes_applied
+        assert "clipping" not in result.fixes_applied
+
+    def test_fix_audio_default_output_path(self, stereo_wav, monkeypatch):
+        """Default output path uses _fixed suffix."""
+        from phantom.processing import fix_audio
+        from phantom.problems import ProblemsResult
+
+        monkeypatch.setattr(
+            "phantom.processing.detect_problems",
+            lambda audio: ProblemsResult(problems=[], clean=True),
+        )
+
+        result = fix_audio(stereo_wav)
+        expected = stereo_wav.replace(".wav", "_fixed.wav")
+        assert result.output_path == expected
+        assert os.path.isfile(expected)
+
+    def test_fix_audio_improvements_list(self, stereo_wav, tmp_path, monkeypatch):
+        """Resolved problems appear in improvements list."""
+        from phantom.processing import fix_audio
+        from phantom.problems import ProblemsResult, ProblemItem
+
+        before_result = ProblemsResult(
+            problems=[
+                ProblemItem(type="mud", severity="moderate", message="Mud", details={}),
+            ],
+            clean=False,
+        )
+        after_result = ProblemsResult(problems=[], clean=True)
+        call_count = {"n": 0}
+
+        def mock_detect(audio):
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                return before_result
+            return after_result
+
+        monkeypatch.setattr("phantom.processing.detect_problems", mock_detect)
+
+        output = str(tmp_path / "output.wav")
+        result = fix_audio(stereo_wav, output_path=output)
+        assert len(result.improvements) == 1
+        assert result.improvements[0].problem_type == "mud"
+        assert result.improvements[0].status == "resolved"
+
+    def test_fix_audio_dependency_guard(self, stereo_wav, monkeypatch):
+        """fix_audio raises DependencyMissingError without pedalboard."""
+        import builtins
+        import sys
+
+        monkeypatch.delitem(sys.modules, "pedalboard", raising=False)
+
+        original_import = builtins.__import__
+
+        def _mock_import(name, *args, **kwargs):
+            if name == "pedalboard":
+                raise ImportError("No module named 'pedalboard'")
+            return original_import(name, *args, **kwargs)
+
+        monkeypatch.setattr("builtins.__import__", _mock_import)
+
+        from phantom.processing import fix_audio
+
+        with pytest.raises(DependencyMissingError):
+            fix_audio(stereo_wav)
