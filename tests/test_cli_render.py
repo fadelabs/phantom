@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -142,3 +143,119 @@ def test_render_custom_output(runner, make_wav, tmp_path):
     assert result.exit_code == 0
     data = _extract_json(result.output)
     assert "custom.mp3" in data["output"]
+
+
+# ---------------------------------------------------------------------------
+# Path security integration tests (D-08, D-09)
+# ---------------------------------------------------------------------------
+
+
+class TestRenderPathSecurity:
+    """Integration tests for render command path security enforcement."""
+
+    def test_render_input_path_security_rejected(
+        self, runner, tmp_path, mono_sine_440hz, monkeypatch
+    ):
+        """Input file outside PHANTOM_AUDIO_DIR is rejected with non-zero exit."""
+        # Set up allowed directory
+        allowed = tmp_path / "allowed"
+        allowed.mkdir()
+        monkeypatch.setenv("PHANTOM_AUDIO_DIR", str(allowed))
+
+        # Create WAV outside the allowed directory
+        forbidden = tmp_path / "forbidden"
+        forbidden.mkdir()
+        wav_path = forbidden / "test.wav"
+        samples, sr = mono_sine_440hz
+        sf.write(str(wav_path), samples, sr)
+
+        with patch("phantom.cli.render.shutil.which", return_value="/usr/bin/ffmpeg"):
+            result = runner.invoke(
+                cli, ["render", str(wav_path), "--format", "mp3"]
+            )
+
+        assert result.exit_code != 0
+        output_lower = result.output.lower()
+        assert "denied" in output_lower or "outside" in output_lower
+
+    def test_render_output_path_security_rejected(
+        self, runner, tmp_path, mono_sine_440hz, monkeypatch
+    ):
+        """Output path outside PHANTOM_OUTPUT_DIR is rejected with non-zero exit."""
+        # Create a WAV inside tmp_path (no input restriction)
+        monkeypatch.delenv("PHANTOM_AUDIO_DIR", raising=False)
+        wav_path = tmp_path / "test.wav"
+        samples, sr = mono_sine_440hz
+        sf.write(str(wav_path), samples, sr)
+
+        # Set up allowed output directory
+        allowed_out = tmp_path / "allowed_out"
+        allowed_out.mkdir()
+        monkeypatch.setenv("PHANTOM_OUTPUT_DIR", str(allowed_out))
+
+        # Output path outside the allowed output directory
+        forbidden_out = tmp_path / "forbidden_out" / "output.mp3"
+
+        with patch("phantom.cli.render.shutil.which", return_value="/usr/bin/ffmpeg"):
+            result = runner.invoke(
+                cli,
+                [
+                    "render",
+                    str(wav_path),
+                    "--format",
+                    "mp3",
+                    "--output",
+                    str(forbidden_out),
+                ],
+            )
+
+        assert result.exit_code != 0
+        output_lower = result.output.lower()
+        assert "denied" in output_lower or "outside" in output_lower
+
+    def test_render_input_inside_allowed_dir_passes_validation(
+        self, runner, tmp_path, mono_sine_440hz, monkeypatch
+    ):
+        """Input inside PHANTOM_AUDIO_DIR passes path validation (fails on ffmpeg)."""
+        monkeypatch.setenv("PHANTOM_AUDIO_DIR", str(tmp_path))
+        monkeypatch.delenv("PHANTOM_OUTPUT_DIR", raising=False)
+
+        wav_path = tmp_path / "test.wav"
+        samples, sr = mono_sine_440hz
+        sf.write(str(wav_path), samples, sr)
+
+        # Mock ffmpeg as missing so it fails on ffmpeg check, not path security
+        with patch("phantom.cli.render.shutil.which", return_value=None):
+            result = runner.invoke(
+                cli, ["render", str(wav_path), "--format", "mp3"]
+            )
+
+        # Should fail because ffmpeg is not found, NOT because of path security
+        assert result.exit_code != 0
+        output_lower = result.output.lower()
+        assert "denied" not in output_lower and "outside" not in output_lower
+        assert "ffmpeg" in output_lower
+
+    def test_render_no_restriction_when_env_unset(
+        self, runner, tmp_path, mono_sine_440hz, monkeypatch
+    ):
+        """Without PHANTOM_AUDIO_DIR or PHANTOM_OUTPUT_DIR, no path restriction."""
+        monkeypatch.delenv("PHANTOM_AUDIO_DIR", raising=False)
+        monkeypatch.delenv("PHANTOM_OUTPUT_DIR", raising=False)
+
+        wav_path = tmp_path / "anywhere" / "test.wav"
+        wav_path.parent.mkdir(parents=True)
+        samples, sr = mono_sine_440hz
+        sf.write(str(wav_path), samples, sr)
+
+        # Mock ffmpeg as missing so it fails on ffmpeg check, not path security
+        with patch("phantom.cli.render.shutil.which", return_value=None):
+            result = runner.invoke(
+                cli, ["render", str(wav_path), "--format", "mp3"]
+            )
+
+        # Should fail because ffmpeg is not found, NOT path restriction
+        assert result.exit_code != 0
+        output_lower = result.output.lower()
+        assert "denied" not in output_lower and "outside" not in output_lower
+        assert "ffmpeg" in output_lower
