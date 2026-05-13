@@ -1,6 +1,6 @@
 """Phantom: AI audio engineering system."""
 
-__version__ = "1.2.1"
+__version__ = "1.2.2"
 
 from phantom.audio import AudioData, load_audio
 from phantom.exceptions import (
