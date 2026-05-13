@@ -115,7 +115,11 @@ def analyze_dynamics(audio: AudioData) -> DynamicsResult:
     dc = es.DynamicComplexity(sampleRate=audio.sample_rate, frameSize=0.2)
     complexity, loudness = dc(mono)
     dynamic_complexity = float(complexity)
+    if not np.isfinite(dynamic_complexity):
+        dynamic_complexity = None
     loudness_db_val = float(loudness)
+    if not np.isfinite(loudness_db_val):
+        loudness_db_val = None
 
     return DynamicsResult(
         rms_dbfs=rms_dbfs,
