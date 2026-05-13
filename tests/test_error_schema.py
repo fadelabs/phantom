@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import functools
 import importlib
 import json
 
@@ -101,6 +100,20 @@ def _get_bad_args(tool_name: str) -> dict:
     return {"file_path": "/nonexistent/test.wav"}
 
 
+def _assert_error_schema(error: dict, tool_name: str) -> None:
+    """Assert *error* conforms to {error_type: str, message: str, context: dict}."""
+    assert isinstance(error, dict), f"{tool_name}: error response is not a dict"
+    for key, expected_type in [
+        ("error_type", str),
+        ("message", str),
+        ("context", dict),
+    ]:
+        assert key in error, f"{tool_name}: missing '{key}' key"
+        assert isinstance(error[key], expected_type), (
+            f"{tool_name}: '{key}' is not {expected_type.__name__}"
+        )
+
+
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
@@ -124,42 +137,18 @@ async def test_all_tools_return_consistent_error_schema(client):
             await client.call_tool(name, bad_args)
         error = json.loads(str(exc_info.value))
 
-        assert isinstance(error, dict), (
-            f"{name}: error response is not a dict"
-        )
-        assert "error_type" in error, (
-            f"{name}: missing 'error_type' key"
-        )
-        assert "message" in error, (
-            f"{name}: missing 'message' key"
-        )
-        assert "context" in error, (
-            f"{name}: missing 'context' key"
-        )
-        assert isinstance(error["error_type"], str), (
-            f"{name}: 'error_type' is not str"
-        )
-        assert isinstance(error["message"], str), (
-            f"{name}: 'message' is not str"
-        )
-        assert isinstance(error["context"], dict), (
-            f"{name}: 'context' is not dict"
-        )
+        _assert_error_schema(error, name)
         tested.append(name)
 
     # Sanity: we actually tested a meaningful number of tools
-    assert len(tested) >= 15, (
-        f"Only tested {len(tested)} tools, expected at least 15"
-    )
+    assert len(tested) >= 15, f"Only tested {len(tested)} tools, expected at least 15"
 
 
 async def test_tool_count_not_hardcoded(client):
     """Tool count is discovered dynamically and matches the expected minimum (D-20)."""
     tools = await client.list_tools()
     # Current count is 19; use >= so the test survives tool additions.
-    assert len(tools) >= 19, (
-        f"Expected at least 19 tools, found {len(tools)}"
-    )
+    assert len(tools) >= 19, f"Expected at least 19 tools, found {len(tools)}"
 
 
 def test_wrap_errors_coverage():
@@ -191,9 +180,7 @@ def test_wrap_errors_coverage():
         mod = importlib.import_module(module_path)
         for func_name in func_names:
             fn = getattr(mod, func_name, None)
-            assert fn is not None, (
-                f"{module_path}.{func_name} does not exist"
-            )
+            assert fn is not None, f"{module_path}.{func_name} does not exist"
             # functools.wraps sets __wrapped__ on the wrapper
             if not hasattr(fn, "__wrapped__"):
                 missing.append(f"{module_path}.{func_name}")
