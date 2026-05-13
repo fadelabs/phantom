@@ -21,13 +21,13 @@ from phantom.comparison._common import (
     ReferenceComparisonResult,
     StereoProfileComparisonSection,
     StereoReferenceComparisonSection,
-    _check_mono_below,
-    _classify_deviation,
-    _normalize_band_energies,
-    _rate_deviation,
-    _rate_deviation_ref,
-    _rate_range_deviation,
-    _unmeasurable_deviation,
+    _check_mono_below,  # noqa: F401 — re-exported for internal use
+    _classify_deviation,  # noqa: F401 — re-exported for internal use
+    _normalize_band_energies,  # noqa: F401 — re-exported for internal use
+    _rate_deviation,  # noqa: F401 — re-exported for internal use
+    _rate_deviation_ref,  # noqa: F401 — re-exported for internal use
+    _rate_range_deviation,  # noqa: F401 — re-exported for internal use
+    _unmeasurable_deviation,  # noqa: F401 — re-exported for internal use
 )
 from phantom.comparison.profile import compare_to_profile
 from phantom.comparison.reference import compare_to_reference
@@ -51,11 +51,4 @@ __all__ = [
     "LoudnessReferenceComparisonSection",
     "DynamicsReferenceComparisonSection",
     "StereoReferenceComparisonSection",
-    "_rate_deviation",
-    "_rate_deviation_ref",
-    "_rate_range_deviation",
-    "_normalize_band_energies",
-    "_check_mono_below",
-    "_classify_deviation",
-    "_unmeasurable_deviation",
 ]
