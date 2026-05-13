@@ -327,7 +327,11 @@ class TestVersionPinning:
             ),
             patch("phantom.cli.setup_reaper.subprocess.run") as mock_run,
         ):
-            mock_run.return_value = MagicMock(returncode=0, stdout=b"https://github.com/fadelabs/reaper-mcp.git\n")
+            # text=True in the remote URL check means stdout is a string, not bytes
+            mock_run.return_value = MagicMock(
+                returncode=0,
+                stdout="https://github.com/fadelabs/reaper-mcp.git\n",
+            )
             runner.invoke(
                 cli,
                 ["setup-reaper", "--install-dir", str(install_dir), "--json"],
@@ -367,7 +371,9 @@ class TestVersionPinning:
                 "phantom.cli.setup_reaper._get_reaper_scripts_dir",
                 return_value=scripts_dir,
             ),
-            patch("phantom.cli.setup_reaper.subprocess.run", side_effect=side_effect_fn),
+            patch(
+                "phantom.cli.setup_reaper.subprocess.run", side_effect=side_effect_fn
+            ),
         ):
             result = runner.invoke(
                 cli,
@@ -485,6 +491,6 @@ class TestLuaWhitelist:
             )
 
         output_lower = result.output.lower()
-        assert "skipping unexpected" in output_lower or "unexpected lua" in output_lower, (
-            f"Expected warning about unexpected Lua files in output: {result.output}"
-        )
+        assert (
+            "skipping unexpected" in output_lower or "unexpected lua" in output_lower
+        ), f"Expected warning about unexpected Lua files in output: {result.output}"
