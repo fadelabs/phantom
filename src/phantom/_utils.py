@@ -2,14 +2,43 @@
 
 from __future__ import annotations
 
+import functools
 import os
 
 import numpy as np
 
-from phantom.exceptions import PathSecurityError
+from phantom.exceptions import AnalysisError, PathSecurityError, PhantomError
 
 # Silence threshold in dBFS -- signals below this are treated as silence.
 SILENCE_THRESHOLD_DB = -80.0
+
+
+def wrap_errors(message_prefix: str):
+    """Decorator that wraps unexpected exceptions in AnalysisError.
+
+    PhantomError subclasses (AnalysisError, AudioLoadError, PathSecurityError,
+    ProfileLoadError, DependencyMissingError) pass through unchanged.  All other
+    exceptions are caught and re-raised as ``AnalysisError`` with *message_prefix*
+    prepended and the original exception chained via ``__cause__``.
+
+    Args:
+        message_prefix: Human-readable context prepended to the wrapped message,
+            e.g. ``"Spectral analysis failed"``.
+    """
+
+    def decorator(fn):
+        @functools.wraps(fn)
+        def wrapper(*args, **kwargs):
+            try:
+                return fn(*args, **kwargs)
+            except PhantomError:
+                raise
+            except Exception as exc:
+                raise AnalysisError(f"{message_prefix}: {exc}") from exc
+
+        return wrapper
+
+    return decorator
 
 
 def _block_rms_db(
@@ -30,6 +59,8 @@ def _block_rms_db(
     Returns:
         List of RMS values in dBFS, one per non-silent block.
     """
+    if mono.ndim != 1:
+        raise ValueError(f"mono must be 1-D, got {mono.ndim}-D array")
     if block_size <= 0:
         raise ValueError(f"block_size must be positive, got {block_size}")
     if hop <= 0:
@@ -134,6 +165,13 @@ def validate_output_path(path: str) -> str:
 
     real_base = os.path.realpath(output_dir)
     real_path = os.path.realpath(path)
+
+    # Directory existence check (consistent with validate_input_path)
+    if not os.path.isdir(real_base):
+        raise PathSecurityError(
+            "PHANTOM_OUTPUT_DIR points to a directory that does not exist: "
+            "check the path and create the directory."
+        )
 
     if not (real_path.startswith(real_base + os.sep) or real_path == real_base):
         raise PathSecurityError(

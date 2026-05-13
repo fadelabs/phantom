@@ -18,7 +18,7 @@ from pydantic import BaseModel, field_validator
 from phantom.audio import AudioData
 from phantom.exceptions import AnalysisError
 from phantom._rounding import round_db_dict, round_hz, round_ratio, round_ratio_list
-from phantom._utils import is_near_silent
+from phantom._utils import is_near_silent, wrap_errors
 
 # Standard octave band center frequencies (Hz).
 OCTAVE_CENTERS = [31.25, 62.5, 125, 250, 500, 1000, 2000, 4000, 8000, 16000]
@@ -68,6 +68,7 @@ def _silent_spectral_result() -> SpectralResult:
     return SpectralResult()
 
 
+@wrap_errors("Spectral analysis failed")
 def analyze_spectrum(audio: AudioData) -> SpectralResult:
     """Analyze spectral characteristics of an audio signal.
 
@@ -100,99 +101,93 @@ def analyze_spectrum(audio: AudioData) -> SpectralResult:
     if is_near_silent(mono):
         return _silent_spectral_result()
 
-    try:
-        # Spectral features: 2048/1024 (~46ms/~23ms at 44.1kHz) per AES standard for tonal analysis
-        frame_size = 2048
-        hop_size = 1024
+    # Spectral features: 2048/1024 (~46ms/~23ms at 44.1kHz) per AES standard for tonal analysis
+    frame_size = 2048
+    hop_size = 1024
 
-        windowing = es.Windowing(type="hann", size=frame_size)
-        spectrum = es.Spectrum(size=frame_size)
-        centroid = es.Centroid(range=sample_rate / 2)
-        rolloff = es.RollOff(
-            cutoff=0.85, sampleRate=sample_rate
-        )  # 85% per Peeters 2004
-        flatness = es.Flatness()
-        spectral_contrast = es.SpectralContrast(
-            sampleRate=sample_rate, frameSize=frame_size
-        )
-        spectral_peaks = es.SpectralPeaks(
-            sampleRate=sample_rate,
-            maxPeaks=100,
-            orderBy="frequency",  # 100 peaks sufficient for dissonance curve
-        )
-        dissonance_algo = es.Dissonance()
+    windowing = es.Windowing(type="hann", size=frame_size)
+    spectrum = es.Spectrum(size=frame_size)
+    centroid = es.Centroid(range=sample_rate / 2)
+    rolloff = es.RollOff(
+        cutoff=0.85, sampleRate=sample_rate
+    )  # 85% per Peeters 2004
+    flatness = es.Flatness()
+    spectral_contrast = es.SpectralContrast(
+        sampleRate=sample_rate, frameSize=frame_size
+    )
+    spectral_peaks = es.SpectralPeaks(
+        sampleRate=sample_rate,
+        maxPeaks=100,
+        orderBy="frequency",  # 100 peaks sufficient for dissonance curve
+    )
+    dissonance_algo = es.Dissonance()
 
-        centroids = []
-        rolloffs = []
-        flatnesses = []
-        contrasts = []
-        dissonances = []
+    centroids = []
+    rolloffs = []
+    flatnesses = []
+    contrasts = []
+    dissonances = []
 
-        for frame in es.FrameGenerator(mono, frameSize=frame_size, hopSize=hop_size):
-            win = windowing(frame)
-            spec = spectrum(win)
+    for frame in es.FrameGenerator(mono, frameSize=frame_size, hopSize=hop_size):
+        win = windowing(frame)
+        spec = spectrum(win)
 
-            centroids.append(float(centroid(spec)))
-            rolloffs.append(float(rolloff(spec)))
-            flatnesses.append(float(flatness(spec)))
+        centroids.append(float(centroid(spec)))
+        rolloffs.append(float(rolloff(spec)))
+        flatnesses.append(float(flatness(spec)))
 
-            sc, _ = spectral_contrast(spec)
-            contrasts.append(sc)
+        sc, _ = spectral_contrast(spec)
+        contrasts.append(sc)
 
-            freqs, mags = spectral_peaks(spec)
-            if len(freqs) >= 2:
-                dissonances.append(float(dissonance_algo(freqs, mags)))
+        freqs, mags = spectral_peaks(spec)
+        if len(freqs) >= 2:
+            dissonances.append(float(dissonance_algo(freqs, mags)))
 
-        # Aggregate: mean across frames
-        # Centroid with range=sr/2 already returns Hz.
-        # RollOff with sampleRate already returns Hz.
-        mean_centroid = float(np.mean(centroids))
-        mean_rolloff = float(np.mean(rolloffs))
-        mean_flatness = float(np.mean(flatnesses))
-        mean_dissonance = float(np.mean(dissonances)) if dissonances else 0.0
+    # Aggregate: mean across frames
+    # Centroid with range=sr/2 already returns Hz.
+    # RollOff with sampleRate already returns Hz.
+    mean_centroid = float(np.mean(centroids))
+    mean_rolloff = float(np.mean(rolloffs))
+    mean_flatness = float(np.mean(flatnesses))
+    mean_dissonance = float(np.mean(dissonances)) if dissonances else 0.0
 
-        # Spectral contrast: transpose and mean each band
-        contrast_array = np.array(contrasts)
-        mean_contrast = [float(v) for v in np.mean(contrast_array, axis=0)]
+    # Spectral contrast: transpose and mean each band
+    contrast_array = np.array(contrasts)
+    mean_contrast = [float(v) for v in np.mean(contrast_array, axis=0)]
 
-        # Octave bands: 4096/2048 (~93ms/~46ms) — longer window for low-frequency resolution
-        band_frame_size = 4096
-        band_hop_size = 2048
+    # Octave bands: 4096/2048 (~93ms/~46ms) — longer window for low-frequency resolution
+    band_frame_size = 4096
+    band_hop_size = 2048
 
-        band_windowing = es.Windowing(type="hann", size=band_frame_size)
-        band_spectrum = es.Spectrum(size=band_frame_size)
-        freq_bands = es.FrequencyBands(
-            frequencyBands=OCTAVE_EDGES, sampleRate=sample_rate
-        )
+    band_windowing = es.Windowing(type="hann", size=band_frame_size)
+    band_spectrum = es.Spectrum(size=band_frame_size)
+    freq_bands = es.FrequencyBands(
+        frequencyBands=OCTAVE_EDGES, sampleRate=sample_rate
+    )
 
-        band_energies_list = []
-        for frame in es.FrameGenerator(
-            mono, frameSize=band_frame_size, hopSize=band_hop_size
-        ):
-            win = band_windowing(frame)
-            spec = band_spectrum(win)
-            bands = freq_bands(spec)
-            band_energies_list.append(bands)
+    band_energies_list = []
+    for frame in es.FrameGenerator(
+        mono, frameSize=band_frame_size, hopSize=band_hop_size
+    ):
+        win = band_windowing(frame)
+        spec = band_spectrum(win)
+        bands = freq_bands(spec)
+        band_energies_list.append(bands)
 
-        # Average across frames, convert to dB
-        eps = 1e-10  # log-domain floor to avoid -inf on silence
-        avg_bands = np.mean(band_energies_list, axis=0)
-        band_db = 10 * np.log10(avg_bands + eps)
+    # Average across frames, convert to dB
+    eps = 1e-10  # log-domain floor to avoid -inf on silence
+    avg_bands = np.mean(band_energies_list, axis=0)
+    band_db = 10 * np.log10(avg_bands + eps)
 
-        octave_band_energy = {
-            label: float(db_val) for label, db_val in zip(_BAND_LABELS, band_db)
-        }
+    octave_band_energy = {
+        label: float(db_val) for label, db_val in zip(_BAND_LABELS, band_db)
+    }
 
-        return SpectralResult(
-            spectral_centroid_hz=mean_centroid,
-            spectral_rolloff_hz=mean_rolloff,
-            spectral_flatness=mean_flatness,
-            spectral_contrast=mean_contrast,
-            dissonance=mean_dissonance,
-            octave_band_energy_db=octave_band_energy,
-        )
-
-    except AnalysisError:
-        raise
-    except Exception as exc:
-        raise AnalysisError(f"Spectral analysis failed: {exc}") from exc
+    return SpectralResult(
+        spectral_centroid_hz=mean_centroid,
+        spectral_rolloff_hz=mean_rolloff,
+        spectral_flatness=mean_flatness,
+        spectral_contrast=mean_contrast,
+        dissonance=mean_dissonance,
+        octave_band_energy_db=octave_band_energy,
+    )

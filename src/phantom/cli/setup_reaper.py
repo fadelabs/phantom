@@ -14,9 +14,12 @@ import rich_click as click
 from rich.panel import Panel
 
 from phantom.cli._formatting import get_console, output_json
+from phantom import __version__
 
 REAPER_MCP_REPO = "https://github.com/fadelabs/reaper-mcp.git"
 _DEFAULT_INSTALL_DIR = "~/.phantom/reaper-mcp"
+_GIT_TIMEOUT_SECONDS = 30
+EXPECTED_LUA_FILES = ["reaper_mcp_bridge.lua"]
 
 
 def _get_reaper_scripts_dir() -> Path:
@@ -25,7 +28,9 @@ def _get_reaper_scripts_dir() -> Path:
     if system == "Darwin":
         return Path.home() / "Library" / "Application Support" / "REAPER" / "Scripts"
     elif system == "Windows":
-        appdata = os.environ.get("APPDATA", "")
+        appdata = os.environ.get("APPDATA")
+        if not appdata:
+            return Path.home() / "AppData" / "Roaming" / "REAPER" / "Scripts"
         return Path(appdata) / "REAPER" / "Scripts"
     else:
         return Path.home() / ".config" / "REAPER" / "Scripts"
@@ -35,12 +40,17 @@ def _check_tool(name: str) -> bool:
     return shutil.which(name) is not None
 
 
-def _run_step(cmd: list[str], step_name: str) -> None:
+def _run_step(cmd: list[str], step_name: str, timeout: int | None = None) -> None:
     """Run a subprocess, raising a clear error on failure."""
     try:
-        subprocess.run(cmd, check=True, capture_output=True)
-    except FileNotFoundError:
-        raise click.ClickException(f"{step_name}: command not found: {cmd[0]}")
+        subprocess.run(cmd, check=True, capture_output=True, timeout=timeout)
+    except FileNotFoundError as e:
+        raise click.ClickException(f"{step_name}: command not found: {cmd[0]} ({e})")
+    except subprocess.TimeoutExpired:
+        raise click.ClickException(
+            f"{step_name} timed out after {timeout} seconds. "
+            "Check your connection and try again."
+        )
     except subprocess.CalledProcessError as e:
         stderr = e.stderr.decode().strip() if e.stderr else str(e)
         raise click.ClickException(f"{step_name} failed:\n{stderr}")
@@ -109,11 +119,19 @@ def _merge_mcp_config(mcp_config: dict, console, yes: bool) -> str | None:
 
     servers = existing.setdefault("mcpServers", {})
     if "reaper" in servers:
-        if not yes and sys.stdin.isatty():
+        if yes:
+            pass  # Explicit --yes flag: user consented to overwrite
+        elif sys.stdin.isatty():
             if not click.confirm(
                 f"Reaper config already exists in {target}. Overwrite?", default=False
             ):
                 return None
+        else:
+            # Non-interactive, no --yes: refuse silent overwrite
+            raise click.ClickException(
+                f"Reaper config already exists in {target}. "
+                "Run with --yes to overwrite."
+            )
 
     servers["reaper"] = mcp_config["mcpServers"]["reaper"]
     # Atomic write: temp file + rename
@@ -130,7 +148,8 @@ def _merge_mcp_config(mcp_config: dict, console, yes: bool) -> str | None:
     help="Directory to clone reaper-mcp into (default: ~/.phantom/reaper-mcp)",
 )
 @click.option("--json", "-j", "json_output", is_flag=True, help="Output raw JSON")
-def setup_reaper(install_dir: str | None, json_output: bool) -> None:
+@click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompts")
+def setup_reaper(install_dir: str | None, json_output: bool, yes: bool) -> None:
     """Set up Reaper MCP bridge for DAW integration.
 
     Auto-detects Reaper installation, clones the bridge, copies Lua scripts,
@@ -168,6 +187,14 @@ def setup_reaper(install_dir: str | None, json_output: bool) -> None:
 
     # --- Clone or update ---
     if install_path.exists():
+        is_git_repo = (install_path / ".git").is_dir()
+
+        if not is_git_repo:
+            raise click.ClickException(
+                f"{install_path} exists but is not a git repository. "
+                "Remove it manually or choose a different --install-dir."
+            )
+
         remote_url = ""
         try:
             result = subprocess.run(
@@ -184,42 +211,98 @@ def setup_reaper(install_dir: str | None, json_output: bool) -> None:
         is_fadelabs = remote_url and (
             expected_remote in remote_url or "fadelabs/reaper-mcp" in remote_url
         )
-        if remote_url and not is_fadelabs:
-            if not (install_path / ".git").is_dir():
+        if not is_fadelabs:
+            if yes:
+                # Explicit --yes flag: user consented to destructive actions
+                shutil.rmtree(install_path)
+            elif sys.stdin.isatty():
+                if not click.confirm(
+                    f"{install_path} has a different remote ({remote_url or 'unknown'}). "
+                    "Remove and re-clone?",
+                    default=False,
+                ):
+                    raise click.ClickException(
+                        "Aborted. Choose a different --install-dir."
+                    )
+                shutil.rmtree(install_path)
+            else:
+                # Non-interactive, no --yes: refuse destructive action
                 raise click.ClickException(
-                    f"{install_path} exists but is not a git repository. "
-                    "Remove it manually or choose a different --install-dir."
+                    f"{install_path} has a different remote ({remote_url or 'unknown'}). "
+                    "Run with --yes to overwrite, or choose a different --install-dir."
                 )
-            shutil.rmtree(install_path)
 
     if install_path.exists():
         if not json_output:
             console.print("[dim]Updating reaper-mcp...[/dim]")
         _run_step(
-            ["git", "-C", str(install_path), "pull", "--ff-only"],
-            "Git pull",
+            ["git", "-C", str(install_path), "fetch", "--tags"],
+            "Git fetch",
+            timeout=_GIT_TIMEOUT_SECONDS,
         )
+        try:
+            _run_step(
+                ["git", "-C", str(install_path), "checkout", f"v{__version__}"],
+                "Git checkout version tag",
+                timeout=_GIT_TIMEOUT_SECONDS,
+            )
+        except click.ClickException:
+            if not json_output:
+                console.print(
+                    f"[yellow]Warning: tag v{__version__} not found — "
+                    "staying on current version (unverified).[/yellow]"
+                )
     else:
         if not json_output:
             console.print("[dim]Installing reaper-mcp...[/dim]")
         install_path.parent.mkdir(parents=True, exist_ok=True)
-        _run_step(
-            ["git", "clone", "--depth", "1", REAPER_MCP_REPO, str(install_path)],
-            "Git clone",
-        )
+        try:
+            _run_step(
+                [
+                    "git",
+                    "clone",
+                    "--depth",
+                    "1",
+                    "--branch",
+                    f"v{__version__}",
+                    REAPER_MCP_REPO,
+                    str(install_path),
+                ],
+                "Git clone (version-pinned)",
+                timeout=_GIT_TIMEOUT_SECONDS,
+            )
+        except click.ClickException:
+            if not json_output:
+                console.print(
+                    f"[yellow]Warning: tag v{__version__} not found — "
+                    "cloning HEAD (unverified version).[/yellow]"
+                )
+            _run_step(
+                ["git", "clone", "--depth", "1", REAPER_MCP_REPO, str(install_path)],
+                "Git clone (HEAD fallback)",
+                timeout=_GIT_TIMEOUT_SECONDS,
+            )
 
     # --- Install Python dependencies ---
     if (install_path / "pyproject.toml").exists():
         _run_step(
             ["uv", "sync", "--directory", str(install_path)],
             "Dependency install",
+            timeout=120,  # 2-minute timeout for dependency install
         )
 
     # --- Copy Lua bridge to Reaper ---
     lua_copied: list[str] = []
-    lua_files = list(install_path.rglob("*.lua"))
+    # Only copy top-level .lua files — avoid test/example scripts in subdirectories
+    lua_files = list(install_path.glob("*.lua"))
 
     for lua_file in lua_files:
+        if lua_file.name not in EXPECTED_LUA_FILES:
+            if not json_output:
+                console.print(
+                    f"[yellow]Skipping unexpected Lua file: {lua_file.name}[/yellow]"
+                )
+            continue
         dest = scripts_dir / lua_file.name
         shutil.copy2(str(lua_file), str(dest))
         lua_copied.append(str(dest))
@@ -249,7 +332,7 @@ def setup_reaper(install_dir: str | None, json_output: bool) -> None:
         }
     }
 
-    config_written_to = _merge_mcp_config(mcp_config, console, yes=True)
+    config_written_to = _merge_mcp_config(mcp_config, console, yes=yes)
 
     # --- Output ---
     if json_output:

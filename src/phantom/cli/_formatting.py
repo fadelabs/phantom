@@ -14,7 +14,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from phantom.exceptions import DependencyMissingError, PhantomError
+from phantom.exceptions import RECOMMENDED_PYTHON, DependencyMissingError, PhantomError
 
 # ---------------------------------------------------------------------------
 # Severity styling (D-06)
@@ -186,7 +186,7 @@ def _format_value(value: object) -> str:
     if isinstance(value, float):
         return f"{value:.2f}"
     if isinstance(value, list):
-        if value and isinstance(value[0], float):
+        if value and all(isinstance(v, (int, float)) for v in value):
             return ", ".join(f"{v:.2f}" for v in value)
         return str(value)
     return str(value)
@@ -221,7 +221,7 @@ def render_error(exc: Exception, console: Console) -> None:
         console.print(
             Panel(
                 f"[bold]{exc.package}[/bold] is not installed.\n\n"
-                f'Install with: [green]uv tool install "phantom-audio\\[{exc.extra}\\]" --python 3.13[/green]',
+                f'Install with: [green]uv tool install "phantom-audio\\[{exc.extra}\\]" --python {RECOMMENDED_PYTHON}[/green]',
                 title="Missing Dependency",
                 border_style="yellow",
             )
