@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 from phantom.audio import AudioData
-from phantom.problems import detect_problems, ProblemsResult
+from phantom.problems import detect_problems, ProblemsResult, _detect_hum
 
 
 # ---------------------------------------------------------------------------
@@ -345,6 +345,67 @@ class TestHum:
         result = detect_problems(audio)
         hum_problems = [p for p in result.problems if p.type == "hum"]
         assert len(hum_problems) == 0
+
+
+# ---------------------------------------------------------------------------
+# PROB-06b: Hum Detection Edge Cases (< 2 seconds)
+# ---------------------------------------------------------------------------
+
+
+class TestHumEdgeCases:
+    """Audio shorter than 2 seconds should return empty hum results."""
+
+    @staticmethod
+    def _make_hum_signal(duration: float, sr: int = 44100) -> np.ndarray:
+        """Create a mono float32 signal with a strong 60Hz hum component."""
+        n_samples = int(sr * duration)
+        t = np.linspace(0, duration, n_samples, endpoint=False, dtype=np.float32)
+        return (
+            0.3 * np.sin(2 * np.pi * 440 * t) + 0.1 * np.sin(2 * np.pi * 60 * t)
+        ).astype(np.float32)
+
+    def test_half_second_returns_empty(self):
+        """0.5-second audio with 60Hz hum -> empty list."""
+        sr = 44100
+        samples = self._make_hum_signal(0.5, sr)
+        result = _detect_hum(samples, sr)
+        assert result == []
+
+    def test_one_second_returns_empty(self):
+        """1.0-second audio with 60Hz hum -> empty list."""
+        sr = 44100
+        samples = self._make_hum_signal(1.0, sr)
+        result = _detect_hum(samples, sr)
+        assert result == []
+
+    def test_one_point_five_seconds_returns_empty(self):
+        """1.5-second audio with 60Hz hum -> empty list."""
+        sr = 44100
+        samples = self._make_hum_signal(1.5, sr)
+        result = _detect_hum(samples, sr)
+        assert result == []
+
+    def test_one_point_nine_seconds_returns_empty(self):
+        """1.9-second audio with 60Hz hum -> empty list."""
+        sr = 44100
+        samples = self._make_hum_signal(1.9, sr)
+        result = _detect_hum(samples, sr)
+        assert result == []
+
+    def test_two_seconds_returns_nonempty(self, signal_with_hum):
+        """2.0-second audio with 60Hz hum -> non-empty list (boundary preserved)."""
+        samples, sr = signal_with_hum
+        result = _detect_hum(samples, sr)
+        assert len(result) > 0
+
+    def test_detect_problems_short_audio_no_exception(self):
+        """detect_problems with 1-second audio does not raise (integration guard)."""
+        sr = 44100
+        samples = self._make_hum_signal(1.0, sr)
+        audio = _make_audio(samples, sr)
+        # Should not raise any exception
+        result = detect_problems(audio)
+        assert isinstance(result, ProblemsResult)
 
 
 # ---------------------------------------------------------------------------
