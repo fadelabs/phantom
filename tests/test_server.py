@@ -520,6 +520,59 @@ async def test_multi_stem_masking_has_stem_paths(client, mono_sine_440hz, make_w
     assert "stem_0" in data["stem_paths"]
 
 
+# ---------------------------------------------------------------------------
+# Adaptive top_n for multi_stem_masking (D-07)
+# ---------------------------------------------------------------------------
+
+
+async def test_adaptive_top_n_few_stems(client, make_wav):
+    """With few stems (3 stems = 3 pairs), all pairs returned (3 < floor of 10)."""
+    sr = 44100
+    t = np.linspace(0, 1.0, sr, endpoint=False, dtype=np.float32)
+    stems = []
+    for freq in [300, 350, 400]:
+        samples = (0.5 * np.sin(2 * np.pi * freq * t)).astype(np.float32)
+        stems.append(make_wav(samples, sr, name=f"stem_{freq}.wav"))
+    result = await client.call_tool("multi_stem_masking", {"file_paths": stems})
+    data = _data(result)
+    # 3 stems = 3 pairs, all should be returned (3 < min(3, max(10,3)) = 3)
+    assert len(data["pairs"]) == data["pair_count"]
+    assert data["pair_count"] == 3
+
+
+async def test_adaptive_top_n_many_stems(client, make_wav):
+    """With 6 stems (15 pairs), adaptive default = min(15, max(10, 6)) = 10 pairs."""
+    sr = 44100
+    t = np.linspace(0, 1.0, sr, endpoint=False, dtype=np.float32)
+    stems = []
+    for freq in [200, 300, 400, 500, 600, 700]:
+        samples = (0.5 * np.sin(2 * np.pi * freq * t)).astype(np.float32)
+        stems.append(make_wav(samples, sr, name=f"stem_{freq}.wav"))
+    result = await client.call_tool("multi_stem_masking", {"file_paths": stems})
+    data = _data(result)
+    # 6 stems = 15 pairs, adaptive default = min(15, max(10, 6)) = 10
+    assert len(data["pairs"]) == 10
+    # pair_count preserves original total
+    assert data["pair_count"] == 15
+
+
+async def test_adaptive_top_n_env_override(client, make_wav, monkeypatch):
+    """Setting PHANTOM_MASKING_TOP_N=2 limits returned pairs to 2."""
+    monkeypatch.setenv("PHANTOM_MASKING_TOP_N", "2")
+    sr = 44100
+    t = np.linspace(0, 1.0, sr, endpoint=False, dtype=np.float32)
+    stems = []
+    for freq in [300, 350, 400, 450]:
+        samples = (0.5 * np.sin(2 * np.pi * freq * t)).astype(np.float32)
+        stems.append(make_wav(samples, sr, name=f"stem_{freq}.wav"))
+    result = await client.call_tool("multi_stem_masking", {"file_paths": stems})
+    data = _data(result)
+    # 4 stems = 6 pairs, but env var limits to 2
+    assert len(data["pairs"]) == 2
+    # pair_count still reflects original total
+    assert data["pair_count"] == 6
+
+
 async def test_windows_path_stripped_from_error(client):
     """Windows-style paths are stripped from PhantomError messages (SC-8)."""
     from unittest.mock import patch
