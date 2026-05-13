@@ -825,6 +825,82 @@ class TestCompareToProfileSerialization:
         assert reconstructed.model_dump() == d
 
 
+# ---------------------------------------------------------------------------
+# TestAnalysisCaching -- tests for AnalysisCache integration
+# ---------------------------------------------------------------------------
+
+
+class TestAnalysisCaching:
+    """Verify that compare_to_reference and compare_to_profile use the analysis cache."""
+
+    @pytest.fixture(autouse=True)
+    def clear_cache(self):
+        """Clear the analysis cache before each test to ensure isolation."""
+        from phantom._cache import analysis_cache
+
+        with analysis_cache._lock:
+            analysis_cache._store.clear()
+        yield
+        with analysis_cache._lock:
+            analysis_cache._store.clear()
+
+    def test_compare_to_reference_populates_cache(self):
+        """After calling compare_to_reference, the cache should contain entries."""
+        from phantom._cache import analysis_cache
+
+        sr = 44100
+        t = np.linspace(0, 3.0, sr * 3, endpoint=False, dtype=np.float32)
+        samples_a = (0.5 * np.sin(2 * np.pi * 440 * t)).astype(np.float32)
+        samples_b = (0.3 * np.sin(2 * np.pi * 1000 * t)).astype(np.float32)
+        audio_a = _make_audio(samples_a, sr)
+        audio_b = _make_audio(samples_b, sr)
+
+        assert len(analysis_cache._store) == 0
+        compare_to_reference(audio_a, audio_b)
+        # 4 analysis functions x 2 audio inputs = 8 cache entries
+        assert len(analysis_cache._store) == 8
+
+    def test_compare_to_reference_cache_hit_on_second_call(self):
+        """Second call to compare_to_reference with same audio uses cache hits."""
+        from phantom._cache import analysis_cache
+
+        sr = 44100
+        t = np.linspace(0, 3.0, sr * 3, endpoint=False, dtype=np.float32)
+        samples_a = (0.5 * np.sin(2 * np.pi * 440 * t)).astype(np.float32)
+        samples_b = (0.3 * np.sin(2 * np.pi * 1000 * t)).astype(np.float32)
+        audio_a = _make_audio(samples_a, sr)
+        audio_b = _make_audio(samples_b, sr)
+
+        result1 = compare_to_reference(audio_a, audio_b)
+        result2 = compare_to_reference(audio_a, audio_b)
+        # Results should be identical
+        assert result1.model_dump() == result2.model_dump()
+        # Cache should still have exactly 8 entries (no duplicates)
+        assert len(analysis_cache._store) == 8
+
+    def test_compare_to_profile_populates_cache(self):
+        """After calling compare_to_profile, the cache should contain entries."""
+        from phantom._cache import analysis_cache
+
+        sr = 44100
+        t = np.linspace(0, 3.0, sr * 3, endpoint=False, dtype=np.float32)
+        samples = (0.5 * np.sin(2 * np.pi * 440 * t)).astype(np.float32)
+        audio = _make_audio(samples, sr)
+        profile = _make_profile()
+
+        assert len(analysis_cache._store) == 0
+        compare_to_profile(audio, profile)
+        # compare_to_profile uses analyze_spectrum, analyze_loudness,
+        # analyze_dynamics, analyze_stereo = 4 cache entries
+        assert len(analysis_cache._store) == 4
+
+    def test_cached_analysis_helper_exists(self):
+        """The _cached_analysis helper should be importable from comparison module."""
+        from phantom.comparison import _cached_analysis
+
+        assert callable(_cached_analysis)
+
+
 class TestMatchOutputValidation:
     """Tests for PHANTOM_OUTPUT_DIR validation in match_to_reference()."""
 
