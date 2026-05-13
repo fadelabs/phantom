@@ -7,7 +7,6 @@ dependency guard, and unfixable problem type skipping.
 from __future__ import annotations
 
 import os
-from unittest.mock import patch, MagicMock
 
 import numpy as np
 import pytest
@@ -28,7 +27,14 @@ class TestRecipes:
         from phantom.processing import RECIPES
 
         assert len(RECIPES) == 6
-        expected = {"mud", "harshness", "hum", "sibilance", "dc_offset", "resonant_peak"}
+        expected = {
+            "mud",
+            "harshness",
+            "hum",
+            "sibilance",
+            "dc_offset",
+            "resonant_peak",
+        }
         assert set(RECIPES.keys()) == expected
 
     def test_recipe_mud_returns_two_plugins(self):
@@ -93,9 +99,7 @@ class TestRecipes:
         import pedalboard as pb
         from phantom.processing import RECIPES
 
-        details = {
-            "resonances": [{"frequency_hz": 301.5, "q_factor": 15.2}]
-        }
+        details = {"resonances": [{"frequency_hz": 301.5, "q_factor": 15.2}]}
         chain = RECIPES["resonant_peak"].build_chain(details)
         assert len(chain) == 1
         assert isinstance(chain[0], pb.PeakFilter)
@@ -124,7 +128,13 @@ class TestUnfixable:
     def test_unfixable_types_frozenset(self):
         from phantom.processing import UNFIXABLE_TYPES
 
-        expected = {"clipping", "inter_sample_peak", "noise_floor", "snr", "lossy_codec"}
+        expected = {
+            "clipping",
+            "inter_sample_peak",
+            "noise_floor",
+            "snr",
+            "lossy_codec",
+        }
         assert UNFIXABLE_TYPES == expected
 
     def test_unfixable_types_not_in_recipes(self):
