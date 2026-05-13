@@ -5,7 +5,6 @@ from __future__ import annotations
 import threading
 
 import numpy as np
-import pytest
 
 from phantom._cache import AnalysisCache
 from phantom.audio import AudioData
@@ -13,7 +12,11 @@ from phantom.audio import AudioData
 
 def _make_audio(samples_1d: np.ndarray, sr: int, num_channels: int = 1) -> AudioData:
     """Create an AudioData instance from a 1D sample array."""
-    samples_2d = samples_1d.reshape(-1, 1) if num_channels == 1 else np.column_stack([samples_1d, samples_1d])
+    samples_2d = (
+        samples_1d.reshape(-1, 1)
+        if num_channels == 1
+        else np.column_stack([samples_1d, samples_1d])
+    )
     return AudioData(
         samples=samples_2d,
         sample_rate=sr,
