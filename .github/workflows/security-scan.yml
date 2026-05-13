@@ -1,0 +1,64 @@
+name: Security Scan
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  gitleaks:
+    name: Secret scanning
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+
+  custom-checks:
+    name: PII and policy checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Check for PII
+        run: |
+          HITS=$(grep -rnE "saenz|leesaenz|@gmail\.com" \
+            --include="*.py" --include="*.md" --include="*.toml" \
+            --include="*.json" --include="*.yml" --include="*.yaml" \
+            . 2>/dev/null | \
+            grep -v "^./LICENSE:" | grep -v "^./README.md:" | \
+            grep -v "^./scripts/pre-push:" | \
+            grep -v "^./scripts/check-pii.sh:" | \
+            grep -v "^\./.planning/" | grep -v "^\./.claude/" || true)
+          if [ -n "$HITS" ]; then
+            echo "::error::PII detected in files:"
+            echo "$HITS"
+            exit 1
+          fi
+
+      - name: Check for absolute paths
+        run: |
+          HITS=$(grep -rnE "/Users/[a-z]+/|/home/[a-z]+/|C:\\\\Users\\\\" \
+            --include="*.py" --include="*.md" --include="*.toml" \
+            --include="*.json" --include="*.yml" --include="*.yaml" \
+            . 2>/dev/null | \
+            grep -v "^\./.planning/" | grep -v "^\./.claude/" || true)
+          if [ -n "$HITS" ]; then
+            echo "::error::Absolute paths detected in files:"
+            echo "$HITS"
+            exit 1
+          fi
+
+      - name: Check for planning docs
+        run: |
+          if git diff --name-only origin/main...HEAD | grep -qE '^(\.planning/|\.claude/|docs/superpowers/)'; then
+            echo "::error::Planning/internal docs detected in PR"
+            exit 1
+          fi
