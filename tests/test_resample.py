@@ -189,21 +189,21 @@ class TestMetadata:
         assert abs(result.duration - expected_duration) < 1e-6
 
 
-# --- Warning logging ---
+# --- Info logging ---
 
 
-class TestWarning:
-    """Warning logged when resampling occurs."""
+class TestInfoLogging:
+    """Info message logged when resampling occurs."""
 
-    def test_warning_logged(self, caplog: pytest.LogCaptureFixture) -> None:
+    def test_info_logged(self, caplog: pytest.LogCaptureFixture) -> None:
         audio = _make_audio(_sine(440.0, 44100), 44100)
-        with caplog.at_level(logging.WARNING):
+        with caplog.at_level(logging.INFO):
             resample_to_match(audio, 48000)
         assert any("resampling" in r.message.lower() for r in caplog.records)
 
-    def test_warning_contains_rates(self, caplog: pytest.LogCaptureFixture) -> None:
+    def test_info_contains_rates(self, caplog: pytest.LogCaptureFixture) -> None:
         audio = _make_audio(_sine(440.0, 44100), 44100)
-        with caplog.at_level(logging.WARNING):
+        with caplog.at_level(logging.INFO):
             resample_to_match(audio, 48000)
         msgs = " ".join(r.message for r in caplog.records)
         assert "44100" in msgs
