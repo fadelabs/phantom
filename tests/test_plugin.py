@@ -109,7 +109,9 @@ def test_all_skills_discovered():
     """At least 5 skill directories exist, each containing SKILL.md."""
     assert len(SKILLS) >= 5, f"Expected >= 5 skills, found {len(SKILLS)}"
     for skill_dir in SKILLS:
-        assert (skill_dir / "SKILL.md").exists(), f"Missing SKILL.md in {skill_dir.name}"
+        assert (skill_dir / "SKILL.md").exists(), (
+            f"Missing SKILL.md in {skill_dir.name}"
+        )
 
 
 @pytest.mark.parametrize("skill_dir", SKILLS, ids=SKILL_IDS)
