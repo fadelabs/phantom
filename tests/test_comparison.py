@@ -611,7 +611,7 @@ class TestReferenceComparisonUnionBands:
         audio_b = _make_audio(samples_b, sr)
 
         # Both should produce the same standard bands, so patch one to have an extra
-        with patch("phantom.comparison.reference.analyze_spectrum") as mock_spec:
+        with patch("phantom.comparison.analyze_spectrum") as mock_spec:
             bands_a = {"500_hz": -10.0, "1000_hz": -12.0, "extra_hz": -15.0}
             bands_b = {"500_hz": -11.0, "1000_hz": -13.0}
             mock_spec.side_effect = [
@@ -623,9 +623,9 @@ class TestReferenceComparisonUnionBands:
                 ),
             ]
             with (
-                patch("phantom.comparison.reference.analyze_loudness") as mock_loud,
-                patch("phantom.comparison.reference.analyze_dynamics") as mock_dyn,
-                patch("phantom.comparison.reference.analyze_stereo") as mock_st,
+                patch("phantom.comparison.analyze_loudness") as mock_loud,
+                patch("phantom.comparison.analyze_dynamics") as mock_dyn,
+                patch("phantom.comparison.analyze_stereo") as mock_st,
             ):
                 mock_loud.return_value = LoudnessResult(
                     integrated_lufs=-14.0, true_peak_dbtp=-1.0, loudness_range_lu=6.0
