@@ -204,7 +204,10 @@ def setup_reaper(install_dir: str | None, json_output: bool, yes: bool) -> None:
             expected_remote in remote_url or "fadelabs/reaper-mcp" in remote_url
         )
         if not is_fadelabs:
-            if not yes and sys.stdin.isatty():
+            if yes:
+                # Explicit --yes flag: user consented to destructive actions
+                shutil.rmtree(install_path)
+            elif sys.stdin.isatty():
                 if not click.confirm(
                     f"{install_path} has a different remote ({remote_url or 'unknown'}). "
                     "Remove and re-clone?",
@@ -213,7 +216,13 @@ def setup_reaper(install_dir: str | None, json_output: bool, yes: bool) -> None:
                     raise click.ClickException(
                         "Aborted. Choose a different --install-dir."
                     )
-            shutil.rmtree(install_path)
+                shutil.rmtree(install_path)
+            else:
+                # Non-interactive, no --yes: refuse destructive action
+                raise click.ClickException(
+                    f"{install_path} has a different remote ({remote_url or 'unknown'}). "
+                    "Run with --yes to overwrite, or choose a different --install-dir."
+                )
 
     if install_path.exists():
         if not json_output:
