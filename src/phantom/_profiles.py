@@ -280,13 +280,17 @@ def load_profile(name: str) -> ReferenceProfile:
     # mtime-based cache: check if user profile changed since last load
     user_path = _get_user_profile_path(resolved)
     with _profile_cache_lock:
-        if user_path and resolved in _profile_cache:
+        if resolved in _profile_cache:
             cached_mtime, cached_profile = _profile_cache[resolved]
-            try:
-                current_mtime = user_path.stat().st_mtime
-            except OSError:
-                current_mtime = None
-            if current_mtime == cached_mtime:
+            if user_path:
+                try:
+                    current_mtime = user_path.stat().st_mtime
+                except OSError:
+                    current_mtime = None
+                if current_mtime == cached_mtime:
+                    return cached_profile
+            elif cached_mtime == 0.0:
+                # Built-in profile, no user override exists
                 return cached_profile
 
     # Search order: user directory first, then builtins (D-09)
