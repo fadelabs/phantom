@@ -21,7 +21,7 @@ from pydantic import BaseModel
 from phantom.exceptions import AnalysisError, DependencyMissingError
 from phantom._utils import validate_input_path, validate_output_path
 from phantom.audio import load_audio
-from phantom.problems import ProblemsResult
+from phantom.problems import ProblemItem, ProblemsResult
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -30,6 +30,15 @@ from phantom.problems import ProblemsResult
 UNFIXABLE_TYPES: frozenset[str] = frozenset(
     {"clipping", "inter_sample_peak", "noise_floor", "snr", "lossy_codec"}
 )
+
+# Severity ordering: higher int = worse severity.
+# Used by _compare_results to classify improvement vs regression.
+_SEVERITY_ORDER: dict[str, int] = {
+    "minor": 0,
+    "moderate": 1,
+    "significant": 2,
+    "dealbreaker": 3,
+}
 
 # ---------------------------------------------------------------------------
 # Models
@@ -338,6 +347,248 @@ def apply_processing(
         )
 
     except DependencyMissingError:
+        raise
+    except AnalysisError:
+        raise
+    except Exception as exc:
+        raise AnalysisError(f"Audio processing failed: {exc}") from exc
+
+
+# ---------------------------------------------------------------------------
+# Before/after comparison helper
+# ---------------------------------------------------------------------------
+
+
+def _compare_results(
+    before: ProblemsResult,
+    after: ProblemsResult,
+) -> tuple[list[FixComparison], list[FixComparison]]:
+    """Compare before and after problem detection results.
+
+    For each problem in ``before.problems``:
+    - Not in after -> resolved (improvement)
+    - In after with lower severity -> improved (improvement)
+    - In after with same severity -> unchanged (neither)
+    - In after with higher severity -> worsened (regression)
+
+    Args:
+        before: ProblemsResult from before processing.
+        after: ProblemsResult from after processing.
+
+    Returns:
+        Tuple of (improvements, regressions) lists of FixComparison.
+    """
+    # Build lookup: problem type -> severity for after results
+    after_by_type: dict[str, str] = {}
+    for p in after.problems:
+        after_by_type[p.type] = p.severity
+
+    improvements: list[FixComparison] = []
+    regressions: list[FixComparison] = []
+
+    for p in before.problems:
+        if p.type not in after_by_type:
+            # Resolved
+            improvements.append(
+                FixComparison(
+                    problem_type=p.type,
+                    before_severity=p.severity,
+                    after_severity=None,
+                    status="resolved",
+                )
+            )
+        else:
+            after_sev = after_by_type[p.type]
+            before_rank = _SEVERITY_ORDER.get(p.severity, 0)
+            after_rank = _SEVERITY_ORDER.get(after_sev, 0)
+
+            if after_rank < before_rank:
+                improvements.append(
+                    FixComparison(
+                        problem_type=p.type,
+                        before_severity=p.severity,
+                        after_severity=after_sev,
+                        status="improved",
+                    )
+                )
+            elif after_rank > before_rank:
+                regressions.append(
+                    FixComparison(
+                        problem_type=p.type,
+                        before_severity=p.severity,
+                        after_severity=after_sev,
+                        status="worsened",
+                    )
+                )
+            # else: unchanged -- not added to either list
+
+    return improvements, regressions
+
+
+# ---------------------------------------------------------------------------
+# Chain builder from detected problems
+# ---------------------------------------------------------------------------
+
+
+def _plugin_sort_key(plugin: object) -> tuple[int, float]:
+    """Return a sort key for signal chain ordering.
+
+    Order: HPF/LPF first (0), then notch filters Q>10 (1),
+    then peak filters Q<=10 (2), then shelf filters (3).
+    Secondary sort by frequency (ascending).
+    """
+    import pedalboard as pb
+
+    freq = getattr(plugin, "cutoff_frequency_hz", 0.0)
+
+    if isinstance(plugin, (pb.HighpassFilter, pb.LowpassFilter)):
+        return (0, freq)
+    if isinstance(plugin, pb.PeakFilter):
+        q = getattr(plugin, "q", 1.0)
+        if q > 10:
+            return (1, freq)  # Notch
+        return (2, freq)  # Parametric
+    if isinstance(plugin, (pb.LowShelfFilter, pb.HighShelfFilter)):
+        return (3, freq)
+    return (4, freq)
+
+
+def _build_chain_from_problems(problems: list[ProblemItem]) -> list:
+    """Build a sorted Pedalboard plugin chain from detected problems.
+
+    Iterates fixable problems, looks up recipes, flattens into a single
+    plugin list, then sorts by signal chain priority: HPF/LPF first,
+    then notch (Q>10), then peak (Q<=10), then shelf.
+
+    Args:
+        problems: List of ProblemItem instances from detect_problems.
+
+    Returns:
+        List of Pedalboard plugin instances, sorted by signal chain order.
+    """
+    plugins: list = []
+
+    for p in problems:
+        if p.type in UNFIXABLE_TYPES:
+            continue
+        recipe = RECIPES.get(p.type)
+        if recipe is None:
+            continue
+        plugins.extend(recipe.build_chain(p.details))
+
+    if not plugins:
+        return []
+
+    plugins.sort(key=_plugin_sort_key)
+    return plugins
+
+
+# ---------------------------------------------------------------------------
+# fix_audio -- public function
+# ---------------------------------------------------------------------------
+
+# Module-level import for detect_problems so tests can monkeypatch it.
+# Already imported ProblemItem and ProblemsResult at the top; this adds
+# the function reference used by fix_audio at runtime.
+from phantom.problems import detect_problems  # noqa: E402
+
+
+def fix_audio(
+    file_path: str,
+    problems: list[str] | None = None,
+    output_path: str | None = None,
+) -> FixResult:
+    """Fix detected audio problems using recipe-based processing.
+
+    High-level public API that orchestrates the full corrective pipeline:
+    load audio, detect problems, look up recipes, build Pedalboard chain,
+    process, write output, re-detect problems, compare before/after.
+
+    Args:
+        file_path: Path to the input audio file.
+        problems: Optional list of problem type strings to fix. If None,
+            fixes all detected fixable problems.
+        output_path: Path for the processed output WAV file. If None,
+            uses input stem + '_fixed.wav'.
+
+    Returns:
+        FixResult with output_path, fixes_applied, before/after
+        ProblemsResult, improvements, and regressions.
+
+    Raises:
+        DependencyMissingError: If pedalboard is not installed.
+        FileNotFoundError: If input file does not exist.
+        AnalysisError: If processing fails.
+    """
+    # Step 0: Dependency guard
+    try:
+        import pedalboard as pb
+        import soundfile as sf
+    except ImportError:
+        raise DependencyMissingError(
+            package="Pedalboard",
+            extra="processing",
+            detail=(
+                "Pedalboard provides audio effects processing for corrective fixes."
+            ),
+        )
+
+    try:
+        # Step 1: Validate paths
+        file_path = validate_input_path(file_path)
+        output_path = _resolve_output_path(file_path, output_path)
+        output_path = validate_output_path(output_path)
+
+        # Step 2: Load audio and detect problems (before)
+        audio = load_audio(file_path)
+        before = detect_problems(audio)
+
+        # Step 3: Filter to fixable problems
+        fixable = [
+            p
+            for p in before.problems
+            if p.type not in UNFIXABLE_TYPES and p.type in RECIPES
+        ]
+
+        # Step 4: Apply user filter if specified (T-23-06)
+        if problems is not None:
+            allowed_set = set(problems)
+            fixable = [p for p in fixable if p.type in allowed_set]
+
+        # Step 5: Build plugin chain
+        chain = _build_chain_from_problems(fixable)
+        fixes_applied = [p.type for p in fixable]
+
+        # Step 6: Process audio
+        if chain:
+            board = pb.Pedalboard(chain)
+            pb_input = audio.samples.T  # (samples, channels) -> (channels, samples)
+            pb_output = board(pb_input, float(audio.sample_rate))
+            sf_output = pb_output.T  # (channels, samples) -> (samples, channels)
+            sf.write(output_path, sf_output, audio.sample_rate)
+        else:
+            # No fixable problems -- write copy of audio unchanged
+            sf.write(output_path, audio.samples, audio.sample_rate)
+
+        # Step 7: Detect problems on output (after)
+        after_audio = load_audio(output_path)
+        after = detect_problems(after_audio)
+
+        # Step 8: Compare before/after
+        improvements, regressions = _compare_results(before, after)
+
+        return FixResult(
+            output_path=output_path,
+            fixes_applied=fixes_applied,
+            before=before,
+            after=after,
+            improvements=improvements,
+            regressions=regressions,
+        )
+
+    except DependencyMissingError:
+        raise
+    except FileNotFoundError:
         raise
     except AnalysisError:
         raise
