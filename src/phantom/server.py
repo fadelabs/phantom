@@ -360,147 +360,137 @@ def full_diagnostic(file_path: str) -> dict:
 
 
 @mcp.tool
+@_phantom_tool
 def batch_diagnostic(file_paths: list[str]) -> dict:
     """Run full diagnostic on multiple stems. Flags sample rate mismatches as dealbreaker severity."""
-    try:
-        MAX_BATCH = 50
-        if len(file_paths) > MAX_BATCH:
-            raise ToolError(
-                json.dumps(
-                    {
-                        "error_type": "ValidationError",
-                        "message": f"Too many files: {len(file_paths)}. Maximum batch size is {MAX_BATCH}.",
-                        "context": {
-                            "file_count": len(file_paths),
-                            "max_batch": MAX_BATCH,
-                        },
-                    }
-                )
-            )
-        if not file_paths:
-            raise ToolError(
-                json.dumps(
-                    {
-                        "error_type": "ValidationError",
-                        "message": "At least 1 file path required.",
-                        "context": {},
-                    }
-                )
-            )
-        normalized_paths = [os.path.normpath(p) for p in file_paths]
-        if len(set(normalized_paths)) != len(normalized_paths):
-            raise ToolError(
-                json.dumps(
-                    {
-                        "error_type": "ValidationError",
-                        "message": "Duplicate file paths (after normalization) are not supported.",
-                        "context": {},
-                    }
-                )
-            )
-
-        results: dict[str, StemDiagnosticResult | dict] = {}
-        sample_rates = {}
-        for path, stem_name in zip(file_paths, normalized_paths):
-            try:
-                audio = load_audio(path)
-                sample_rates[stem_name] = audio.sample_rate
-                analysis = _run_full_analysis(audio)
-                results[stem_name] = StemDiagnosticResult(
-                    file=os.path.basename(path),
-                    duration_seconds=audio.duration,
-                    sample_rate=audio.sample_rate,
-                    channels=audio.num_channels,
-                    **analysis,
-                )
-            except PhantomError as e:
-                msg = _PATH_REGEX.sub("", str(e))
-                results[stem_name] = {"error": msg, "error_type": type(e).__name__}
-            except Exception as e:
-                results[stem_name] = {
-                    "error": "Internal analysis error — check server logs for details.",
-                    "error_type": type(e).__name__,
+    MAX_BATCH = 50
+    if len(file_paths) > MAX_BATCH:
+        raise ToolError(
+            json.dumps(
+                {
+                    "error_type": "ValidationError",
+                    "message": f"Too many files: {len(file_paths)}. Maximum batch size is {MAX_BATCH}.",
+                    "context": {
+                        "file_count": len(file_paths),
+                        "max_batch": MAX_BATCH,
+                    },
                 }
-
-        # SRV-04: Flag sample rate mismatches as dealbreaker
-        unique_rates = set(sample_rates.values())
-        if len(unique_rates) > 1:
-            mismatch_detail = {name: int(rate) for name, rate in sample_rates.items()}
-            for stem_name, stem_result in results.items():
-                if isinstance(stem_result, StemDiagnosticResult):
-                    mismatch = ProblemItem(
-                        type="sample_rate_mismatch",
-                        severity="dealbreaker",
-                        message=f"Sample rate mismatch across stems: {mismatch_detail}",
-                        details={"sample_rates": mismatch_detail},
-                    )
-                    all_problems = [mismatch] + list(stem_result.problems.problems)
-                    rebuilt = ProblemsResult(
-                        problems=all_problems,
-                        clean=False,
-                        summary=build_summary(all_problems),
-                    )
-                    results[stem_name] = stem_result.model_copy(
-                        update={"problems": rebuilt}
-                    )
-
-        batch_result = BatchDiagnosticResult(
-            stems=results,
-            stem_count=len(file_paths),
+            )
         )
-        return batch_result.model_dump()
-    except ToolError:
-        raise
-    except Exception as e:
-        raise _to_tool_error(e, {"file_paths": file_paths})
+    if not file_paths:
+        raise ToolError(
+            json.dumps(
+                {
+                    "error_type": "ValidationError",
+                    "message": "At least 1 file path required.",
+                    "context": {},
+                }
+            )
+        )
+    normalized_paths = [os.path.normpath(p) for p in file_paths]
+    if len(set(normalized_paths)) != len(normalized_paths):
+        raise ToolError(
+            json.dumps(
+                {
+                    "error_type": "ValidationError",
+                    "message": "Duplicate file paths (after normalization) are not supported.",
+                    "context": {},
+                }
+            )
+        )
+
+    results: dict[str, StemDiagnosticResult | dict] = {}
+    sample_rates = {}
+    for path, stem_name in zip(file_paths, normalized_paths):
+        try:
+            audio = load_audio(path)
+            sample_rates[stem_name] = audio.sample_rate
+            analysis = _run_full_analysis(audio)
+            results[stem_name] = StemDiagnosticResult(
+                file=os.path.basename(path),
+                duration_seconds=audio.duration,
+                sample_rate=audio.sample_rate,
+                channels=audio.num_channels,
+                **analysis,
+            )
+        except PhantomError as e:
+            msg = _PATH_REGEX.sub("", str(e))
+            results[stem_name] = {"error": msg, "error_type": type(e).__name__}
+        except Exception as e:
+            results[stem_name] = {
+                "error": "Internal analysis error — check server logs for details.",
+                "error_type": type(e).__name__,
+            }
+
+    # SRV-04: Flag sample rate mismatches as dealbreaker
+    unique_rates = set(sample_rates.values())
+    if len(unique_rates) > 1:
+        mismatch_detail = {name: int(rate) for name, rate in sample_rates.items()}
+        for stem_name, stem_result in results.items():
+            if isinstance(stem_result, StemDiagnosticResult):
+                mismatch = ProblemItem(
+                    type="sample_rate_mismatch",
+                    severity="dealbreaker",
+                    message=f"Sample rate mismatch across stems: {mismatch_detail}",
+                    details={"sample_rates": mismatch_detail},
+                )
+                all_problems = [mismatch] + list(stem_result.problems.problems)
+                rebuilt = ProblemsResult(
+                    problems=all_problems,
+                    clean=False,
+                    summary=build_summary(all_problems),
+                )
+                results[stem_name] = stem_result.model_copy(
+                    update={"problems": rebuilt}
+                )
+
+    batch_result = BatchDiagnosticResult(
+        stems=results,
+        stem_count=len(file_paths),
+    )
+    return batch_result.model_dump()
 
 
 @mcp.tool
+@_phantom_tool
 def multi_stem_masking(file_paths: list[str]) -> dict:
     """Analyze frequency masking across all stem pairs. Returns pairs ranked by masking severity."""
-    try:
-        MAX_STEMS = 20
-        if len(file_paths) > MAX_STEMS:
-            raise ToolError(
-                json.dumps(
-                    {
-                        "error_type": "ValidationError",
-                        "message": f"Too many stems: {len(file_paths)}. Maximum is {MAX_STEMS}.",
-                        "context": {
-                            "file_count": len(file_paths),
-                            "max_stems": MAX_STEMS,
-                        },
-                    }
-                )
+    MAX_STEMS = 20
+    if len(file_paths) > MAX_STEMS:
+        raise ToolError(
+            json.dumps(
+                {
+                    "error_type": "ValidationError",
+                    "message": f"Too many stems: {len(file_paths)}. Maximum is {MAX_STEMS}.",
+                    "context": {
+                        "file_count": len(file_paths),
+                        "max_stems": MAX_STEMS,
+                    },
+                }
             )
-        if len(file_paths) < 2:
-            raise ToolError(
-                json.dumps(
-                    {
-                        "error_type": "ValidationError",
-                        "message": "At least 2 file paths required for masking analysis.",
-                        "context": {},
-                    }
-                )
-            )
-
-        stems = [load_audio(p) for p in file_paths]
-        matrix_result = _analyze_masking_matrix(stems)
-        result = MultiStemMaskingResult(
-            pairs=matrix_result.pairs,
-            stem_count=matrix_result.stem_count,
-            pair_count=matrix_result.pair_count,
-            stem_paths={
-                f"stem_{i}": os.path.basename(p) for i, p in enumerate(file_paths)
-            },
         )
-        return result.model_dump()
-    except PhantomError as e:
-        raise _to_tool_error(e, {"file_paths": file_paths})
-    except ToolError:
-        raise
-    except Exception as e:
-        raise _to_tool_error(e, {"file_paths": file_paths})
+    if len(file_paths) < 2:
+        raise ToolError(
+            json.dumps(
+                {
+                    "error_type": "ValidationError",
+                    "message": "At least 2 file paths required for masking analysis.",
+                    "context": {},
+                }
+            )
+        )
+
+    stems = [load_audio(p) for p in file_paths]
+    matrix_result = _analyze_masking_matrix(stems)
+    result = MultiStemMaskingResult(
+        pairs=matrix_result.pairs,
+        stem_count=matrix_result.stem_count,
+        pair_count=matrix_result.pair_count,
+        stem_paths={
+            f"stem_{i}": os.path.basename(p) for i, p in enumerate(file_paths)
+        },
+    )
+    return result.model_dump()
 
 
 # ---------------------------------------------------------------------------
