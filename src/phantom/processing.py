@@ -14,6 +14,7 @@ notch filters, then parametric cuts, then shelf adjustments.
 from __future__ import annotations
 
 import os
+from collections.abc import KeysView
 from dataclasses import dataclass
 from typing import Callable
 
@@ -214,7 +215,8 @@ def _get_allowed_operations() -> dict[str, type]:
 class _AllowedOpsProxy:
     """Dict-like proxy that lazily builds the allowlist on first access."""
 
-    def keys(self) -> set[str]:
+    def keys(self) -> KeysView[str]:
+        """Return dict_keys view of allowed operation names."""
         return _get_allowed_operations().keys()
 
     def __getitem__(self, key: str) -> type:
