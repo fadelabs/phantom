@@ -306,6 +306,7 @@ def _detect_snr(mono: np.ndarray, sample_rate: int) -> list[ProblemItem]:
     if dynamic_spread < 10.0:
         return []
 
+    # Upper-bound approximation: overall RMS includes noise, so true SNR is lower.
     snr_db = signal_rms_db - noise_floor_db
 
     if snr_db >= 60.0:
