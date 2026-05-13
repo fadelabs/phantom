@@ -1,6 +1,7 @@
 """Tests for the problem detection module.
 
-Covers PROB-01 through PROB-06, PROB-11, PROB-12.
+Covers PROB-01 through PROB-06, PROB-07/08/09 (via parametric _detect_band_excess),
+PROB-11, PROB-12.
 All test audio is generated in-memory via conftest fixtures.
 """
 
@@ -8,7 +9,12 @@ import numpy as np
 import pytest
 
 from phantom.audio import AudioData
-from phantom.problems import detect_problems, ProblemsResult, _detect_hum
+from phantom.problems import (
+    detect_problems,
+    ProblemsResult,
+    _detect_hum,
+    _detect_band_excess,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -690,3 +696,132 @@ class TestLossyCodec:
         result = detect_problems(audio)
         lossy = [p for p in result.problems if p.type == "lossy_codec"]
         assert len(lossy) == 0
+
+
+# ---------------------------------------------------------------------------
+# Parametric _detect_band_excess (24-02: deduplication of PROB-07/08/09)
+# ---------------------------------------------------------------------------
+
+
+class TestDetectBandExcess:
+    """Test parametric _detect_band_excess replaces 3 near-identical detectors."""
+
+    def test_sibilance_detection(self, sibilant_signal):
+        """_detect_band_excess with sibilance params detects excessive 5-10kHz."""
+        samples, sr = sibilant_signal
+        result = _detect_band_excess(
+            samples, sr, 5000.0, 10000.0, "sibilance", "sibilance", "5-10kHz"
+        )
+        assert len(result) == 1
+        assert result[0].type == "sibilance"
+        assert result[0].severity == "moderate"
+        assert "5-10kHz" in result[0].message
+        assert "band_energy_db" in result[0].details
+        assert "overall_energy_db" in result[0].details
+        assert "excess_db" in result[0].details
+
+    def test_mud_detection(self, muddy_signal):
+        """_detect_band_excess with mud params detects excessive 200-500Hz."""
+        samples, sr = muddy_signal
+        result = _detect_band_excess(
+            samples, sr, 200.0, 500.0, "mud", "mud", "200-500Hz"
+        )
+        assert len(result) == 1
+        assert result[0].type == "mud"
+        assert result[0].severity == "moderate"
+        assert "200-500Hz" in result[0].message
+
+    def test_harshness_detection(self, harsh_signal):
+        """_detect_band_excess with harshness params detects excessive 2-4kHz."""
+        samples, sr = harsh_signal
+        result = _detect_band_excess(
+            samples, sr, 2000.0, 4000.0, "harshness", "harshness", "2-4kHz"
+        )
+        assert len(result) == 1
+        assert result[0].type == "harshness"
+        assert result[0].severity == "moderate"
+        assert "2-4kHz" in result[0].message
+
+    def test_returns_empty_below_flatness_threshold(self, mono_sine_440hz):
+        """Pure tone (low flatness) -> empty list regardless of band params."""
+        samples, sr = mono_sine_440hz
+        samples = samples * 0.5
+        result = _detect_band_excess(
+            samples.astype(np.float32),
+            sr,
+            5000.0,
+            10000.0,
+            "sibilance",
+            "sibilance",
+            "5-10kHz",
+        )
+        assert result == []
+
+    def test_returns_empty_below_excess_threshold(self):
+        """Flat-spectrum noise with no band excess -> empty list."""
+        sr = 44100
+        rng = np.random.default_rng(200)
+        noise = rng.standard_normal(sr * 2).astype(np.float32) * 0.3
+        result = _detect_band_excess(
+            noise, sr, 5000.0, 10000.0, "sibilance", "sibilance", "5-10kHz"
+        )
+        assert result == []
+
+    def test_message_format_sibilance(self, sibilant_signal):
+        """Message matches format: 'Excessive {label}: {freq_label} band energy is {excess:.1f} dB above expected level.'"""
+        samples, sr = sibilant_signal
+        result = _detect_band_excess(
+            samples, sr, 5000.0, 10000.0, "sibilance", "sibilance", "5-10kHz"
+        )
+        assert len(result) == 1
+        msg = result[0].message
+        assert msg.startswith("Excessive sibilance:")
+        assert "5-10kHz band energy is" in msg
+        assert "above expected level." in msg
+
+    def test_message_format_mud(self, muddy_signal):
+        """Mud message uses Hz-based freq label."""
+        samples, sr = muddy_signal
+        result = _detect_band_excess(
+            samples, sr, 200.0, 500.0, "mud", "mud", "200-500Hz"
+        )
+        assert len(result) == 1
+        assert "200-500Hz band energy is" in result[0].message
+
+    def test_details_rounded_to_1dp(self, sibilant_signal):
+        """Detail values should be rounded to 1 decimal place."""
+        samples, sr = sibilant_signal
+        result = _detect_band_excess(
+            samples, sr, 5000.0, 10000.0, "sibilance", "sibilance", "5-10kHz"
+        )
+        assert len(result) == 1
+        for key in ("band_energy_db", "overall_energy_db", "excess_db"):
+            val = result[0].details[key]
+            assert val == round(val, 1), f"{key} not rounded to 1dp: {val}"
+
+    def test_detect_problems_uses_parametric_for_sibilance(self, sibilant_signal):
+        """detect_problems still finds sibilance via new parametric call site."""
+        samples, sr = sibilant_signal
+        audio = _make_audio(samples, sr)
+        result = detect_problems(audio)
+        sib = [p for p in result.problems if p.type == "sibilance"]
+        assert len(sib) == 1
+        assert sib[0].severity == "moderate"
+
+    def test_detect_problems_uses_parametric_for_mud(self, muddy_signal):
+        """detect_problems still finds mud via new parametric call site."""
+        samples, sr = muddy_signal
+        audio = _make_audio(samples, sr)
+        result = detect_problems(audio)
+        mud = [p for p in result.problems if p.type == "mud"]
+        assert len(mud) == 1
+        assert mud[0].severity == "moderate"
+
+    def test_detect_problems_uses_parametric_for_harshness(self, harsh_signal):
+        """detect_problems still finds harshness via new parametric call site."""
+        samples, sr = harsh_signal
+        audio = _make_audio(samples, sr)
+        result = detect_problems(audio)
+        harsh = [p for p in result.problems if p.type == "harshness"]
+        assert len(harsh) == 1
+        assert harsh[0].severity == "moderate"
