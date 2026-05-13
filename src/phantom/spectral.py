@@ -108,9 +108,7 @@ def analyze_spectrum(audio: AudioData) -> SpectralResult:
     windowing = es.Windowing(type="hann", size=frame_size)
     spectrum = es.Spectrum(size=frame_size)
     centroid = es.Centroid(range=sample_rate / 2)
-    rolloff = es.RollOff(
-        cutoff=0.85, sampleRate=sample_rate
-    )  # 85% per Peeters 2004
+    rolloff = es.RollOff(cutoff=0.85, sampleRate=sample_rate)  # 85% per Peeters 2004
     flatness = es.Flatness()
     spectral_contrast = es.SpectralContrast(
         sampleRate=sample_rate, frameSize=frame_size
@@ -161,9 +159,7 @@ def analyze_spectrum(audio: AudioData) -> SpectralResult:
 
     band_windowing = es.Windowing(type="hann", size=band_frame_size)
     band_spectrum = es.Spectrum(size=band_frame_size)
-    freq_bands = es.FrequencyBands(
-        frequencyBands=OCTAVE_EDGES, sampleRate=sample_rate
-    )
+    freq_bands = es.FrequencyBands(frequencyBands=OCTAVE_EDGES, sampleRate=sample_rate)
 
     band_energies_list = []
     for frame in es.FrameGenerator(
