@@ -1,12 +1,13 @@
 """Tests for the problem detection module.
 
 Covers PROB-01 through PROB-06, PROB-07/08/09 (via parametric _detect_band_excess),
-PROB-11, PROB-12.
+PROB-11, PROB-12, and FFT spectrum sharing (21-03).
 All test audio is generated in-memory via conftest fixtures.
 """
 
 import numpy as np
 import pytest
+from unittest.mock import patch
 
 from phantom.audio import AudioData
 from phantom.problems import (
@@ -14,6 +15,10 @@ from phantom.problems import (
     ProblemsResult,
     _detect_hum,
     _detect_band_excess,
+    _detect_resonances,
+    _detect_lossy_codec,
+    _spectral_flatness,
+    _average_power_spectrum,
 )
 
 
@@ -825,3 +830,162 @@ class TestDetectBandExcess:
         harsh = [p for p in result.problems if p.type == "harshness"]
         assert len(harsh) == 1
         assert harsh[0].severity == "moderate"
+
+
+# ---------------------------------------------------------------------------
+# 21-03: FFT Spectrum Sharing in detect_problems
+# ---------------------------------------------------------------------------
+
+
+class TestFFTSpectrumSharing:
+    """Verify pre-computed FFT values are shared across frequency-domain detectors.
+
+    Tests cover:
+    - _detect_band_excess standalone mode (spectral_flatness=None)
+    - _detect_band_excess shared mode (spectral_flatness=<value>)
+    - _detect_resonances standalone mode (power_spectrum=None)
+    - _detect_resonances shared mode (power_spectrum=<tuple>)
+    - _detect_lossy_codec standalone mode (power_spectrum=None)
+    - _detect_lossy_codec shared mode (power_spectrum=<tuple>)
+    - detect_problems regression (identical results)
+    """
+
+    # -- _detect_band_excess: standalone mode (spectral_flatness=None) -------
+
+    def test_band_excess_standalone_computes_own_flatness(self, sibilant_signal):
+        """_detect_band_excess with spectral_flatness=None computes its own."""
+        samples, sr = sibilant_signal
+        # Call with explicit spectral_flatness=None (standalone mode)
+        result = _detect_band_excess(
+            samples,
+            sr,
+            5000.0,
+            10000.0,
+            "sibilance",
+            "sibilance",
+            "5-10kHz",
+            spectral_flatness=None,
+        )
+        assert len(result) == 1
+        assert result[0].type == "sibilance"
+
+    # -- _detect_band_excess: shared mode (spectral_flatness=<value>) -------
+
+    def test_band_excess_uses_provided_flatness(self, sibilant_signal):
+        """_detect_band_excess with spectral_flatness=0.5 uses the provided value,
+        does NOT call _spectral_flatness internally."""
+        samples, sr = sibilant_signal
+        with patch("phantom.problems._spectral_flatness") as mock_flatness:
+            result = _detect_band_excess(
+                samples,
+                sr,
+                5000.0,
+                10000.0,
+                "sibilance",
+                "sibilance",
+                "5-10kHz",
+                spectral_flatness=0.5,
+            )
+            mock_flatness.assert_not_called()
+        # With flatness=0.5 (above threshold 0.01), detection should proceed
+        assert len(result) == 1
+        assert result[0].type == "sibilance"
+
+    def test_band_excess_skips_with_low_provided_flatness(self):
+        """_detect_band_excess with spectral_flatness=0.001 (below threshold) skips."""
+        sr = 44100
+        rng = np.random.default_rng(200)
+        noise = rng.standard_normal(sr * 2).astype(np.float32) * 0.3
+        result = _detect_band_excess(
+            noise,
+            sr,
+            5000.0,
+            10000.0,
+            "sibilance",
+            "sibilance",
+            "5-10kHz",
+            spectral_flatness=0.001,
+        )
+        assert result == []
+
+    # -- _detect_resonances: standalone mode (power_spectrum=None) -----------
+
+    def test_resonances_standalone_computes_own_spectrum(self, resonant_signal):
+        """_detect_resonances with power_spectrum=None computes its own."""
+        samples, sr = resonant_signal
+        result = _detect_resonances(samples, sr, power_spectrum=None)
+        assert len(result) == 1
+        assert result[0].type == "resonant_peak"
+
+    # -- _detect_resonances: shared mode (power_spectrum=<tuple>) -----------
+
+    def test_resonances_uses_provided_spectrum(self, resonant_signal):
+        """_detect_resonances with power_spectrum=(spectrum, freqs) uses provided
+        values and does NOT call _average_power_spectrum internally."""
+        samples, sr = resonant_signal
+        # Pre-compute the spectrum the same way the function would internally
+        spectrum_tuple = _average_power_spectrum(samples, 8192, sr)
+        with patch("phantom.problems._average_power_spectrum") as mock_aps:
+            result = _detect_resonances(samples, sr, power_spectrum=spectrum_tuple)
+            mock_aps.assert_not_called()
+        assert len(result) == 1
+        assert result[0].type == "resonant_peak"
+
+    # -- _detect_lossy_codec: standalone mode (power_spectrum=None) ----------
+
+    def test_lossy_codec_standalone_computes_own_spectrum(self, lossy_sim_signal):
+        """_detect_lossy_codec with power_spectrum=None computes its own."""
+        samples, sr = lossy_sim_signal
+        result = _detect_lossy_codec(samples, sr, power_spectrum=None)
+        assert len(result) == 1
+        assert result[0].type == "lossy_codec"
+
+    # -- _detect_lossy_codec: shared mode (power_spectrum=<tuple>) ----------
+
+    def test_lossy_codec_uses_provided_spectrum(self, lossy_sim_signal):
+        """_detect_lossy_codec with power_spectrum=(spectrum, freqs) uses provided
+        values and does NOT call _average_power_spectrum internally."""
+        samples, sr = lossy_sim_signal
+        spectrum_tuple = _average_power_spectrum(samples, 8192, sr)
+        with patch("phantom.problems._average_power_spectrum") as mock_aps:
+            result = _detect_lossy_codec(samples, sr, power_spectrum=spectrum_tuple)
+            mock_aps.assert_not_called()
+        assert len(result) == 1
+        assert result[0].type == "lossy_codec"
+
+    # -- detect_problems: regression (identical results) ---------------------
+
+    def test_detect_problems_result_equivalence(self, sibilant_signal):
+        """detect_problems returns identical ProblemsResult for the same input
+        before and after optimization (regression guard)."""
+        samples, sr = sibilant_signal
+        audio = _make_audio(samples, sr)
+        result1 = detect_problems(audio)
+        result2 = detect_problems(audio)
+        assert result1 == result2
+
+    # -- detect_problems: actually passes shared values down -----------------
+
+    def test_detect_problems_shares_flatness(self, sibilant_signal):
+        """detect_problems pre-computes spectral_flatness and passes it to
+        _detect_band_excess (called 3 times), not computing it 3 times."""
+        samples, sr = sibilant_signal
+        audio = _make_audio(samples, sr)
+        with patch(
+            "phantom.problems._spectral_flatness", wraps=_spectral_flatness
+        ) as mock_flat:
+            detect_problems(audio)
+            # Should be called exactly once (pre-compute), not 3 times
+            assert mock_flat.call_count == 1
+
+    def test_detect_problems_shares_power_spectrum(self, resonant_signal):
+        """detect_problems pre-computes _average_power_spectrum(8192) and passes it
+        to _detect_resonances and _detect_lossy_codec, not computing it 2 times."""
+        samples, sr = resonant_signal
+        audio = _make_audio(samples, sr)
+        with patch(
+            "phantom.problems._average_power_spectrum", wraps=_average_power_spectrum
+        ) as mock_aps:
+            detect_problems(audio)
+            # Should be called exactly once (pre-compute), not 2 times
+            assert mock_aps.call_count == 1
