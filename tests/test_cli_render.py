@@ -169,9 +169,7 @@ class TestRenderPathSecurity:
         sf.write(str(wav_path), samples, sr)
 
         with patch("phantom.cli.render.shutil.which", return_value="/usr/bin/ffmpeg"):
-            result = runner.invoke(
-                cli, ["render", str(wav_path), "--format", "mp3"]
-            )
+            result = runner.invoke(cli, ["render", str(wav_path), "--format", "mp3"])
 
         assert result.exit_code != 0
         output_lower = result.output.lower()
@@ -225,9 +223,7 @@ class TestRenderPathSecurity:
 
         # Mock ffmpeg as missing so it fails on ffmpeg check, not path security
         with patch("phantom.cli.render.shutil.which", return_value=None):
-            result = runner.invoke(
-                cli, ["render", str(wav_path), "--format", "mp3"]
-            )
+            result = runner.invoke(cli, ["render", str(wav_path), "--format", "mp3"])
 
         # Should fail because ffmpeg is not found, NOT because of path security
         assert result.exit_code != 0
@@ -249,9 +245,7 @@ class TestRenderPathSecurity:
 
         # Mock ffmpeg as missing so it fails on ffmpeg check, not path security
         with patch("phantom.cli.render.shutil.which", return_value=None):
-            result = runner.invoke(
-                cli, ["render", str(wav_path), "--format", "mp3"]
-            )
+            result = runner.invoke(cli, ["render", str(wav_path), "--format", "mp3"])
 
         # Should fail because ffmpeg is not found, NOT path restriction
         assert result.exit_code != 0

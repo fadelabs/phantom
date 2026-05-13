@@ -94,9 +94,7 @@ def fix(
                 )
 
             if not fixable_problems:
-                console.print(
-                    "[bold yellow]No auto-fixable problems detected."
-                )
+                console.print("[bold yellow]No auto-fixable problems detected.")
                 return
 
             # Display numbered list of fixable problems
