@@ -27,6 +27,14 @@ REVIEW.md
 .env
 .env.*
 
+# Credential and key files
+*.pem
+*.key
+*.p12
+credentials.json
+secrets.json
+.gitleaksignore
+
 # Python
 __pycache__/
 *.py[cod]

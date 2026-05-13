@@ -11,7 +11,9 @@ echo "==> PII scan (privacy guard)..."
 HITS=$(git ls-files -- '*.py' '*.md' '*.toml' '*.json' '*.yml' '*.yaml' '*.cfg' '*.txt' '*.rst' | \
   grep -v "^LICENSE$" | grep -v "^README.md$" | grep -v "^scripts/pre-push$" | \
   xargs grep -inE "saenz|leesaenz|@gmail\.com" 2>/dev/null | \
-  grep -v "^\.claude" | grep -v "^\.planning/" || true)
+  grep -v "^\.claude" | grep -v "^\.planning/" | \
+  grep -v "^\.github/workflows/security-scan\.yml:" | \
+  grep -v "^scripts/check-pii\.sh:" || true)
 if [ -n "$HITS" ]; then
   echo "BLOCKED: Personal information detected in tracked files:"
   echo "$HITS"
@@ -28,6 +30,10 @@ uv tool run ruff check src/ tests/
 echo ""
 echo "==> Format check (ruff format)..."
 uv tool run ruff format --check src/ tests/
+
+echo ""
+echo "==> Running tests (pytest)..."
+uv run pytest tests/ -x -q --tb=short
 
 echo ""
 echo "=== All pre-push checks passed. ==="
