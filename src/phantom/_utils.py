@@ -59,6 +59,8 @@ def _block_rms_db(
     Returns:
         List of RMS values in dBFS, one per non-silent block.
     """
+    if mono.ndim != 1:
+        raise ValueError(f"mono must be 1-D, got {mono.ndim}-D array")
     if block_size <= 0:
         raise ValueError(f"block_size must be positive, got {block_size}")
     if hop <= 0:
