@@ -249,3 +249,42 @@ def test_fix_interactive_out_of_range_falls_back(runner, mono_sine_440hz, make_w
     problems_arg = call_kwargs[1].get("problems") if call_kwargs[1] else None
     # Should fall back to None (fix all) since no valid selection
     assert problems_arg is None, "Expected problems=None (fix all) for out-of-range selections"
+
+
+# ---------------------------------------------------------------------------
+# Test 8: --interactive mode filters unfixable problems from display
+# ---------------------------------------------------------------------------
+
+
+def test_fix_interactive_hides_unfixable(runner, mono_sine_440hz, make_wav):
+    """Interactive mode shows unfixable count but only lists fixable problems."""
+    samples, sr = mono_sine_440hz
+    path = make_wav(samples, sr)
+
+    mock_problems = ProblemsResult(
+        problems=[
+            ProblemItem(
+                type="clipping",
+                severity="dealbreaker",
+                message="Clipped",
+                details={},
+            ),
+            ProblemItem(
+                type="mud", severity="moderate", message="Mud detected", details={}
+            ),
+        ],
+        clean=False,
+    )
+    mock_result = _make_mock_fix_result(path.replace(".wav", "_fixed.wav"))
+
+    with (
+        patch("phantom.cli.fix.detect_problems", return_value=mock_problems),
+        patch("phantom.cli.fix.fix_audio", return_value=mock_result),
+        patch("phantom.cli.fix.Prompt.ask", return_value="all"),
+    ):
+        result = runner.invoke(cli, ["fix", "--interactive", path])
+
+    assert result.exit_code == 0, f"Exit {result.exit_code}: {result.output}"
+    # Should mention unfixable count
+    assert "cannot be auto-fixed" in result.output.lower()
+    assert "clipping" in result.output.lower()
