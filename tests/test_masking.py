@@ -465,6 +465,62 @@ class TestMatrixRanking:
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# Resample Integration
+# ---------------------------------------------------------------------------
+
+
+class TestMaskingResample:
+    """Verify masking analysis auto-resamples mismatched sample rates."""
+
+    def test_analyze_masking_mismatched_rates_succeeds(self):
+        """analyze_masking with 44100Hz and 48000Hz should succeed, not raise."""
+        sr1, sr2 = 44100, 48000
+        t1 = np.linspace(0, 1.0, sr1, endpoint=False, dtype=np.float32)
+        t2 = np.linspace(0, 1.0, sr2, endpoint=False, dtype=np.float32)
+        audio_a = _make_audio(
+            (0.5 * np.sin(2 * np.pi * 440 * t1)).astype(np.float32), sr1
+        )
+        audio_b = _make_audio(
+            (0.5 * np.sin(2 * np.pi * 440 * t2)).astype(np.float32), sr2
+        )
+        result = analyze_masking(audio_a, audio_b)
+        assert isinstance(result, MaskingResult)
+        assert result.overall_score >= 0.0
+
+    def test_analyze_masking_matrix_mixed_rates_succeeds(self):
+        """analyze_masking_matrix with stems at [44100, 48000, 44100] should succeed."""
+        sr1, sr2 = 44100, 48000
+        t1 = np.linspace(0, 1.0, sr1, endpoint=False, dtype=np.float32)
+        t2 = np.linspace(0, 1.0, sr2, endpoint=False, dtype=np.float32)
+        stem_0 = _make_audio(
+            (0.5 * np.sin(2 * np.pi * 300 * t1)).astype(np.float32), sr1
+        )
+        stem_1 = _make_audio(
+            (0.5 * np.sin(2 * np.pi * 350 * t2)).astype(np.float32), sr2
+        )
+        stem_2 = _make_audio(
+            (0.5 * np.sin(2 * np.pi * 4000 * t1)).astype(np.float32), sr1
+        )
+        result = analyze_masking_matrix([stem_0, stem_1, stem_2])
+        assert isinstance(result, MaskingMatrixResult)
+        assert result.pair_count == 3
+        assert result.stem_count == 3
+
+    def test_analyze_masking_matched_rates_no_resample(self):
+        """analyze_masking with same sample rate should work without resampling."""
+        sr = 44100
+        t = np.linspace(0, 1.0, sr, endpoint=False, dtype=np.float32)
+        audio_a = _make_audio(
+            (0.5 * np.sin(2 * np.pi * 440 * t)).astype(np.float32), sr
+        )
+        audio_b = _make_audio(
+            (0.5 * np.sin(2 * np.pi * 880 * t)).astype(np.float32), sr
+        )
+        result = analyze_masking(audio_a, audio_b)
+        assert isinstance(result, MaskingResult)
+
+
 class TestBandEnergiesEdgeCases:
     """Audio shorter than one FFT frame (4096 samples) should return zeros."""
 
