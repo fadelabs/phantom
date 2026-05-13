@@ -27,11 +27,17 @@ Contributions are welcome under the [AGPL-3.0](LICENSE) license (inbound = outbo
    pip install -e ".[dev]"
    ```
 
-3. Install the pre-push hook:
+3. Install git hooks:
 
    ```bash
+   # Pre-commit hooks (secret scanning, PII detection, policy checks)
+   uv run pre-commit install
+
+   # Pre-push hook (linting, formatting, full test suite)
    ln -sf ../../scripts/pre-push .git/hooks/pre-push
    ```
+
+   The pre-commit hook blocks commits containing secrets, PII, absolute paths, planning docs, or large audio files. The pre-push hook runs ruff linting, formatting checks, and the full pytest suite before each push.
 
 4. Run the test suite:
 
@@ -75,6 +81,7 @@ All PRs require:
 - Tests passing (`uv run pytest tests/ -x -q`)
 - Ruff linting clean (`uv tool run ruff check src/ tests/`)
 - Ruff formatting clean (`uv tool run ruff format --check src/ tests/`)
+- Security scan passing (automated via GitHub Actions -- checks for secrets, PII, and policy violations)
 
 
 New analysis features should follow existing module patterns: input guard, analyze, return Pydantic model. See any module in `src/phantom/` for examples.
