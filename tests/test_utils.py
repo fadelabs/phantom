@@ -7,8 +7,15 @@ import os
 import numpy as np
 import pytest
 
-from phantom._utils import _block_rms_db, validate_input_path, validate_output_path
-from phantom.exceptions import PathSecurityError
+from phantom._utils import _block_rms_db, validate_input_path, validate_output_path, wrap_errors
+from phantom.exceptions import (
+    AnalysisError,
+    AudioLoadError,
+    DependencyMissingError,
+    PathSecurityError,
+    PhantomError,
+    ProfileLoadError,
+)
 
 
 class TestBlockRmsDb:
@@ -178,3 +185,117 @@ class TestValidateOutputPath:
         link.symlink_to(outside)
         with pytest.raises(PathSecurityError, match="outside the allowed directory"):
             validate_output_path(str(link))
+
+
+class TestWrapErrors:
+    """Tests for the wrap_errors decorator."""
+
+    def test_normal_return_passes_through(self) -> None:
+        """A decorated function that returns normally passes the value unchanged."""
+
+        @wrap_errors("Test failed")
+        def add(a: int, b: int) -> int:
+            return a + b
+
+        assert add(2, 3) == 5
+
+    def test_analysis_error_passes_through(self) -> None:
+        """AnalysisError raised inside the decorated function passes through unchanged."""
+
+        @wrap_errors("Prefix")
+        def fail() -> None:
+            raise AnalysisError("original message")
+
+        with pytest.raises(AnalysisError, match="original message"):
+            fail()
+
+    def test_audio_load_error_passes_through(self) -> None:
+        """AudioLoadError (PhantomError subclass) passes through unchanged."""
+
+        @wrap_errors("Prefix")
+        def fail() -> None:
+            raise AudioLoadError("cannot load file")
+
+        with pytest.raises(AudioLoadError, match="cannot load file"):
+            fail()
+
+    def test_dependency_missing_error_passes_through(self) -> None:
+        """DependencyMissingError (PhantomError subclass) passes through unchanged."""
+
+        @wrap_errors("Prefix")
+        def fail() -> None:
+            raise DependencyMissingError("demucs", "separate")
+
+        with pytest.raises(DependencyMissingError):
+            fail()
+
+    def test_path_security_error_passes_through(self) -> None:
+        """PathSecurityError (PhantomError subclass) passes through unchanged."""
+
+        @wrap_errors("Prefix")
+        def fail() -> None:
+            raise PathSecurityError("path outside allowed dir")
+
+        with pytest.raises(PathSecurityError, match="path outside allowed dir"):
+            fail()
+
+    def test_profile_load_error_passes_through(self) -> None:
+        """ProfileLoadError (PhantomError subclass) passes through unchanged."""
+
+        @wrap_errors("Prefix")
+        def fail() -> None:
+            raise ProfileLoadError("bad profile")
+
+        with pytest.raises(ProfileLoadError, match="bad profile"):
+            fail()
+
+    def test_value_error_wrapped_in_analysis_error(self) -> None:
+        """ValueError is wrapped in AnalysisError with the prefix message."""
+
+        @wrap_errors("Spectral analysis failed")
+        def fail() -> None:
+            raise ValueError("negative frequency")
+
+        with pytest.raises(AnalysisError, match="Spectral analysis failed: negative frequency"):
+            fail()
+
+    def test_runtime_error_wrapped_with_cause(self) -> None:
+        """RuntimeError is wrapped in AnalysisError with __cause__ set."""
+        original = RuntimeError("something broke")
+
+        @wrap_errors("Processing failed")
+        def fail() -> None:
+            raise original
+
+        with pytest.raises(AnalysisError, match="Processing failed: something broke") as exc_info:
+            fail()
+        assert exc_info.value.__cause__ is original
+
+    def test_preserves_function_name(self) -> None:
+        """The decorated function preserves __name__ from the original."""
+
+        @wrap_errors("Prefix")
+        def my_analysis_function() -> None:
+            pass
+
+        assert my_analysis_function.__name__ == "my_analysis_function"
+
+    def test_preserves_function_docstring(self) -> None:
+        """The decorated function preserves __doc__ from the original."""
+
+        @wrap_errors("Prefix")
+        def my_func() -> None:
+            """Analyze the spectrum."""
+            pass
+
+        assert my_func.__doc__ == "Analyze the spectrum."
+
+    def test_works_with_args_and_kwargs(self) -> None:
+        """The decorator works with functions that accept *args and **kwargs."""
+
+        @wrap_errors("Prefix")
+        def flexible(*args: object, **kwargs: object) -> tuple:
+            return args, kwargs
+
+        result = flexible(1, "two", key="value")
+        assert result == ((1, "two"), {"key": "value"})
