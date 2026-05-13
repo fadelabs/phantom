@@ -15,6 +15,7 @@ from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from pydantic import BaseModel, field_validator
 
+from phantom._utils import _get_env_int
 from phantom.audio import load_audio
 from phantom.exceptions import PhantomError
 from phantom.spectral import analyze_spectrum as _analyze_spectrum, SpectralResult
@@ -482,8 +483,21 @@ def multi_stem_masking(file_paths: list[str]) -> dict:
 
     stems = [load_audio(p) for p in file_paths]
     matrix_result = _analyze_masking_matrix(stems)
+
+    # Adaptive default: scale with stem count, floor of 10, capped at total pairs
+    stem_count = matrix_result.stem_count
+    pair_count = matrix_result.pair_count
+    default_top_n = min(pair_count, max(10, stem_count))
+
+    # Env var overrides the adaptive default when explicitly set
+    env_val = os.environ.get("PHANTOM_MASKING_TOP_N")
+    if env_val is not None and env_val.strip():
+        top_n = _get_env_int("PHANTOM_MASKING_TOP_N", default_top_n)
+    else:
+        top_n = default_top_n
+
     result = MultiStemMaskingResult(
-        pairs=matrix_result.pairs,
+        pairs=matrix_result.pairs[:top_n],
         stem_count=matrix_result.stem_count,
         pair_count=matrix_result.pair_count,
         stem_paths={f"stem_{i}": os.path.basename(p) for i, p in enumerate(file_paths)},
