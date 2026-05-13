@@ -46,28 +46,8 @@ from phantom.separation import separate_stems as _separate_stems
 # ---------------------------------------------------------------------------
 
 
-class FullDiagnosticResult(BaseModel):
-    """Typed response for the full_diagnostic server tool."""
-
-    file: str
-    duration_seconds: float
-    sample_rate: int
-    channels: int
-    spectral: SpectralResult
-    loudness: LoudnessResult
-    dynamics: DynamicsResult
-    stereo: StereoResult
-    phase: PhaseResult
-    problems: ProblemsResult
-
-    @field_validator("duration_seconds", mode="before")
-    @classmethod
-    def _round_duration(cls, v: float) -> float:
-        return round(v, 3) if v is not None else v
-
-
-class BatchStemResult(BaseModel):
-    """Typed result for a single stem in batch_diagnostic."""
+class StemDiagnosticResult(BaseModel):
+    """Typed response for full_diagnostic and batch_diagnostic tools."""
 
     file: str
     duration_seconds: float
@@ -89,7 +69,7 @@ class BatchStemResult(BaseModel):
 class BatchDiagnosticResult(BaseModel):
     """Typed response for the batch_diagnostic server tool."""
 
-    stems: dict[str, BatchStemResult | dict]  # dict for error stems
+    stems: dict[str, StemDiagnosticResult | dict]  # dict for error stems
     stem_count: int
 
 
@@ -314,7 +294,7 @@ def full_diagnostic(file_path: str) -> dict:
     """Run all six analysis types on a single audio file: spectral, loudness, dynamics, stereo, phase, and problems."""
     audio = load_audio(file_path)
     analysis = _run_full_analysis(audio)
-    result = FullDiagnosticResult(
+    result = StemDiagnosticResult(
         file=os.path.basename(file_path),
         duration_seconds=audio.duration,
         sample_rate=audio.sample_rate,
@@ -363,15 +343,15 @@ def batch_diagnostic(file_paths: list[str]) -> dict:
                 )
             )
 
-        results: dict[str, BatchStemResult | dict] = {}
+        results: dict[str, StemDiagnosticResult | dict] = {}
         sample_rates = {}
         for path in file_paths:
-            stem_name = path
+            stem_name = os.path.normpath(path)
             try:
                 audio = load_audio(path)
                 sample_rates[stem_name] = audio.sample_rate
                 analysis = _run_full_analysis(audio)
-                results[stem_name] = BatchStemResult(
+                results[stem_name] = StemDiagnosticResult(
                     file=os.path.basename(path),
                     duration_seconds=audio.duration,
                     sample_rate=audio.sample_rate,
@@ -392,7 +372,7 @@ def batch_diagnostic(file_paths: list[str]) -> dict:
         if len(unique_rates) > 1:
             mismatch_detail = {name: int(rate) for name, rate in sample_rates.items()}
             for stem_name, stem_result in results.items():
-                if isinstance(stem_result, BatchStemResult):
+                if isinstance(stem_result, StemDiagnosticResult):
                     mismatch = ProblemItem(
                         type="sample_rate_mismatch",
                         severity="dealbreaker",

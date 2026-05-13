@@ -1,6 +1,11 @@
 """Phantom: AI audio engineering system."""
 
-__version__ = "1.2.2"
+try:
+    from importlib.metadata import version as _metadata_version
+
+    __version__ = _metadata_version("phantom-audio")
+except Exception:
+    __version__ = "unknown"
 
 from phantom.audio import AudioData, load_audio
 from phantom.exceptions import (
@@ -79,7 +84,6 @@ __all__ = [
     "AnalysisError",
     "DependencyMissingError",
     "ProfileLoadError",
-    "__version__",
     # Response models
     "SpectralResult",
     "LoudnessResult",
