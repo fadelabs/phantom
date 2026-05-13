@@ -155,6 +155,14 @@ def detect_problems(audio: AudioData) -> ProblemsResult:
     problems.extend(_detect_snr(mono, audio.sample_rate))
     problems.extend(_detect_hum(mono, audio.sample_rate))
 
+    # Pre-compute shared FFT results for frequency-domain detectors.
+    # _spectral_flatness (frame_size=4096) is used by all 3 _detect_band_excess
+    # calls; _average_power_spectrum (frame_size=8192) is used by both
+    # _detect_resonances and _detect_lossy_codec. Pre-computing eliminates
+    # 4 redundant FFT passes (3 flatness + 1 power spectrum).
+    flatness = _spectral_flatness(mono)
+    spectrum_8k = _average_power_spectrum(mono, 8192, audio.sample_rate)
+
     # Frequency-domain detectors (band excess via parametric function)
     problems.extend(
         _detect_band_excess(
@@ -165,6 +173,7 @@ def detect_problems(audio: AudioData) -> ProblemsResult:
             "sibilance",
             "sibilance",
             "5-10kHz",
+            spectral_flatness=flatness,
         )
     )
     problems.extend(
@@ -176,6 +185,7 @@ def detect_problems(audio: AudioData) -> ProblemsResult:
             "mud",
             "mud",
             "200-500Hz",
+            spectral_flatness=flatness,
         )
     )
     problems.extend(
@@ -187,10 +197,15 @@ def detect_problems(audio: AudioData) -> ProblemsResult:
             "harshness",
             "harshness",
             "2-4kHz",
+            spectral_flatness=flatness,
         )
     )
-    problems.extend(_detect_resonances(mono, audio.sample_rate))
-    problems.extend(_detect_lossy_codec(mono, audio.sample_rate))
+    problems.extend(
+        _detect_resonances(mono, audio.sample_rate, power_spectrum=spectrum_8k)
+    )
+    problems.extend(
+        _detect_lossy_codec(mono, audio.sample_rate, power_spectrum=spectrum_8k)
+    )
 
     # Sort by severity: dealbreaker first, minor last
     problems.sort(key=lambda p: _SEVERITY_ORDER[p.severity])
@@ -524,6 +539,8 @@ def _detect_band_excess(
     problem_type: str,
     label: str,
     freq_label: str,
+    *,
+    spectral_flatness: float | None = None,
 ) -> list[ProblemItem]:
     """Detect excessive energy in a frequency band. PROB-07/08/09.
 
@@ -540,11 +557,16 @@ def _detect_band_excess(
         problem_type: Problem type string (e.g. "sibilance", "mud", "harshness").
         label: Human-readable label for the problem (e.g. "sibilance", "mud", "harshness").
         freq_label: Frequency range label for the message (e.g. "5-10kHz", "200-500Hz").
+        spectral_flatness: Pre-computed spectral flatness value. When None,
+            computes own via _spectral_flatness(mono). Passed by detect_problems
+            to avoid redundant FFT computation across 3 band-excess calls.
 
     Returns:
         List containing a single ProblemItem if excess detected, empty list otherwise.
     """
-    if _spectral_flatness(mono) < _SPECTRAL_FLATNESS_MIN:
+    if spectral_flatness is None:
+        spectral_flatness = _spectral_flatness(mono)
+    if spectral_flatness < _SPECTRAL_FLATNESS_MIN:
         return []
 
     band_db, overall_db, excess_db = _band_excess_db(
@@ -607,19 +629,37 @@ def _average_power_spectrum(
     return avg_spectrum, freqs
 
 
-def _detect_resonances(mono: np.ndarray, sample_rate: int) -> list[ProblemItem]:
+def _detect_resonances(
+    mono: np.ndarray,
+    sample_rate: int,
+    *,
+    power_spectrum: tuple[np.ndarray, np.ndarray] | None = None,
+) -> list[ProblemItem]:
     """Detect narrow resonant peaks (room modes). PROB-10.
 
     Uses a median-filtered spectral baseline to distinguish genuine
     resonances from the signal's fundamental frequencies. This avoids
     false positives on tonal signals (pure sines, harmonic content).
+
+    Args:
+        mono: Mono audio signal as numpy array.
+        sample_rate: Sample rate in Hz.
+        power_spectrum: Pre-computed (avg_spectrum, freqs) tuple from
+            _average_power_spectrum(mono, 8192, sample_rate). When None,
+            computes own. Passed by detect_problems to share FFT with
+            _detect_lossy_codec.
     """
     frame_size = 8192
 
-    result = _average_power_spectrum(mono, frame_size, sample_rate)
-    if result[0] is None:
-        return []
-    avg_spectrum, freqs = result
+    if power_spectrum is None:
+        result = _average_power_spectrum(mono, frame_size, sample_rate)
+        if result[0] is None:
+            return []
+        avg_spectrum, freqs = result
+    else:
+        avg_spectrum, freqs = power_spectrum
+        if avg_spectrum is None:
+            return []
 
     avg_db = 10.0 * np.log10(avg_spectrum + 1e-10)
     freq_resolution = float(sample_rate) / frame_size
@@ -679,17 +719,36 @@ def _detect_resonances(mono: np.ndarray, sample_rate: int) -> list[ProblemItem]:
     ]
 
 
-def _detect_lossy_codec(mono: np.ndarray, sample_rate: int) -> list[ProblemItem]:
-    """Detect lossy codec artifacts via 16kHz spectral shelf. PROB-13."""
+def _detect_lossy_codec(
+    mono: np.ndarray,
+    sample_rate: int,
+    *,
+    power_spectrum: tuple[np.ndarray, np.ndarray] | None = None,
+) -> list[ProblemItem]:
+    """Detect lossy codec artifacts via 16kHz spectral shelf. PROB-13.
+
+    Args:
+        mono: Mono audio signal as numpy array.
+        sample_rate: Sample rate in Hz.
+        power_spectrum: Pre-computed (avg_spectrum, freqs) tuple from
+            _average_power_spectrum(mono, 8192, sample_rate). When None,
+            computes own. Passed by detect_problems to share FFT with
+            _detect_resonances.
+    """
     if sample_rate < 44100:
         return []  # Need Nyquist >= 22kHz
 
     frame_size = 8192
 
-    result = _average_power_spectrum(mono, frame_size, sample_rate)
-    if result[0] is None:
-        return []
-    avg_spectrum, freqs = result
+    if power_spectrum is None:
+        result = _average_power_spectrum(mono, frame_size, sample_rate)
+        if result[0] is None:
+            return []
+        avg_spectrum, freqs = result
+    else:
+        avg_spectrum, freqs = power_spectrum
+        if avg_spectrum is None:
+            return []
 
     # Compare energy in 14-16kHz band vs 16-20kHz band
     mask_below = (freqs >= 14000) & (freqs < 16000)
