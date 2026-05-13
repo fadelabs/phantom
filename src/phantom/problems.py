@@ -22,9 +22,38 @@ from pydantic import BaseModel
 
 from phantom.audio import AudioData
 from phantom.exceptions import AnalysisError
-from phantom._utils import is_near_silent, _block_rms_db
+from phantom._utils import is_near_silent, _block_rms_db, wrap_errors
 
 _SEVERITY_ORDER = {"dealbreaker": 0, "significant": 1, "moderate": 2, "minor": 3}
+
+# ---------------------------------------------------------------------------
+# Threshold constants (extracted from inline magic numbers for clarity)
+# ---------------------------------------------------------------------------
+
+_CLIPPING_THRESHOLD = 1.0  # Digital maximum for clipping detection (PROB-01)
+_DC_OFFSET_THRESHOLD = 5e-4  # 0.05% of full scale, above 24-bit noise floor (PROB-02)
+_ISP_OVERSHOOT_THRESHOLD_DB = 0.5  # Min overshoot to flag inter-sample peaks (PROB-03)
+_ISP_SEVERE_DBTP = -1.0  # True peak above this is "significant" severity (PROB-03)
+_DYNAMIC_SPREAD_MIN_DB = (
+    10.0  # Min dynamic range to trust noise floor estimate (PROB-04/05)
+)
+_NOISE_FLOOR_MODERATE_DB = -50.0  # Noise floor above this is "moderate" (PROB-04)
+_NOISE_FLOOR_MINOR_DB = -60.0  # Noise floor above this is "minor" (PROB-04)
+_SNR_PROFESSIONAL_DB = 60.0  # SNR above this is professional quality (PROB-05)
+_SNR_POOR_DB = 50.0  # SNR below this is "poor" / "significant" (PROB-05)
+_SPECTRAL_FLATNESS_MIN = (
+    0.01  # Min flatness to run band-excess detectors (PROB-07/08/09)
+)
+_BAND_EXCESS_THRESHOLD_DB = (
+    6.0  # Band excess above this triggers detection (PROB-07/08/09)
+)
+_RESONANCE_MEDIAN_FLOOR_DB = (
+    -40.0
+)  # Median spectral level floor for resonance detection (PROB-10)
+_RESONANCE_PROMINENCE_DB = (
+    12  # Peak prominence threshold for resonance detection (PROB-10)
+)
+_LOSSY_SHELF_DROP_DB = 20.0  # Shelf drop above this indicates lossy codec (PROB-13)
 
 
 # ---------------------------------------------------------------------------
@@ -91,6 +120,7 @@ def build_summary(problems: list[ProblemItem]) -> ProblemSummary:
 # ---------------------------------------------------------------------------
 
 
+@wrap_errors("Problem detection failed")
 def detect_problems(audio: AudioData) -> ProblemsResult:
     """Detect audio production problems and return severity-ranked results.
 
@@ -117,35 +147,59 @@ def detect_problems(audio: AudioData) -> ProblemsResult:
     if is_near_silent(mono):
         return _empty_result()
 
-    try:
-        problems: list[ProblemItem] = []
-        problems.extend(_detect_clipping(mono))
-        problems.extend(_detect_dc_offset(mono))
-        problems.extend(_detect_inter_sample_peaks(audio))
-        problems.extend(_detect_noise_floor(mono, audio.sample_rate))
-        problems.extend(_detect_snr(mono, audio.sample_rate))
-        problems.extend(_detect_hum(mono, audio.sample_rate))
+    problems: list[ProblemItem] = []
+    problems.extend(_detect_clipping(mono))
+    problems.extend(_detect_dc_offset(mono))
+    problems.extend(_detect_inter_sample_peaks(audio))
+    problems.extend(_detect_noise_floor(mono, audio.sample_rate))
+    problems.extend(_detect_snr(mono, audio.sample_rate))
+    problems.extend(_detect_hum(mono, audio.sample_rate))
 
-        # Frequency-domain detectors
-        problems.extend(_detect_sibilance(mono, audio.sample_rate))
-        problems.extend(_detect_mud(mono, audio.sample_rate))
-        problems.extend(_detect_harshness(mono, audio.sample_rate))
-        problems.extend(_detect_resonances(mono, audio.sample_rate))
-        problems.extend(_detect_lossy_codec(mono, audio.sample_rate))
-
-        # Sort by severity: dealbreaker first, minor last
-        problems.sort(key=lambda p: _SEVERITY_ORDER[p.severity])
-
-        return ProblemsResult(
-            problems=problems,
-            clean=len(problems) == 0,
-            summary=build_summary(problems),
+    # Frequency-domain detectors (band excess via parametric function)
+    problems.extend(
+        _detect_band_excess(
+            mono,
+            audio.sample_rate,
+            5000.0,
+            10000.0,
+            "sibilance",
+            "sibilance",
+            "5-10kHz",
         )
+    )
+    problems.extend(
+        _detect_band_excess(
+            mono,
+            audio.sample_rate,
+            200.0,
+            500.0,
+            "mud",
+            "mud",
+            "200-500Hz",
+        )
+    )
+    problems.extend(
+        _detect_band_excess(
+            mono,
+            audio.sample_rate,
+            2000.0,
+            4000.0,
+            "harshness",
+            "harshness",
+            "2-4kHz",
+        )
+    )
+    problems.extend(_detect_resonances(mono, audio.sample_rate))
+    problems.extend(_detect_lossy_codec(mono, audio.sample_rate))
 
-    except AnalysisError:
-        raise
-    except Exception as exc:
-        raise AnalysisError(f"Problem detection failed: {exc}") from exc
+    # Sort by severity: dealbreaker first, minor last
+    problems.sort(key=lambda p: _SEVERITY_ORDER[p.severity])
+
+    return ProblemsResult(
+        problems=problems,
+        clean=len(problems) == 0,
+        summary=build_summary(problems),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -155,7 +209,7 @@ def detect_problems(audio: AudioData) -> ProblemsResult:
 
 def _detect_clipping(mono: np.ndarray) -> list[ProblemItem]:
     """Detect samples at digital maximum (+/-1.0). PROB-01."""
-    clipped_mask = np.abs(mono) >= 1.0
+    clipped_mask = np.abs(mono) >= _CLIPPING_THRESHOLD
     n_clipped = int(np.sum(clipped_mask))
     if n_clipped == 0:
         return []
@@ -179,7 +233,7 @@ def _detect_clipping(mono: np.ndarray) -> list[ProblemItem]:
 def _detect_dc_offset(mono: np.ndarray) -> list[ProblemItem]:
     """Detect non-zero DC offset. PROB-02."""
     dc = float(np.mean(mono))
-    if abs(dc) < 5e-4:  # 0.05% of full scale — above 24-bit noise floor
+    if abs(dc) < _DC_OFFSET_THRESHOLD:  # 0.05% of full scale — above 24-bit noise floor
         return []
     return [
         ProblemItem(
@@ -226,11 +280,11 @@ def _detect_inter_sample_peaks(audio: AudioData) -> list[ProblemItem]:
     sample_peak = worst_sample_peak
     true_peak = worst_true_peak
 
-    if overshoot_db <= 0.5:
+    if overshoot_db <= _ISP_OVERSHOOT_THRESHOLD_DB:
         return []
 
     true_peak_dbtp = float(20 * np.log10(true_peak + eps))
-    severity = "significant" if true_peak_dbtp > -1.0 else "moderate"
+    severity = "significant" if true_peak_dbtp > _ISP_SEVERE_DBTP else "moderate"
 
     return [
         ProblemItem(
@@ -262,13 +316,13 @@ def _detect_noise_floor(mono: np.ndarray, sample_rate: int) -> list[ProblemItem]
     # reflects the signal level itself, not actual noise. Only flag noise floor
     # when there is enough level variation to distinguish noise from signal.
     dynamic_spread = float(np.percentile(block_rms_db, 90) - noise_floor_db)
-    if dynamic_spread < 10.0:
+    if dynamic_spread < _DYNAMIC_SPREAD_MIN_DB:
         return []
 
-    if noise_floor_db >= -50.0:
+    if noise_floor_db >= _NOISE_FLOOR_MODERATE_DB:
         severity = "moderate"
         msg = f"Elevated noise floor: {noise_floor_db:.1f} dBFS (above -50 dBFS threshold)."
-    elif noise_floor_db >= -60.0:
+    elif noise_floor_db >= _NOISE_FLOOR_MINOR_DB:
         severity = "minor"
         msg = f"Noise floor at {noise_floor_db:.1f} dBFS (acceptable but not professional-grade)."
     else:
@@ -303,15 +357,16 @@ def _detect_snr(mono: np.ndarray, sample_rate: int) -> list[ProblemItem]:
     # Same guard as noise floor: uniform-level signals have no meaningful
     # noise floor to compare against.
     dynamic_spread = float(np.percentile(block_rms_db, 90) - noise_floor_db)
-    if dynamic_spread < 10.0:
+    if dynamic_spread < _DYNAMIC_SPREAD_MIN_DB:
         return []
 
+    # Upper-bound approximation: overall RMS includes noise, so true SNR is lower.
     snr_db = signal_rms_db - noise_floor_db
 
-    if snr_db >= 60.0:
+    if snr_db >= _SNR_PROFESSIONAL_DB:
         return []  # Professional quality
 
-    if snr_db < 50.0:
+    if snr_db < _SNR_POOR_DB:
         severity = "significant"
         quality = "poor"
     else:
@@ -340,8 +395,11 @@ def _detect_snr(mono: np.ndarray, sample_rate: int) -> list[ProblemItem]:
 def _detect_hum(mono: np.ndarray, sample_rate: int) -> list[ProblemItem]:
     """Detect mains hum at 50/60Hz and harmonics. PROB-06."""
     duration = len(mono) / sample_rate
-    if duration < 1.0:
-        return []  # Too short for reliable hum detection
+    if duration < 2.0:
+        # Audio shorter than 2s has insufficient data for reliable PSD
+        # measurement by HumDetector — return empty results rather than
+        # risking Essentia parameter conflicts at boundary durations.
+        return []
 
     time_window = min(duration / 2, 10.0)
     hd = es.HumDetector(
@@ -458,92 +516,53 @@ def _band_excess_db(
     return band_db, overall_db, excess_db
 
 
-def _detect_sibilance(mono: np.ndarray, sample_rate: int) -> list[ProblemItem]:
-    """Detect excessive 5-10kHz energy (sibilance). PROB-07."""
-    # Skip if signal is too tonal (pure tones / sparse harmonics)
-    if _spectral_flatness(mono) < 0.01:
+def _detect_band_excess(
+    mono: np.ndarray,
+    sample_rate: int,
+    low_hz: float,
+    high_hz: float,
+    problem_type: str,
+    label: str,
+    freq_label: str,
+) -> list[ProblemItem]:
+    """Detect excessive energy in a frequency band. PROB-07/08/09.
+
+    Parametric replacement for the former _detect_sibilance, _detect_mud,
+    and _detect_harshness functions. All three were structurally identical,
+    differing only in frequency range, problem type string, label, and
+    frequency label for the message.
+
+    Args:
+        mono: Mono audio signal as numpy array.
+        sample_rate: Sample rate in Hz.
+        low_hz: Lower bound of the frequency band.
+        high_hz: Upper bound of the frequency band.
+        problem_type: Problem type string (e.g. "sibilance", "mud", "harshness").
+        label: Human-readable label for the problem (e.g. "sibilance", "mud", "harshness").
+        freq_label: Frequency range label for the message (e.g. "5-10kHz", "200-500Hz").
+
+    Returns:
+        List containing a single ProblemItem if excess detected, empty list otherwise.
+    """
+    if _spectral_flatness(mono) < _SPECTRAL_FLATNESS_MIN:
         return []
 
     band_db, overall_db, excess_db = _band_excess_db(
         mono,
         sample_rate,
-        5000.0,
-        10000.0,
+        low_hz,
+        high_hz,
     )
 
-    if excess_db <= 6.0:
+    if excess_db <= _BAND_EXCESS_THRESHOLD_DB:
         return []
 
     return [
         ProblemItem(
-            type="sibilance",
+            type=problem_type,
             severity="moderate",
             message=(
-                f"Excessive sibilance: 5-10kHz band energy is {excess_db:.1f} dB "
-                f"above expected level."
-            ),
-            details={
-                "band_energy_db": round(band_db, 1),
-                "overall_energy_db": round(overall_db, 1),
-                "excess_db": round(excess_db, 1),
-            },
-        )
-    ]
-
-
-def _detect_mud(mono: np.ndarray, sample_rate: int) -> list[ProblemItem]:
-    """Detect excessive 200-500Hz energy (mud). PROB-08."""
-    if _spectral_flatness(mono) < 0.01:
-        return []
-
-    band_db, overall_db, excess_db = _band_excess_db(
-        mono,
-        sample_rate,
-        200.0,
-        500.0,
-    )
-
-    if excess_db <= 6.0:
-        return []
-
-    return [
-        ProblemItem(
-            type="mud",
-            severity="moderate",
-            message=(
-                f"Excessive mud: 200-500Hz band energy is {excess_db:.1f} dB "
-                f"above expected level."
-            ),
-            details={
-                "band_energy_db": round(band_db, 1),
-                "overall_energy_db": round(overall_db, 1),
-                "excess_db": round(excess_db, 1),
-            },
-        )
-    ]
-
-
-def _detect_harshness(mono: np.ndarray, sample_rate: int) -> list[ProblemItem]:
-    """Detect excessive 2-4kHz energy (harshness). PROB-09."""
-    if _spectral_flatness(mono) < 0.01:
-        return []
-
-    band_db, overall_db, excess_db = _band_excess_db(
-        mono,
-        sample_rate,
-        2000.0,
-        4000.0,
-    )
-
-    if excess_db <= 6.0:
-        return []
-
-    return [
-        ProblemItem(
-            type="harshness",
-            severity="moderate",
-            message=(
-                f"Excessive harshness: 2-4kHz band energy is {excess_db:.1f} dB "
+                f"Excessive {label}: {freq_label} band energy is {excess_db:.1f} dB "
                 f"above expected level."
             ),
             details={
@@ -610,11 +629,13 @@ def _detect_resonances(mono: np.ndarray, sample_rate: int) -> list[ProblemItem]:
     # because energy is concentrated in a few bins. Resonance detection
     # requires a noise floor baseline to identify anomalous peaks against.
     median_level = float(np.median(avg_db))
-    if median_level < -40.0:
+    if median_level < _RESONANCE_MEDIAN_FLOOR_DB:
         return []
 
     # Find narrow peaks with significant prominence
-    peaks, props = sig.find_peaks(avg_db, prominence=12, width=(1, 20))
+    peaks, props = sig.find_peaks(
+        avg_db, prominence=_RESONANCE_PROMINENCE_DB, width=(1, 20)
+    )
 
     # Filter: only keep peaks in 30-5000 Hz range with Q > 5
     resonances: list[dict] = []
@@ -681,7 +702,7 @@ def _detect_lossy_codec(mono: np.ndarray, sample_rate: int) -> list[ProblemItem]
     energy_above = float(10.0 * np.log10(np.mean(avg_spectrum[mask_above]) + 1e-10))
     shelf_drop = energy_below - energy_above
 
-    if shelf_drop < 20.0:
+    if shelf_drop < _LOSSY_SHELF_DROP_DB:
         return []
 
     return [

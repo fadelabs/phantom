@@ -382,8 +382,10 @@ def _make_user_rock_profile():
 class TestShadowWarning:
     """User profile shadowing a built-in emits a warning."""
 
-    def test_shadow_warning_emitted(self, tmp_path, monkeypatch, capsys):
-        """Overriding a built-in profile prints a warning to stderr."""
+    def test_shadow_warning_emitted(self, tmp_path, monkeypatch, caplog):
+        """Overriding a built-in profile logs an info-level warning."""
+        import logging
+
         from phantom._profiles import _profile_cache
 
         _profile_cache.clear()
@@ -392,12 +394,14 @@ class TestShadowWarning:
         monkeypatch.setenv("PHANTOM_PROFILES_DIR", str(tmp_path))
         monkeypatch.delenv("PHANTOM_PROFILE_OVERRIDE_QUIET", raising=False)
 
-        load_profile("rock")
-        captured = capsys.readouterr()
-        assert "overrides built-in" in captured.err
+        with caplog.at_level(logging.INFO, logger="phantom._profiles"):
+            load_profile("rock")
+        assert "overrides built-in" in caplog.text
 
-    def test_shadow_warning_suppressed(self, tmp_path, monkeypatch, capsys):
+    def test_shadow_warning_suppressed(self, tmp_path, monkeypatch, caplog):
         """PHANTOM_PROFILE_OVERRIDE_QUIET=1 suppresses the warning."""
+        import logging
+
         from phantom._profiles import _profile_cache
 
         _profile_cache.clear()
@@ -406,12 +410,14 @@ class TestShadowWarning:
         monkeypatch.setenv("PHANTOM_PROFILES_DIR", str(tmp_path))
         monkeypatch.setenv("PHANTOM_PROFILE_OVERRIDE_QUIET", "1")
 
-        load_profile("rock")
-        captured = capsys.readouterr()
-        assert "overrides built-in" not in captured.err
+        with caplog.at_level(logging.INFO, logger="phantom._profiles"):
+            load_profile("rock")
+        assert "overrides built-in" not in caplog.text
 
-    def test_no_warning_for_custom_only(self, tmp_path, monkeypatch, capsys):
+    def test_no_warning_for_custom_only(self, tmp_path, monkeypatch, caplog):
         """No warning when user profile doesn't shadow a built-in."""
+        import logging
+
         from phantom._profiles import _profile_cache
 
         _profile_cache.clear()
@@ -422,9 +428,9 @@ class TestShadowWarning:
         monkeypatch.setenv("PHANTOM_PROFILES_DIR", str(tmp_path))
         monkeypatch.delenv("PHANTOM_PROFILE_OVERRIDE_QUIET", raising=False)
 
-        load_profile("my-custom")
-        captured = capsys.readouterr()
-        assert "overrides built-in" not in captured.err
+        with caplog.at_level(logging.INFO, logger="phantom._profiles"):
+            load_profile("my-custom")
+        assert "overrides built-in" not in caplog.text
 
 
 class TestProfileMerge:

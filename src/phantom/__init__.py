@@ -1,6 +1,12 @@
 """Phantom: AI audio engineering system."""
 
-__version__ = "1.2.2"
+try:
+    from importlib.metadata import PackageNotFoundError
+    from importlib.metadata import version as _metadata_version
+
+    __version__ = _metadata_version("phantom-audio")
+except PackageNotFoundError:
+    __version__ = "unknown"
 
 from phantom.audio import AudioData, load_audio
 from phantom.exceptions import (
@@ -52,6 +58,7 @@ from phantom.comparison import (
     MatchResult,
 )
 from phantom.separation import separate_stems, SeparationResult
+from phantom.processing import fix_audio, apply_processing, FixResult, FixComparison
 
 __all__ = [
     "AudioData",
@@ -79,7 +86,6 @@ __all__ = [
     "AnalysisError",
     "DependencyMissingError",
     "ProfileLoadError",
-    "__version__",
     # Response models
     "SpectralResult",
     "LoudnessResult",
@@ -110,4 +116,9 @@ __all__ = [
     "ReferenceComparisonResult",
     "MatchResult",
     "SeparationResult",
+    # Processing
+    "fix_audio",
+    "apply_processing",
+    "FixResult",
+    "FixComparison",
 ]

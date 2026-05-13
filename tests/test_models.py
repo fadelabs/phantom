@@ -10,7 +10,7 @@ from __future__ import annotations
 import pytest
 
 from phantom.spectral import SpectralResult
-from phantom.loudness import LoudnessResult
+from phantom.loudness import LoudnessResult, LufsStats
 from phantom.dynamics import DynamicsResult
 from phantom.stereo import StereoResult, PanoramaDistribution
 from phantom.phase import PhaseResult, PhaseCompareResult
@@ -105,8 +105,8 @@ class TestLoudnessResultSerialization:
             integrated_lufs=-14.0,
             true_peak_dbtp=-1.0,
             loudness_range_lu=8.0,
-            short_term_lufs=[-14.0, -13.5],
-            momentary_lufs=[-12.0, -11.5],
+            short_term_lufs=LufsStats.from_array([-14.0, -13.5]),
+            momentary_lufs=LufsStats.from_array([-12.0, -11.5]),
         )
         d = result.model_dump()
         assert set(d.keys()) == {
@@ -122,17 +122,17 @@ class TestLoudnessResultSerialization:
             integrated_lufs=-14.12345,
             true_peak_dbtp=-1.56789,
             loudness_range_lu=8.99999,
-            short_term_lufs=[-14.12345, -13.56789],
-            momentary_lufs=[-12.12345, -11.56789],
+            short_term_lufs=LufsStats.from_array([-14.12345, -13.56789]),
+            momentary_lufs=LufsStats.from_array([-12.12345, -11.56789]),
         )
         d = result.model_dump()
-        # All dB: 2dp
         assert d["integrated_lufs"] == -14.12
         assert d["true_peak_dbtp"] == -1.57
         assert d["loudness_range_lu"] == 9.0
-        # Lists: 2dp each element
-        assert d["short_term_lufs"] == [-14.12, -13.57]
-        assert d["momentary_lufs"] == [-12.12, -11.57]
+        assert isinstance(d["short_term_lufs"], dict)
+        assert d["short_term_lufs"]["count"] == 2
+        assert isinstance(d["momentary_lufs"], dict)
+        assert d["momentary_lufs"]["count"] == 2
 
     def test_none_fields_serialize(self):
         result = LoudnessResult()
@@ -1059,8 +1059,8 @@ class TestRoundTripReconstruction:
             integrated_lufs=-14.12,
             true_peak_dbtp=-1.57,
             loudness_range_lu=9.0,
-            short_term_lufs=[-14.12, -13.57],
-            momentary_lufs=[-12.12, -11.57],
+            short_term_lufs=LufsStats.from_array([-14.12, -13.57]),
+            momentary_lufs=LufsStats.from_array([-12.12, -11.57]),
         )
         d = original.model_dump()
         reconstructed = LoudnessResult(**d)

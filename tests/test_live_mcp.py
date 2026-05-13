@@ -102,8 +102,8 @@ async def test_analyze_loudness_live(client, live_mix):
     assert data["integrated_lufs"] is not None
     assert data["true_peak_dbtp"] is not None
     assert data["loudness_range_lu"] is not None
-    assert isinstance(data["short_term_lufs"], list)
-    assert len(data["short_term_lufs"]) > 0
+    assert isinstance(data["short_term_lufs"], dict)
+    assert data["short_term_lufs"]["count"] > 0
     _assert_in_range(data["integrated_lufs"], "integrated_lufs")
     _assert_in_range(data["true_peak_dbtp"], "true_peak_dbtp")
     _assert_in_range(data["loudness_range_lu"], "loudness_range_lu")

@@ -9,7 +9,7 @@ import pyloudnorm as pyln
 import pytest
 
 from phantom.audio import AudioData
-from phantom.loudness import LoudnessResult, analyze_loudness
+from phantom.loudness import LoudnessResult, LufsStats, analyze_loudness
 
 
 # ---------------------------------------------------------------------------
@@ -113,27 +113,29 @@ class TestLoudnessRange:
 
 
 class TestShortTermAndMomentary:
-    """Verify short-term (3s) and momentary (400ms) LUFS lists."""
+    """Verify short-term (3s) and momentary (400ms) LUFS are LufsStats."""
 
-    def test_short_term_lufs_is_list(self, sine_1khz_minus23lufs):
-        """Short-term LUFS should be a non-empty list of floats."""
+    def test_short_term_lufs_is_stats(self, sine_1khz_minus23lufs):
+        """Short-term LUFS should be a LufsStats with count > 0."""
         samples, sr = sine_1khz_minus23lufs
         audio = _make_audio(samples, sr)
         result = analyze_loudness(audio)
 
-        assert isinstance(result.short_term_lufs, list)
-        assert len(result.short_term_lufs) > 0
-        assert all(isinstance(v, float) for v in result.short_term_lufs)
+        assert isinstance(result.short_term_lufs, LufsStats)
+        assert result.short_term_lufs.count > 0
+        for field in ("min", "max", "mean", "p5", "p25", "p50", "p75", "p95"):
+            assert isinstance(getattr(result.short_term_lufs, field), float)
 
-    def test_momentary_lufs_is_list(self, sine_1khz_minus23lufs):
-        """Momentary LUFS should be a non-empty list of floats."""
+    def test_momentary_lufs_is_stats(self, sine_1khz_minus23lufs):
+        """Momentary LUFS should be a LufsStats with count > 0."""
         samples, sr = sine_1khz_minus23lufs
         audio = _make_audio(samples, sr)
         result = analyze_loudness(audio)
 
-        assert isinstance(result.momentary_lufs, list)
-        assert len(result.momentary_lufs) > 0
-        assert all(isinstance(v, float) for v in result.momentary_lufs)
+        assert isinstance(result.momentary_lufs, LufsStats)
+        assert result.momentary_lufs.count > 0
+        for field in ("min", "max", "mean", "p5", "p25", "p50", "p75", "p95"):
+            assert isinstance(getattr(result.momentary_lufs, field), float)
 
 
 # ---------------------------------------------------------------------------
@@ -285,3 +287,55 @@ class TestResultStructure:
             "momentary_lufs",
         }
         assert set(result.model_dump().keys()) == expected_keys
+
+        # short_term_lufs and momentary_lufs should serialize as dicts, not lists
+        dumped = result.model_dump()
+        assert isinstance(dumped["short_term_lufs"], dict)
+        assert "min" in dumped["short_term_lufs"]
+        assert "max" in dumped["short_term_lufs"]
+        assert "mean" in dumped["short_term_lufs"]
+        assert "count" in dumped["short_term_lufs"]
+        assert isinstance(dumped["momentary_lufs"], dict)
+
+
+# ---------------------------------------------------------------------------
+# LufsStats unit tests
+# ---------------------------------------------------------------------------
+
+
+class TestLufsStats:
+    """Verify LufsStats construction from arrays."""
+
+    def test_from_array_none(self):
+        """LufsStats.from_array(None) should return None."""
+        assert LufsStats.from_array(None) is None
+
+    def test_from_array_empty(self):
+        """LufsStats.from_array([]) should return None."""
+        assert LufsStats.from_array([]) is None
+
+    def test_from_array_single(self):
+        """Single-element array: min == max == mean, count == 1."""
+        stats = LufsStats.from_array([-23.0])
+        assert stats is not None
+        assert stats.min == -23.0
+        assert stats.max == -23.0
+        assert stats.mean == -23.0
+        assert stats.count == 1
+
+    def test_from_array_percentiles(self):
+        """Percentile p50 of range(-30, -20) should be near -25.0."""
+        values = list(range(-30, -20))
+        stats = LufsStats.from_array([float(v) for v in values])
+        assert stats is not None
+        assert stats.p50 == pytest.approx(-25.5, abs=1.0)
+
+    def test_values_are_rounded(self):
+        """All float fields should have at most 2 decimal places."""
+        values = [-23.456789, -22.123456, -21.987654]
+        stats = LufsStats.from_array(values)
+        assert stats is not None
+        for field in ("min", "max", "mean", "p5", "p25", "p50", "p75", "p95"):
+            val = getattr(stats, field)
+            # Check at most 2 decimal places
+            assert val == round(val, 2)

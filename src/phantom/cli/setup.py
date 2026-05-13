@@ -14,6 +14,7 @@ from rich.panel import Panel
 from rich.status import Status
 
 from phantom.cli._formatting import get_console, output_json
+from phantom.exceptions import RECOMMENDED_PYTHON
 
 OK = "[green]OK[/green]"
 SKIP = "[dim]skipped[/dim]"
@@ -148,10 +149,19 @@ def _setup_reaper(console, json_mode: bool) -> dict:
         if not json_mode:
             console.print(f"  {OK} Reaper bridge configured")
         return {"step": "reaper", "status": "configured"}
-    except SystemExit:
-        if not json_mode:
-            console.print(f"  {OK} Reaper bridge configured")
-        return {"step": "reaper", "status": "configured"}
+    except SystemExit as e:
+        if e.code == 0 or e.code is None:
+            if not json_mode:
+                console.print(f"  {OK} Reaper bridge configured")
+            return {"step": "reaper", "status": "configured"}
+        else:
+            if not json_mode:
+                console.print(f"  {WARN} Reaper setup failed (exit code {e.code})")
+            return {
+                "step": "reaper",
+                "status": "error",
+                "message": f"exit code {e.code}",
+            }
     except Exception as e:
         if not json_mode:
             console.print(f"  {WARN} Reaper setup issue: {e}")
@@ -264,7 +274,7 @@ def setup(json_output: bool, skip_reaper: bool, skip_plugin: bool) -> None:
                         "install",
                         "phantom-audio",
                         "--python",
-                        "3.13",
+                        RECOMMENDED_PYTHON,
                         "--force",
                     ]
                     + with_args,
@@ -280,7 +290,9 @@ def setup(json_output: bool, skip_reaper: bool, skip_plugin: bool) -> None:
                     f"--with {extra_packages.get(e, e)}" for e, _ in missing_extras
                 )
                 console.print(f"  {WARN} Install failed. Run manually:")
-                console.print(f"    uv tool install phantom-audio --python 3.13 {pkgs}")
+                console.print(
+                    f"    uv tool install phantom-audio --python {RECOMMENDED_PYTHON} {pkgs}"
+                )
 
     console.print()
     console.print(

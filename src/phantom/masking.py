@@ -18,7 +18,7 @@ from pydantic import BaseModel, field_validator
 from phantom.audio import AudioData
 from phantom.exceptions import AnalysisError
 from phantom._rounding import round_ratio
-from phantom._utils import is_near_silent
+from phantom._utils import is_near_silent, wrap_errors
 from phantom.spectral import OCTAVE_EDGES, _BAND_LABELS
 
 # Severity thresholds for per-band overlap classification.
@@ -149,6 +149,12 @@ def _compute_band_energies(mono: np.ndarray, sample_rate: int) -> np.ndarray:
     frame_size = 4096
     hop_size = 2048
 
+    # Audio shorter than one FFT frame cannot produce meaningful band energies.
+    # Zero energy is the acoustically correct answer — the signal contains
+    # insufficient data to resolve any frequency band.
+    if len(mono) < frame_size:
+        return np.zeros(len(_BAND_LABELS))
+
     windowing = es.Windowing(type="hann", size=frame_size)
     spectrum = es.Spectrum(size=frame_size)
     freq_bands = es.FrequencyBands(frequencyBands=OCTAVE_EDGES, sampleRate=sample_rate)
@@ -216,6 +222,7 @@ def _compute_pairwise_result(
     )
 
 
+@wrap_errors("Masking analysis failed")
 def analyze_masking(audio_a: AudioData, audio_b: AudioData) -> MaskingResult:
     """Analyze frequency masking between two audio stems.
 
@@ -252,19 +259,14 @@ def analyze_masking(audio_a: AudioData, audio_b: AudioData) -> MaskingResult:
     if is_near_silent(mono_a) or is_near_silent(mono_b):
         return _no_masking_result()
 
-    try:
-        # Compute per-band energies for both stems
-        energies_a = _compute_band_energies(mono_a, audio_a.sample_rate)
-        energies_b = _compute_band_energies(mono_b, audio_b.sample_rate)
+    # Compute per-band energies for both stems
+    energies_a = _compute_band_energies(mono_a, audio_a.sample_rate)
+    energies_b = _compute_band_energies(mono_b, audio_b.sample_rate)
 
-        return _compute_pairwise_result(energies_a, energies_b)
-
-    except AnalysisError:
-        raise
-    except Exception as exc:
-        raise AnalysisError(f"Masking analysis failed: {exc}") from exc
+    return _compute_pairwise_result(energies_a, energies_b)
 
 
+@wrap_errors("Masking analysis failed")
 def analyze_masking_matrix(stems: list[AudioData]) -> MaskingMatrixResult:
     """Analyze frequency masking across all pairs in a multi-stem set.
 
@@ -296,43 +298,37 @@ def analyze_masking_matrix(stems: list[AudioData]) -> MaskingMatrixResult:
             "All stems must share the same sample rate."
         )
 
-    try:
-        # Pre-compute band energies for all stems (optimization)
-        energies: list[np.ndarray | None] = []
-        for stem in stems:
-            mono = stem.mono
-            if len(mono) == 0:
-                raise AnalysisError("Masking analysis failed: audio has 0 samples")
-            if is_near_silent(mono):
-                energies.append(None)  # marker for silent stems
-            else:
-                energies.append(_compute_band_energies(mono, stem.sample_rate))
+    # Pre-compute band energies for all stems (optimization)
+    energies: list[np.ndarray | None] = []
+    for stem in stems:
+        mono = stem.mono
+        if len(mono) == 0:
+            raise AnalysisError("Masking analysis failed: audio has 0 samples")
+        if is_near_silent(mono):
+            energies.append(None)  # marker for silent stems
+        else:
+            energies.append(_compute_band_energies(mono, stem.sample_rate))
 
-        # Iterate all unique pairs
-        pairs: list[MaskingPair] = []
-        for i, j in itertools.combinations(range(n), 2):
-            if energies[i] is None or energies[j] is None:
-                # One or both stems are near-silent — no masking
-                result = _no_masking_result()
-            else:
-                result = _compute_pairwise_result(energies[i], energies[j])
+    # Iterate all unique pairs
+    pairs: list[MaskingPair] = []
+    for i, j in itertools.combinations(range(n), 2):
+        if energies[i] is None or energies[j] is None:
+            # One or both stems are near-silent — no masking
+            result = _no_masking_result()
+        else:
+            result = _compute_pairwise_result(energies[i], energies[j])
 
-            pairs.append(
-                MaskingPair(
-                    stem_a=f"stem_{i}",
-                    stem_b=f"stem_{j}",
-                    overall_severity=result.overall_severity,
-                    overall_score=result.overall_score,
-                    bands=result.bands,
-                )
+        pairs.append(
+            MaskingPair(
+                stem_a=f"stem_{i}",
+                stem_b=f"stem_{j}",
+                overall_severity=result.overall_severity,
+                overall_score=result.overall_score,
+                bands=result.bands,
             )
+        )
 
-        # Sort by overall_score descending (worst offenders first, per D-05)
-        pairs.sort(key=lambda p: p.overall_score, reverse=True)
+    # Sort by overall_score descending (worst offenders first, per D-05)
+    pairs.sort(key=lambda p: p.overall_score, reverse=True)
 
-        return MaskingMatrixResult(pairs=pairs, stem_count=n, pair_count=len(pairs))
-
-    except AnalysisError:
-        raise
-    except Exception as exc:
-        raise AnalysisError(f"Masking analysis failed: {exc}") from exc
+    return MaskingMatrixResult(pairs=pairs, stem_count=n, pair_count=len(pairs))
