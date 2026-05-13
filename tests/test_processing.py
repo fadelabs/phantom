@@ -107,6 +107,21 @@ class TestRecipes:
         assert chain[0].gain_db == pytest.approx(-6.0)
         assert chain[0].q == pytest.approx(15.2)
 
+    def test_recipe_resonant_peak_skips_missing_frequency(self):
+        """Resonance entries without frequency_hz are silently skipped."""
+        from phantom.processing import RECIPES
+
+        details = {
+            "resonances": [
+                {"frequency_hz": 250.0, "q_factor": 12.0},
+                {"q_factor": 8.0},  # Missing frequency_hz
+                {},  # Completely empty
+            ]
+        }
+        chain = RECIPES["resonant_peak"].build_chain(details)
+        assert len(chain) == 1  # Only the valid entry
+        assert chain[0].cutoff_frequency_hz == pytest.approx(250.0)
+
     def test_recipe_dataclass_fields(self):
         from phantom.processing import RECIPES
 

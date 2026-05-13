@@ -146,14 +146,19 @@ def _recipe_resonant_peak(details: dict) -> list:
     import pedalboard as pb
 
     resonances = details.get("resonances", [])
-    return [
-        pb.PeakFilter(
-            cutoff_frequency_hz=r["frequency_hz"],
-            gain_db=-6.0,
-            q=r.get("q_factor", 10.0),
+    plugins: list = []
+    for r in resonances:
+        freq = r.get("frequency_hz")
+        if freq is None:
+            continue  # Skip malformed resonance entry
+        plugins.append(
+            pb.PeakFilter(
+                cutoff_frequency_hz=freq,
+                gain_db=-6.0,
+                q=r.get("q_factor", 10.0),
+            )
         )
-        for r in resonances
-    ]
+    return plugins
 
 
 # ---------------------------------------------------------------------------
