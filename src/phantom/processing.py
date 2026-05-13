@@ -14,14 +14,13 @@ notch filters, then parametric cuts, then shelf adjustments.
 from __future__ import annotations
 
 import os
-from collections.abc import KeysView
 from dataclasses import dataclass
 from typing import Callable
 
 from pydantic import BaseModel
 
 from phantom.exceptions import AnalysisError, DependencyMissingError
-from phantom._utils import validate_input_path, validate_output_path
+from phantom._utils import validate_input_path, validate_output_path, wrap_errors
 from phantom.audio import load_audio
 from phantom.problems import ProblemItem, ProblemsResult
 
@@ -180,7 +179,7 @@ RECIPES: dict[str, Recipe] = {
 
 
 # ---------------------------------------------------------------------------
-# ALLOWED_OPERATIONS allowlist (T-23-01 mitigation)
+# Allowed operations allowlist (T-23-01 mitigation)
 # ---------------------------------------------------------------------------
 
 
@@ -209,35 +208,12 @@ def _build_allowed_operations() -> dict[str, type]:
 _ALLOWED_OPS_CACHE: dict[str, type] | None = None
 
 
-def _get_allowed_operations() -> dict[str, type]:
+def get_allowed_operations() -> dict[str, type]:
     """Return the ALLOWED_OPERATIONS dict, building it on first call."""
     global _ALLOWED_OPS_CACHE  # noqa: PLW0603
     if _ALLOWED_OPS_CACHE is None:
         _ALLOWED_OPS_CACHE = _build_allowed_operations()
     return _ALLOWED_OPS_CACHE
-
-
-class _AllowedOpsProxy:
-    """Dict-like proxy that lazily builds the allowlist on first access."""
-
-    def keys(self) -> KeysView[str]:
-        """Return dict_keys view of allowed operation names."""
-        return _get_allowed_operations().keys()
-
-    def __getitem__(self, key: str) -> type:
-        return _get_allowed_operations()[key]
-
-    def __contains__(self, key: object) -> bool:
-        return key in _get_allowed_operations()
-
-    def __len__(self) -> int:
-        return len(_get_allowed_operations())
-
-    def __iter__(self):
-        return iter(_get_allowed_operations())
-
-
-ALLOWED_OPERATIONS = _AllowedOpsProxy()
 
 
 # ---------------------------------------------------------------------------
@@ -283,6 +259,7 @@ def _resolve_output_path(input_path: str, output_path: str | None) -> str:
 # ---------------------------------------------------------------------------
 
 
+@wrap_errors("Audio processing failed")
 def apply_processing(
     file_path: str,
     operations: list[dict],
@@ -291,7 +268,7 @@ def apply_processing(
     """Apply a custom chain of audio processing operations.
 
     Each operation is a dict with a "type" key matching an entry in
-    ALLOWED_OPERATIONS, plus constructor kwargs for the Pedalboard plugin.
+    get_allowed_operations(), plus constructor kwargs for the Pedalboard plugin.
 
     Args:
         file_path: Path to the input audio file.
@@ -318,48 +295,40 @@ def apply_processing(
             ),
         )
 
-    try:
-        # Step 1: Validate paths (T-23-02, T-23-05)
-        file_path = validate_input_path(file_path)
-        output_path = _resolve_output_path(file_path, output_path)
-        output_path = validate_output_path(output_path)
+    # Step 1: Validate paths (T-23-02, T-23-05)
+    file_path = validate_input_path(file_path)
+    output_path = _resolve_output_path(file_path, output_path)
+    output_path = validate_output_path(output_path)
 
-        # Step 2: Build plugin chain from operations (T-23-01)
-        allowed = _get_allowed_operations()
-        plugins = []
-        for op in operations:
-            op_copy = dict(op)
-            op_type = op_copy.pop("type", None)
-            if op_type not in allowed:
-                raise AnalysisError(
-                    f"Invalid operation type '{op_type}'. "
-                    f"Allowed types: {sorted(allowed.keys())}"
-                )
-            plugin_cls = allowed[op_type]
-            plugins.append(plugin_cls(**op_copy))
+    # Step 2: Build plugin chain from operations (T-23-01)
+    allowed = get_allowed_operations()
+    plugins = []
+    for op in operations:
+        op_copy = dict(op)
+        op_type = op_copy.pop("type", None)
+        if op_type not in allowed:
+            raise AnalysisError(
+                f"Invalid operation type '{op_type}'. "
+                f"Allowed types: {sorted(allowed.keys())}"
+            )
+        plugin_cls = allowed[op_type]
+        plugins.append(plugin_cls(**op_copy))
 
-        board = pb.Pedalboard(plugins)
+    board = pb.Pedalboard(plugins)
 
-        # Step 3: Load audio, transpose for Pedalboard, process, transpose back
-        audio = load_audio(file_path)
-        pb_input = audio.samples.T  # (samples, channels) -> (channels, samples)
-        pb_output = board(pb_input, float(audio.sample_rate))
-        sf_output = pb_output.T  # (channels, samples) -> (samples, channels)
+    # Step 3: Load audio, transpose for Pedalboard, process, transpose back
+    audio = load_audio(file_path)
+    pb_input = audio.samples.T  # (samples, channels) -> (channels, samples)
+    pb_output = board(pb_input, float(audio.sample_rate))
+    sf_output = pb_output.T  # (channels, samples) -> (samples, channels)
 
-        # Step 4: Write output WAV
-        sf.write(output_path, sf_output, audio.sample_rate)
+    # Step 4: Write output WAV
+    sf.write(output_path, sf_output, audio.sample_rate)
 
-        return FixResult(
-            output_path=output_path,
-            fixes_applied=["custom"],
-        )
-
-    except DependencyMissingError:
-        raise
-    except AnalysisError:
-        raise
-    except Exception as exc:
-        raise AnalysisError(f"Audio processing failed: {exc}") from exc
+    return FixResult(
+        output_path=output_path,
+        fixes_applied=["custom"],
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -516,6 +485,7 @@ def _build_chain_from_problems(problems: list[ProblemItem]) -> list:
 from phantom.problems import detect_problems  # noqa: E402
 
 
+@wrap_errors("Audio processing failed")
 def fix_audio(
     file_path: str,
     problems: list[str] | None = None,
@@ -556,64 +526,54 @@ def fix_audio(
             ),
         )
 
-    try:
-        # Step 1: Validate paths
-        file_path = validate_input_path(file_path)
-        output_path = _resolve_output_path(file_path, output_path)
-        output_path = validate_output_path(output_path)
+    # Step 1: Validate paths
+    file_path = validate_input_path(file_path)
+    output_path = _resolve_output_path(file_path, output_path)
+    output_path = validate_output_path(output_path)
 
-        # Step 2: Load audio and detect problems (before)
-        audio = load_audio(file_path)
-        before = detect_problems(audio)
+    # Step 2: Load audio and detect problems (before)
+    audio = load_audio(file_path)
+    before = detect_problems(audio)
 
-        # Step 3: Filter to fixable problems
-        fixable = [
-            p
-            for p in before.problems
-            if p.type not in UNFIXABLE_TYPES and p.type in RECIPES
-        ]
+    # Step 3: Filter to fixable problems
+    fixable = [
+        p
+        for p in before.problems
+        if p.type not in UNFIXABLE_TYPES and p.type in RECIPES
+    ]
 
-        # Step 4: Apply user filter if specified (T-23-06)
-        if problems is not None:
-            allowed_set = set(problems)
-            fixable = [p for p in fixable if p.type in allowed_set]
+    # Step 4: Apply user filter if specified (T-23-06)
+    if problems is not None:
+        allowed_set = set(problems)
+        fixable = [p for p in fixable if p.type in allowed_set]
 
-        # Step 5: Build plugin chain
-        chain = _build_chain_from_problems(fixable)
-        fixes_applied = [p.type for p in fixable]
+    # Step 5: Build plugin chain
+    chain = _build_chain_from_problems(fixable)
+    fixes_applied = [p.type for p in fixable]
 
-        # Step 6: Process audio
-        if chain:
-            board = pb.Pedalboard(chain)
-            pb_input = audio.samples.T  # (samples, channels) -> (channels, samples)
-            pb_output = board(pb_input, float(audio.sample_rate))
-            sf_output = pb_output.T  # (channels, samples) -> (samples, channels)
-            sf.write(output_path, sf_output, audio.sample_rate)
-        else:
-            # No fixable problems -- write copy of audio unchanged
-            sf.write(output_path, audio.samples, audio.sample_rate)
+    # Step 6: Process audio
+    if chain:
+        board = pb.Pedalboard(chain)
+        pb_input = audio.samples.T  # (samples, channels) -> (channels, samples)
+        pb_output = board(pb_input, float(audio.sample_rate))
+        sf_output = pb_output.T  # (channels, samples) -> (samples, channels)
+        sf.write(output_path, sf_output, audio.sample_rate)
+    else:
+        # No fixable problems -- write copy of audio unchanged
+        sf.write(output_path, audio.samples, audio.sample_rate)
 
-        # Step 7: Detect problems on output (after)
-        after_audio = load_audio(output_path)
-        after = detect_problems(after_audio)
+    # Step 7: Detect problems on output (after)
+    after_audio = load_audio(output_path)
+    after = detect_problems(after_audio)
 
-        # Step 8: Compare before/after
-        improvements, regressions = _compare_results(before, after)
+    # Step 8: Compare before/after
+    improvements, regressions = _compare_results(before, after)
 
-        return FixResult(
-            output_path=output_path,
-            fixes_applied=fixes_applied,
-            before=before,
-            after=after,
-            improvements=improvements,
-            regressions=regressions,
-        )
-
-    except DependencyMissingError:
-        raise
-    except FileNotFoundError:
-        raise
-    except AnalysisError:
-        raise
-    except Exception as exc:
-        raise AnalysisError(f"Audio processing failed: {exc}") from exc
+    return FixResult(
+        output_path=output_path,
+        fixes_applied=fixes_applied,
+        before=before,
+        after=after,
+        improvements=improvements,
+        regressions=regressions,
+    )
