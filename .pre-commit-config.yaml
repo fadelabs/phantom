@@ -30,4 +30,4 @@ repos:
         entry: ./scripts/check-large-binaries.sh
         language: script
         types: [file]
-        pass_filenames: true
+        pass_filenames: false

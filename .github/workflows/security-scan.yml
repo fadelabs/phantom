@@ -1,6 +1,8 @@
 name: Security Scan
 
 on:
+  push:
+    branches: [main]
   pull_request:
     branches: [main]
 
@@ -25,7 +27,7 @@ jobs:
     name: PII and policy checks
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
       - name: Check for PII
         run: |
@@ -36,6 +38,7 @@ jobs:
             grep -v "^./LICENSE:" | grep -v "^./README.md:" | \
             grep -v "^./scripts/pre-push:" | \
             grep -v "^./scripts/check-pii.sh:" | \
+            grep -v "^./.github/workflows/security-scan.yml:" | \
             grep -v "^\./.planning/" | grep -v "^\./.claude/" || true)
           if [ -n "$HITS" ]; then
             echo "::error::PII detected in files:"

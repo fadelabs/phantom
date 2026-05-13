@@ -8,7 +8,8 @@ STAGED=$(git diff --cached --name-only --diff-filter=ACM | \
   grep -v '^LICENSE$' | \
   grep -v '^README.md$' | \
   grep -v '^scripts/pre-push$' | \
-  grep -v '^scripts/check-pii.sh$' || true)
+  grep -v '^scripts/check-pii.sh$' | \
+  grep -v '^\.github/workflows/security-scan.yml$' || true)
 
 if [ -z "$STAGED" ]; then
   exit 0

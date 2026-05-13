@@ -7,7 +7,7 @@ useDefault = true
 [[allowlists]]
 description = "Test files and fixtures"
 paths = [
-    '''tests/.*''',
+    '''tests/fixtures/.*''',
     '''\.pre-commit-config\.yaml$''',
 ]
 
