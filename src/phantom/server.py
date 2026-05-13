@@ -486,9 +486,7 @@ def multi_stem_masking(file_paths: list[str]) -> dict:
         pairs=matrix_result.pairs,
         stem_count=matrix_result.stem_count,
         pair_count=matrix_result.pair_count,
-        stem_paths={
-            f"stem_{i}": os.path.basename(p) for i, p in enumerate(file_paths)
-        },
+        stem_paths={f"stem_{i}": os.path.basename(p) for i, p in enumerate(file_paths)},
     )
     return result.model_dump()
 
