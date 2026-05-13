@@ -17,7 +17,7 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeou
 from pydantic import BaseModel
 
 from phantom.exceptions import AnalysisError, AudioLoadError, DependencyMissingError
-from phantom._utils import validate_input_path, validate_output_path
+from phantom._utils import validate_input_path, validate_output_path, wrap_errors
 
 
 class SeparationResult(BaseModel):
@@ -26,6 +26,7 @@ class SeparationResult(BaseModel):
     stems: dict[str, str]
 
 
+@wrap_errors("Source separation failed")
 def separate_stems(input_path: str, output_dir: str) -> SeparationResult:
     """Separate a stereo mix into individual stems using Demucs.
 
@@ -83,66 +84,56 @@ def separate_stems(input_path: str, output_dir: str) -> SeparationResult:
     # Step 3: Ensure output directory exists
     os.makedirs(output_dir, exist_ok=True)
 
-    try:
-        # Step 4: Load model and audio (per D-03: htdemucs only)
-        model = get_model("htdemucs")
-        model.cpu()
+    # Step 4: Load model and audio (per D-03: htdemucs only)
+    model = get_model("htdemucs")
+    model.cpu()
 
-        wav = AudioFile(input_path).read(
-            streams=0,
-            samplerate=model.samplerate,
-            channels=model.audio_channels,
-        )
-        ref = wav.mean(0)
-        wav = (wav - ref.mean()) / ref.std()
+    wav = AudioFile(input_path).read(
+        streams=0,
+        samplerate=model.samplerate,
+        channels=model.audio_channels,
+    )
+    ref = wav.mean(0)
+    wav = (wav - ref.mean()) / ref.std()
 
-        # Step 5: Run separation (with timeout to prevent indefinite hangs)
-        _SEPARATION_TIMEOUT = 600  # 10 minutes max for any file
+    # Step 5: Run separation (with timeout to prevent indefinite hangs)
+    _SEPARATION_TIMEOUT = 600  # 10 minutes max for any file
 
-        def _run_model():
-            with torch.no_grad():
-                return apply_model(model, wav[None], progress=False)
+    def _run_model():
+        with torch.no_grad():
+            return apply_model(model, wav[None], progress=False)
 
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(_run_model)
-            try:
-                sources = future.result(timeout=_SEPARATION_TIMEOUT)
-            except FuturesTimeout:
-                raise AnalysisError(
-                    f"Source separation timed out after {_SEPARATION_TIMEOUT}s. "
-                    "Try a shorter audio file."
-                )
-        sources = sources[0]
-        sources = sources * ref.std() + ref.mean()
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(_run_model)
+        try:
+            sources = future.result(timeout=_SEPARATION_TIMEOUT)
+        except FuturesTimeout:
+            raise AnalysisError(
+                f"Source separation timed out after {_SEPARATION_TIMEOUT}s. "
+                "Try a shorter audio file."
+            )
+    sources = sources[0]
+    sources = sources * ref.std() + ref.mean()
 
-        # Step 6: Save each stem as WAV (per D-01, D-02)
-        _SAFE_NAME_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
-        result = {}
-        for i, stem_name in enumerate(model.sources):
-            safe_name = os.path.basename(stem_name)
-            if not _SAFE_NAME_RE.match(safe_name):
-                safe_name = f"stem_{int(hashlib.md5(stem_name.encode()).hexdigest()[:8], 16) % 10000}"
-            stem_path = os.path.join(output_dir, f"{safe_name}.wav")
-            real_stem = os.path.realpath(stem_path)
-            real_outdir = os.path.realpath(output_dir)
-            if (
-                not real_stem.startswith(real_outdir + os.sep)
-                and real_stem != real_outdir
-            ):
-                raise AnalysisError(
-                    f"Stem name '{stem_name}' would write outside output directory"
-                )
-            stem_audio = sources[i].cpu().numpy().T
-            sf.write(stem_path, stem_audio, model.samplerate)
-            result[stem_name] = stem_path
+    # Step 6: Save each stem as WAV (per D-01, D-02)
+    _SAFE_NAME_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+    result = {}
+    for i, stem_name in enumerate(model.sources):
+        safe_name = os.path.basename(stem_name)
+        if not _SAFE_NAME_RE.match(safe_name):
+            safe_name = f"stem_{int(hashlib.md5(stem_name.encode()).hexdigest()[:8], 16) % 10000}"
+        stem_path = os.path.join(output_dir, f"{safe_name}.wav")
+        real_stem = os.path.realpath(stem_path)
+        real_outdir = os.path.realpath(output_dir)
+        if (
+            not real_stem.startswith(real_outdir + os.sep)
+            and real_stem != real_outdir
+        ):
+            raise AnalysisError(
+                f"Stem name '{stem_name}' would write outside output directory"
+            )
+        stem_audio = sources[i].cpu().numpy().T
+        sf.write(stem_path, stem_audio, model.samplerate)
+        result[stem_name] = stem_path
 
-        return SeparationResult(stems=result)
-
-    except DependencyMissingError:
-        raise
-    except FileNotFoundError:
-        raise
-    except AnalysisError:
-        raise
-    except Exception as exc:
-        raise AnalysisError(f"Source separation failed: {exc}") from exc
+    return SeparationResult(stems=result)

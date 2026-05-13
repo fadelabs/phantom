@@ -26,7 +26,7 @@ from scipy.fft import fft, ifft
 from phantom.audio import AudioData
 from phantom.exceptions import AnalysisError
 from phantom._rounding import round_ms, round_ratio
-from phantom._utils import is_near_silent
+from phantom._utils import is_near_silent, wrap_errors
 
 
 class PhaseResult(BaseModel):
@@ -151,6 +151,7 @@ def _gcc_phat_delay(
     return delay_samples, delay_ms
 
 
+@wrap_errors("Phase analysis failed")
 def analyze_phase(audio: AudioData) -> PhaseResult:
     """Analyze phase coherence of a single audio file.
 
@@ -204,32 +205,27 @@ def analyze_phase(audio: AudioData) -> PhaseResult:
         return _silent_phase_result()
 
     # Stereo computation
-    try:
-        # PHAS-01: Overall correlation
-        # np.corrcoef returns NaN when a channel has zero variance (e.g. one
-        # channel is silent).  Suppress the runtime warning and fall back to 0.0.
-        with np.errstate(invalid="ignore"):
-            corr_val = np.corrcoef(left, right)[0, 1]
-        overall_corr = 0.0 if np.isnan(corr_val) else float(corr_val)
+    # PHAS-01: Overall correlation
+    # np.corrcoef returns NaN when a channel has zero variance (e.g. one
+    # channel is silent).  Suppress the runtime warning and fall back to 0.0.
+    with np.errstate(invalid="ignore"):
+        corr_val = np.corrcoef(left, right)[0, 1]
+    overall_corr = 0.0 if np.isnan(corr_val) else float(corr_val)
 
-        # PHAS-02: Per-band correlation
-        band_corr = _per_band_correlation(left, right, audio.sample_rate)
+    # PHAS-02: Per-band correlation
+    band_corr = _per_band_correlation(left, right, audio.sample_rate)
 
-        # PHAS-03: Polarity inversion detection
-        polarity_inverted = bool(overall_corr < -0.5)
+    # PHAS-03: Polarity inversion detection
+    polarity_inverted = bool(overall_corr < -0.5)
 
-        return PhaseResult(
-            phase_correlation=overall_corr,
-            per_band_correlation=band_corr,
-            polarity_inverted=polarity_inverted,
-        )
-
-    except AnalysisError:
-        raise
-    except Exception as exc:
-        raise AnalysisError(f"Phase analysis failed: {exc}") from exc
+    return PhaseResult(
+        phase_correlation=overall_corr,
+        per_band_correlation=band_corr,
+        polarity_inverted=polarity_inverted,
+    )
 
 
+@wrap_errors("Phase comparison failed")
 def compare_phase(audio1: AudioData, audio2: AudioData) -> PhaseCompareResult:
     """Compare phase between two audio files.
 
@@ -279,26 +275,20 @@ def compare_phase(audio1: AudioData, audio2: AudioData) -> PhaseCompareResult:
     mono1 = mono1[:min_len]
     mono2 = mono2[:min_len]
 
-    try:
-        # PHAS-04: GCC-PHAT delay estimation
-        delay_samples, delay_ms = _gcc_phat_delay(mono1, mono2, audio1.sample_rate)
+    # PHAS-04: GCC-PHAT delay estimation
+    delay_samples, delay_ms = _gcc_phat_delay(mono1, mono2, audio1.sample_rate)
 
-        # PHAS-05: Cross-file correlation
-        with np.errstate(invalid="ignore"):
-            corr_val = np.corrcoef(mono1, mono2)[0, 1]
-        corr = 0.0 if np.isnan(corr_val) else float(corr_val)
+    # PHAS-05: Cross-file correlation
+    with np.errstate(invalid="ignore"):
+        corr_val = np.corrcoef(mono1, mono2)[0, 1]
+    corr = 0.0 if np.isnan(corr_val) else float(corr_val)
 
-        # PHAS-06: Cross-file polarity inversion
-        polarity_inverted = bool(corr < -0.5)
+    # PHAS-06: Cross-file polarity inversion
+    polarity_inverted = bool(corr < -0.5)
 
-        return PhaseCompareResult(
-            delay_samples=delay_samples,
-            delay_ms=delay_ms,
-            correlation=corr,
-            polarity_inverted=polarity_inverted,
-        )
-
-    except AnalysisError:
-        raise
-    except Exception as exc:
-        raise AnalysisError(f"Phase comparison failed: {exc}") from exc
+    return PhaseCompareResult(
+        delay_samples=delay_samples,
+        delay_ms=delay_ms,
+        correlation=corr,
+        polarity_inverted=polarity_inverted,
+    )
