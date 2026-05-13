@@ -1,7 +1,8 @@
 """Corrective audio processing via Pedalboard.
 
 Provides the Recipe system that maps detected audio problems to corrective
-Pedalboard plugin chains, and apply_processing() for custom processing.
+Pedalboard plugin chains, fix_audio() for automatic problem correction,
+and apply_processing() for custom processing chains.
 
 Pedalboard is an optional dependency. Functions raise DependencyMissingError
 with install instructions if Pedalboard is not available.
