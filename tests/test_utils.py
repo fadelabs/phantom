@@ -9,6 +9,8 @@ import pytest
 
 from phantom._utils import (
     _block_rms_db,
+    _get_env_float,
+    _get_env_int,
     validate_input_path,
     validate_output_path,
     wrap_errors,
@@ -307,3 +309,63 @@ class TestWrapErrors:
 
         result = flexible(1, "two", key="value")
         assert result == ((1, "two"), {"key": "value"})
+
+
+class TestGetEnvHelpers:
+    """Tests for _get_env_int and _get_env_float helpers."""
+
+    # -- _get_env_int --
+
+    def test_get_env_int_returns_default_when_unset(self, monkeypatch) -> None:
+        """Returns default when env var is not set."""
+        monkeypatch.delenv("PHANTOM_MASKING_TOP_N", raising=False)
+        assert _get_env_int("PHANTOM_MASKING_TOP_N", 10) == 10
+
+    def test_get_env_int_returns_parsed_value(self, monkeypatch) -> None:
+        """Returns parsed int when env var is set to a valid integer string."""
+        monkeypatch.setenv("PHANTOM_MASKING_TOP_N", "5")
+        assert _get_env_int("PHANTOM_MASKING_TOP_N", 10) == 5
+
+    def test_get_env_int_raises_on_invalid(self, monkeypatch) -> None:
+        """Raises AnalysisError when env var is not a valid integer."""
+        monkeypatch.setenv("PHANTOM_MASKING_TOP_N", "abc")
+        with pytest.raises(AnalysisError, match="must be an integer"):
+            _get_env_int("PHANTOM_MASKING_TOP_N", 10)
+
+    def test_get_env_int_returns_default_on_empty(self, monkeypatch) -> None:
+        """Returns default when env var is empty string."""
+        monkeypatch.setenv("PHANTOM_MASKING_TOP_N", "")
+        assert _get_env_int("PHANTOM_MASKING_TOP_N", 10) == 10
+
+    def test_get_env_int_returns_default_on_whitespace(self, monkeypatch) -> None:
+        """Returns default when env var is whitespace only."""
+        monkeypatch.setenv("PHANTOM_MASKING_TOP_N", "   ")
+        assert _get_env_int("PHANTOM_MASKING_TOP_N", 10) == 10
+
+    # -- _get_env_float --
+
+    def test_get_env_float_returns_default_when_unset(self, monkeypatch) -> None:
+        """Returns default when env var is not set."""
+        monkeypatch.delenv("PHANTOM_PHAT_WINDOW_S", raising=False)
+        assert _get_env_float("PHANTOM_PHAT_WINDOW_S", 10.0) == 10.0
+
+    def test_get_env_float_returns_parsed_value(self, monkeypatch) -> None:
+        """Returns parsed float when env var is set to a valid number string."""
+        monkeypatch.setenv("PHANTOM_PHAT_WINDOW_S", "5.0")
+        assert _get_env_float("PHANTOM_PHAT_WINDOW_S", 10.0) == 5.0
+
+    def test_get_env_float_raises_on_invalid(self, monkeypatch) -> None:
+        """Raises AnalysisError when env var is not a valid number."""
+        monkeypatch.setenv("PHANTOM_PHAT_WINDOW_S", "abc")
+        with pytest.raises(AnalysisError, match="must be a number"):
+            _get_env_float("PHANTOM_PHAT_WINDOW_S", 10.0)
+
+    def test_get_env_float_returns_default_on_empty(self, monkeypatch) -> None:
+        """Returns default when env var is empty string."""
+        monkeypatch.setenv("PHANTOM_PHAT_WINDOW_S", "")
+        assert _get_env_float("PHANTOM_PHAT_WINDOW_S", 10.0) == 10.0
+
+    def test_get_env_float_returns_default_on_whitespace(self, monkeypatch) -> None:
+        """Returns default when env var is whitespace only."""
+        monkeypatch.setenv("PHANTOM_PHAT_WINDOW_S", "   ")
+        assert _get_env_float("PHANTOM_PHAT_WINDOW_S", 10.0) == 10.0
