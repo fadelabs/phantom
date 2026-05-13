@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import sys
 
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
@@ -102,11 +103,13 @@ def _to_tool_error(exc: Exception, context: dict | None = None) -> ToolError:
         msg = _PATH_REGEX.sub("", msg)
         error_info["message"] = msg
     else:
+        error_info["message"] = (
+            "Internal analysis error — check server logs for details."
+        )
         if os.environ.get("PHANTOM_DEBUG"):
-            error_info["message"] = str(exc)
-        else:
-            error_info["message"] = (
-                "Internal analysis error — check server logs for details."
+            print(
+                f"[phantom-debug] {type(exc).__name__}: {exc}",
+                file=sys.stderr,
             )
     error_info["context"] = context if context else {}
     return ToolError(json.dumps(error_info))
