@@ -9,7 +9,7 @@ from rich.panel import Panel
 from rich.prompt import Prompt
 from rich.table import Table
 
-from phantom.processing import fix_audio
+from phantom.processing import fix_audio, UNFIXABLE_TYPES, RECIPES
 from phantom.problems import detect_problems
 from phantom.exceptions import DependencyMissingError, PhantomError
 from phantom.audio import load_audio
@@ -74,21 +74,44 @@ def fix(
                 console.print("[bold green]No problems detected -- nothing to fix.")
                 return
 
-            # Display numbered list of problems
+            # Separate fixable from unfixable problems
+            fixable_problems = [
+                p
+                for p in problems_result.problems
+                if p.type not in UNFIXABLE_TYPES and p.type in RECIPES
+            ]
+            unfixable_problems = [
+                p
+                for p in problems_result.problems
+                if p.type in UNFIXABLE_TYPES or p.type not in RECIPES
+            ]
+
+            if unfixable_problems:
+                console.print(
+                    f"[dim]{len(unfixable_problems)} problem(s) cannot be "
+                    f"auto-fixed ({', '.join(p.type for p in unfixable_problems)})"
+                    f"[/dim]"
+                )
+
+            if not fixable_problems:
+                console.print(
+                    "[bold yellow]No auto-fixable problems detected."
+                )
+                return
+
+            # Display numbered list of fixable problems
             console.print(
                 Panel(
-                    "[bold]Detected Problems[/bold]",
+                    "[bold]Fixable Problems[/bold]",
                     border_style="blue",
                 )
             )
-            fixable_problems = []
-            for i, problem in enumerate(problems_result.problems, 1):
+            for i, problem in enumerate(fixable_problems, 1):
                 style = SEVERITY_STYLES.get(problem.severity, "")
                 console.print(
                     f"  [{style}]{i}. [{problem.severity.upper()}] "
                     f"{problem.type}: {problem.message}[/{style}]"
                 )
-                fixable_problems.append(problem)
 
             # Ask user to select problems
             selection = Prompt.ask(
