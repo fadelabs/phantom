@@ -22,7 +22,7 @@ from pydantic import BaseModel
 
 from phantom.audio import AudioData
 from phantom.exceptions import AnalysisError
-from phantom._utils import is_near_silent, _block_rms_db
+from phantom._utils import is_near_silent, _block_rms_db, wrap_errors
 
 _SEVERITY_ORDER = {"dealbreaker": 0, "significant": 1, "moderate": 2, "minor": 3}
 
@@ -120,6 +120,7 @@ def build_summary(problems: list[ProblemItem]) -> ProblemSummary:
 # ---------------------------------------------------------------------------
 
 
+@wrap_errors("Problem detection failed")
 def detect_problems(audio: AudioData) -> ProblemsResult:
     """Detect audio production problems and return severity-ranked results.
 
@@ -146,65 +147,59 @@ def detect_problems(audio: AudioData) -> ProblemsResult:
     if is_near_silent(mono):
         return _empty_result()
 
-    try:
-        problems: list[ProblemItem] = []
-        problems.extend(_detect_clipping(mono))
-        problems.extend(_detect_dc_offset(mono))
-        problems.extend(_detect_inter_sample_peaks(audio))
-        problems.extend(_detect_noise_floor(mono, audio.sample_rate))
-        problems.extend(_detect_snr(mono, audio.sample_rate))
-        problems.extend(_detect_hum(mono, audio.sample_rate))
+    problems: list[ProblemItem] = []
+    problems.extend(_detect_clipping(mono))
+    problems.extend(_detect_dc_offset(mono))
+    problems.extend(_detect_inter_sample_peaks(audio))
+    problems.extend(_detect_noise_floor(mono, audio.sample_rate))
+    problems.extend(_detect_snr(mono, audio.sample_rate))
+    problems.extend(_detect_hum(mono, audio.sample_rate))
 
-        # Frequency-domain detectors (band excess via parametric function)
-        problems.extend(
-            _detect_band_excess(
-                mono,
-                audio.sample_rate,
-                5000.0,
-                10000.0,
-                "sibilance",
-                "sibilance",
-                "5-10kHz",
-            )
+    # Frequency-domain detectors (band excess via parametric function)
+    problems.extend(
+        _detect_band_excess(
+            mono,
+            audio.sample_rate,
+            5000.0,
+            10000.0,
+            "sibilance",
+            "sibilance",
+            "5-10kHz",
         )
-        problems.extend(
-            _detect_band_excess(
-                mono,
-                audio.sample_rate,
-                200.0,
-                500.0,
-                "mud",
-                "mud",
-                "200-500Hz",
-            )
+    )
+    problems.extend(
+        _detect_band_excess(
+            mono,
+            audio.sample_rate,
+            200.0,
+            500.0,
+            "mud",
+            "mud",
+            "200-500Hz",
         )
-        problems.extend(
-            _detect_band_excess(
-                mono,
-                audio.sample_rate,
-                2000.0,
-                4000.0,
-                "harshness",
-                "harshness",
-                "2-4kHz",
-            )
+    )
+    problems.extend(
+        _detect_band_excess(
+            mono,
+            audio.sample_rate,
+            2000.0,
+            4000.0,
+            "harshness",
+            "harshness",
+            "2-4kHz",
         )
-        problems.extend(_detect_resonances(mono, audio.sample_rate))
-        problems.extend(_detect_lossy_codec(mono, audio.sample_rate))
+    )
+    problems.extend(_detect_resonances(mono, audio.sample_rate))
+    problems.extend(_detect_lossy_codec(mono, audio.sample_rate))
 
-        # Sort by severity: dealbreaker first, minor last
-        problems.sort(key=lambda p: _SEVERITY_ORDER[p.severity])
+    # Sort by severity: dealbreaker first, minor last
+    problems.sort(key=lambda p: _SEVERITY_ORDER[p.severity])
 
-        return ProblemsResult(
-            problems=problems,
-            clean=len(problems) == 0,
-            summary=build_summary(problems),
-        )
-
-    except AnalysisError:
-        raise
-    except Exception as exc:
-        raise AnalysisError(f"Problem detection failed: {exc}") from exc
+    return ProblemsResult(
+        problems=problems,
+        clean=len(problems) == 0,
+        summary=build_summary(problems),
+    )
 
 
 # ---------------------------------------------------------------------------

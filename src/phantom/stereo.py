@@ -19,7 +19,7 @@ from pydantic import BaseModel, field_validator
 from phantom.audio import AudioData
 from phantom.exceptions import AnalysisError
 from phantom._rounding import round_db, round_ratio, round_pct
-from phantom._utils import is_near_silent
+from phantom._utils import is_near_silent, wrap_errors
 
 
 class PanoramaDistribution(BaseModel):
@@ -122,6 +122,7 @@ def _panorama_distribution(
     )
 
 
+@wrap_errors("Stereo analysis failed")
 def analyze_stereo(audio: AudioData) -> StereoResult:
     """Analyze stereo field characteristics of an audio signal.
 
@@ -171,51 +172,45 @@ def analyze_stereo(audio: AudioData) -> StereoResult:
             panorama_pct=PanoramaDistribution(left=0.0, center=100.0, right=0.0),
         )
 
-    try:
-        left = audio.left
-        right = audio.right
+    left = audio.left
+    right = audio.right
 
-        # STER-01: L/R correlation
-        # np.corrcoef returns NaN when a channel has zero variance (e.g. all
-        # zeros).  Suppress the runtime warning and fall back to 0.0.
-        with np.errstate(invalid="ignore"):
-            corr_val = np.corrcoef(left, right)[0, 1]
-        correlation = 0.0 if np.isnan(corr_val) else float(corr_val)
+    # STER-01: L/R correlation
+    # np.corrcoef returns NaN when a channel has zero variance (e.g. all
+    # zeros).  Suppress the runtime warning and fall back to 0.0.
+    with np.errstate(invalid="ignore"):
+        corr_val = np.corrcoef(left, right)[0, 1]
+    correlation = 0.0 if np.isnan(corr_val) else float(corr_val)
 
-        # Mid/Side decomposition
-        mid = (left + right) / 2.0
-        side = (left - right) / 2.0
-        rms_mid = float(np.sqrt(np.mean(mid**2)))
-        rms_side = float(np.sqrt(np.mean(side**2)))
+    # Mid/Side decomposition
+    mid = (left + right) / 2.0
+    side = (left - right) / 2.0
+    rms_mid = float(np.sqrt(np.mean(mid**2)))
+    rms_side = float(np.sqrt(np.mean(side**2)))
 
-        # STER-02: Stereo width (side/mid energy ratio)
-        stereo_width = float(rms_side / (rms_mid + 1e-10))
+    # STER-02: Stereo width (side/mid energy ratio)
+    stereo_width = float(rms_side / (rms_mid + 1e-10))
 
-        # STER-03: Mid/side ratio in dB
-        if rms_side < 1e-10:
-            mid_side_ratio_db = None  # effectively infinite: pure mid, no side
-        elif rms_mid < 1e-10:
-            mid_side_ratio_db = None  # effectively infinite: pure side, no mid
-        else:
-            mid_side_ratio_db = float(20 * np.log10(rms_mid / rms_side))
+    # STER-03: Mid/side ratio in dB
+    if rms_side < 1e-10:
+        mid_side_ratio_db = None  # effectively infinite: pure mid, no side
+    elif rms_mid < 1e-10:
+        mid_side_ratio_db = None  # effectively infinite: pure side, no mid
+    else:
+        mid_side_ratio_db = float(20 * np.log10(rms_mid / rms_side))
 
-        # STER-04: L/R energy balance in dB
-        rms_left = float(np.sqrt(np.mean(left**2)))
-        rms_right = float(np.sqrt(np.mean(right**2)))
-        balance_db = float(20 * np.log10((rms_right + 1e-10) / (rms_left + 1e-10)))
+    # STER-04: L/R energy balance in dB
+    rms_left = float(np.sqrt(np.mean(left**2)))
+    rms_right = float(np.sqrt(np.mean(right**2)))
+    balance_db = float(20 * np.log10((rms_right + 1e-10) / (rms_left + 1e-10)))
 
-        # STER-05: Panorama distribution
-        panorama_pct = _panorama_distribution(left, right)
+    # STER-05: Panorama distribution
+    panorama_pct = _panorama_distribution(left, right)
 
-        return StereoResult(
-            correlation=correlation,
-            stereo_width=stereo_width,
-            mid_side_ratio_db=mid_side_ratio_db,
-            balance_db=balance_db,
-            panorama_pct=panorama_pct,
-        )
-
-    except AnalysisError:
-        raise
-    except Exception as exc:
-        raise AnalysisError(f"Stereo analysis failed: {exc}") from exc
+    return StereoResult(
+        correlation=correlation,
+        stereo_width=stereo_width,
+        mid_side_ratio_db=mid_side_ratio_db,
+        balance_db=balance_db,
+        panorama_pct=panorama_pct,
+    )
