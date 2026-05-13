@@ -340,8 +340,11 @@ def _detect_snr(mono: np.ndarray, sample_rate: int) -> list[ProblemItem]:
 def _detect_hum(mono: np.ndarray, sample_rate: int) -> list[ProblemItem]:
     """Detect mains hum at 50/60Hz and harmonics. PROB-06."""
     duration = len(mono) / sample_rate
-    if duration < 1.0:
-        return []  # Too short for reliable hum detection
+    if duration < 2.0:
+        # Audio shorter than 2s has insufficient data for reliable PSD
+        # measurement by HumDetector — return empty results rather than
+        # risking Essentia parameter conflicts at boundary durations.
+        return []
 
     time_window = min(duration / 2, 10.0)
     hd = es.HumDetector(
