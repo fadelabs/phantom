@@ -213,3 +213,39 @@ def test_fix_interactive_mode(runner, mono_sine_440hz, make_wav):
     call_kwargs = mock_fix.call_args
     problems_arg = call_kwargs[1].get("problems") if call_kwargs[1] else None
     assert problems_arg is not None, "Expected problems= kwarg to be passed to fix_audio"
+
+
+# ---------------------------------------------------------------------------
+# Test 7: --interactive mode with all out-of-range indices falls back to all
+# ---------------------------------------------------------------------------
+
+
+def test_fix_interactive_out_of_range_falls_back(runner, mono_sine_440hz, make_wav):
+    """When all user indices are out of range, fix falls back to fixing all."""
+    samples, sr = mono_sine_440hz
+    path = make_wav(samples, sr)
+
+    mock_problems = ProblemsResult(
+        problems=[
+            ProblemItem(
+                type="mud", severity="moderate", message="Mud detected", details={}
+            ),
+        ],
+        clean=False,
+    )
+    mock_result = _make_mock_fix_result(path.replace(".wav", "_fixed.wav"))
+
+    with (
+        patch("phantom.cli.fix.detect_problems", return_value=mock_problems),
+        patch("phantom.cli.fix.fix_audio", return_value=mock_result) as mock_fix,
+        patch("phantom.cli.fix.Prompt.ask", return_value="10,20"),
+    ):
+        result = runner.invoke(cli, ["fix", "--interactive", path])
+
+    assert result.exit_code == 0, f"Exit {result.exit_code}: {result.output}"
+    assert "no valid selections" in result.output.lower()
+    mock_fix.assert_called_once()
+    call_kwargs = mock_fix.call_args
+    problems_arg = call_kwargs[1].get("problems") if call_kwargs[1] else None
+    # Should fall back to None (fix all) since no valid selection
+    assert problems_arg is None, "Expected problems=None (fix all) for out-of-range selections"
