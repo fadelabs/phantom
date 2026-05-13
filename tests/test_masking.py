@@ -179,10 +179,8 @@ class TestPairwiseMasking:
             assert band.overlap_score == 0.0
         assert result.overall_severity == "none"
 
-    def test_sample_rate_mismatch(self):
-        """Sample rate mismatch (44100 vs 48000) raises AnalysisError."""
-        from phantom.exceptions import AnalysisError
-
+    def test_sample_rate_mismatch_auto_resampled(self):
+        """Sample rate mismatch (44100 vs 48000) auto-resamples (not raises)."""
         sr1, sr2 = 44100, 48000
         t1 = np.linspace(0, 1.0, sr1, endpoint=False, dtype=np.float32)
         t2 = np.linspace(0, 1.0, sr2, endpoint=False, dtype=np.float32)
@@ -192,8 +190,8 @@ class TestPairwiseMasking:
         audio_b = _make_audio(
             (0.5 * np.sin(2 * np.pi * 440 * t2)).astype(np.float32), sr2
         )
-        with pytest.raises(AnalysisError, match="Sample rate mismatch"):
-            analyze_masking(audio_a, audio_b)
+        result = analyze_masking(audio_a, audio_b)
+        assert isinstance(result, MaskingResult)
 
     def test_empty_audio_raises(self):
         """Empty audio (0 samples) raises AnalysisError."""
@@ -387,10 +385,8 @@ class TestMatrixMasking:
             assert pair.stem_a.startswith("stem_")
             assert pair.stem_b.startswith("stem_")
 
-    def test_sample_rate_mismatch_in_matrix(self):
-        """Sample rate mismatch among stems raises AnalysisError."""
-        from phantom.exceptions import AnalysisError
-
+    def test_sample_rate_mismatch_in_matrix_auto_resampled(self):
+        """Sample rate mismatch among stems auto-resamples (not raises)."""
         sr1, sr2 = 44100, 48000
         t1 = np.linspace(0, 1.0, sr1, endpoint=False, dtype=np.float32)
         t2 = np.linspace(0, 1.0, sr2, endpoint=False, dtype=np.float32)
@@ -400,8 +396,9 @@ class TestMatrixMasking:
         stem_b = _make_audio(
             (0.5 * np.sin(2 * np.pi * 350 * t2)).astype(np.float32), sr2
         )
-        with pytest.raises(AnalysisError, match="Sample rate mismatch"):
-            analyze_masking_matrix([stem_a, stem_b])
+        result = analyze_masking_matrix([stem_a, stem_b])
+        assert isinstance(result, MaskingMatrixResult)
+        assert result.pair_count == 1
 
     def test_near_silent_stem_in_matrix(self):
         """Near-silent stem in matrix should not crash; pairs involving it have score 0.0."""

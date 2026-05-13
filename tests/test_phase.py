@@ -284,12 +284,10 @@ class TestCrossFilePolarity:
 
 
 class TestSampleRateMismatch:
-    """Verify sample rate mismatch rejection."""
+    """Verify sample rate mismatch is auto-resampled (was: rejected)."""
 
-    def test_rejects_mismatched_rates(self):
-        """compare_phase should raise AnalysisError for mismatched sample rates."""
-        from phantom.exceptions import AnalysisError
-
+    def test_mismatched_rates_auto_resampled(self):
+        """compare_phase should auto-resample mismatched sample rates (not raise)."""
         sr1, sr2 = 44100, 48000
         t1 = np.linspace(0, 1.0, sr1, endpoint=False, dtype=np.float32)
         t2 = np.linspace(0, 1.0, sr2, endpoint=False, dtype=np.float32)
@@ -297,8 +295,8 @@ class TestSampleRateMismatch:
         sig2 = np.sin(2 * np.pi * 440 * t2).astype(np.float32)
         audio1 = _make_audio(sig1, sr1)
         audio2 = _make_audio(sig2, sr2)
-        with pytest.raises(AnalysisError, match="Sample rate mismatch"):
-            compare_phase(audio1, audio2)
+        result = compare_phase(audio1, audio2)
+        assert isinstance(result, PhaseCompareResult)
 
 
 # ---------------------------------------------------------------------------

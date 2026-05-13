@@ -25,6 +25,7 @@ from scipy.fft import fft, ifft
 
 from phantom.audio import AudioData
 from phantom.exceptions import AnalysisError
+from phantom._resample import resample_to_match
 from phantom._rounding import round_ms, round_ratio
 from phantom._utils import _get_env_float, is_near_silent, wrap_errors
 
@@ -237,7 +238,8 @@ def compare_phase(audio1: AudioData, audio2: AudioData) -> PhaseCompareResult:
       - correlation: cross-file Pearson correlation
       - polarity_inverted: True if correlation < -0.5
 
-    Both inputs must have the same sample rate. Length mismatches are
+    If inputs have different sample rates, the lower-rate audio is
+    automatically upsampled to the higher rate. Length mismatches are
     handled by truncating to the shorter signal.
 
     For near-silent audio, returns None for all values (per D-05).
@@ -251,15 +253,15 @@ def compare_phase(audio1: AudioData, audio2: AudioData) -> PhaseCompareResult:
         polarity_inverted.
 
     Raises:
-        AnalysisError: If sample rates differ, audio has 0 samples, or
-            analysis fails.
+        AnalysisError: If audio has 0 samples or analysis fails.
     """
-    # Sample rate mismatch guard
+    # Auto-resample on sample rate mismatch
     if audio1.sample_rate != audio2.sample_rate:
-        raise AnalysisError(
-            f"Sample rate mismatch: {audio1.sample_rate} Hz vs "
-            f"{audio2.sample_rate} Hz. Resample to match before comparing."
-        )
+        target_sr = max(audio1.sample_rate, audio2.sample_rate)
+        if audio1.sample_rate < target_sr:
+            audio1 = resample_to_match(audio1, target_sr)
+        else:
+            audio2 = resample_to_match(audio2, target_sr)
 
     mono1 = audio1.mono
     mono2 = audio2.mono
