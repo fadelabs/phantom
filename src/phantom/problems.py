@@ -155,10 +155,40 @@ def detect_problems(audio: AudioData) -> ProblemsResult:
         problems.extend(_detect_snr(mono, audio.sample_rate))
         problems.extend(_detect_hum(mono, audio.sample_rate))
 
-        # Frequency-domain detectors
-        problems.extend(_detect_sibilance(mono, audio.sample_rate))
-        problems.extend(_detect_mud(mono, audio.sample_rate))
-        problems.extend(_detect_harshness(mono, audio.sample_rate))
+        # Frequency-domain detectors (band excess via parametric function)
+        problems.extend(
+            _detect_band_excess(
+                mono,
+                audio.sample_rate,
+                5000.0,
+                10000.0,
+                "sibilance",
+                "sibilance",
+                "5-10kHz",
+            )
+        )
+        problems.extend(
+            _detect_band_excess(
+                mono,
+                audio.sample_rate,
+                200.0,
+                500.0,
+                "mud",
+                "mud",
+                "200-500Hz",
+            )
+        )
+        problems.extend(
+            _detect_band_excess(
+                mono,
+                audio.sample_rate,
+                2000.0,
+                4000.0,
+                "harshness",
+                "harshness",
+                "2-4kHz",
+            )
+        )
         problems.extend(_detect_resonances(mono, audio.sample_rate))
         problems.extend(_detect_lossy_codec(mono, audio.sample_rate))
 
@@ -491,17 +521,42 @@ def _band_excess_db(
     return band_db, overall_db, excess_db
 
 
-def _detect_sibilance(mono: np.ndarray, sample_rate: int) -> list[ProblemItem]:
-    """Detect excessive 5-10kHz energy (sibilance). PROB-07."""
-    # Skip if signal is too tonal (pure tones / sparse harmonics)
+def _detect_band_excess(
+    mono: np.ndarray,
+    sample_rate: int,
+    low_hz: float,
+    high_hz: float,
+    problem_type: str,
+    label: str,
+    freq_label: str,
+) -> list[ProblemItem]:
+    """Detect excessive energy in a frequency band. PROB-07/08/09.
+
+    Parametric replacement for the former _detect_sibilance, _detect_mud,
+    and _detect_harshness functions. All three were structurally identical,
+    differing only in frequency range, problem type string, label, and
+    frequency label for the message.
+
+    Args:
+        mono: Mono audio signal as numpy array.
+        sample_rate: Sample rate in Hz.
+        low_hz: Lower bound of the frequency band.
+        high_hz: Upper bound of the frequency band.
+        problem_type: Problem type string (e.g. "sibilance", "mud", "harshness").
+        label: Human-readable label for the problem (e.g. "sibilance", "mud", "harshness").
+        freq_label: Frequency range label for the message (e.g. "5-10kHz", "200-500Hz").
+
+    Returns:
+        List containing a single ProblemItem if excess detected, empty list otherwise.
+    """
     if _spectral_flatness(mono) < _SPECTRAL_FLATNESS_MIN:
         return []
 
     band_db, overall_db, excess_db = _band_excess_db(
         mono,
         sample_rate,
-        5000.0,
-        10000.0,
+        low_hz,
+        high_hz,
     )
 
     if excess_db <= _BAND_EXCESS_THRESHOLD_DB:
@@ -509,74 +564,10 @@ def _detect_sibilance(mono: np.ndarray, sample_rate: int) -> list[ProblemItem]:
 
     return [
         ProblemItem(
-            type="sibilance",
+            type=problem_type,
             severity="moderate",
             message=(
-                f"Excessive sibilance: 5-10kHz band energy is {excess_db:.1f} dB "
-                f"above expected level."
-            ),
-            details={
-                "band_energy_db": round(band_db, 1),
-                "overall_energy_db": round(overall_db, 1),
-                "excess_db": round(excess_db, 1),
-            },
-        )
-    ]
-
-
-def _detect_mud(mono: np.ndarray, sample_rate: int) -> list[ProblemItem]:
-    """Detect excessive 200-500Hz energy (mud). PROB-08."""
-    if _spectral_flatness(mono) < _SPECTRAL_FLATNESS_MIN:
-        return []
-
-    band_db, overall_db, excess_db = _band_excess_db(
-        mono,
-        sample_rate,
-        200.0,
-        500.0,
-    )
-
-    if excess_db <= _BAND_EXCESS_THRESHOLD_DB:
-        return []
-
-    return [
-        ProblemItem(
-            type="mud",
-            severity="moderate",
-            message=(
-                f"Excessive mud: 200-500Hz band energy is {excess_db:.1f} dB "
-                f"above expected level."
-            ),
-            details={
-                "band_energy_db": round(band_db, 1),
-                "overall_energy_db": round(overall_db, 1),
-                "excess_db": round(excess_db, 1),
-            },
-        )
-    ]
-
-
-def _detect_harshness(mono: np.ndarray, sample_rate: int) -> list[ProblemItem]:
-    """Detect excessive 2-4kHz energy (harshness). PROB-09."""
-    if _spectral_flatness(mono) < _SPECTRAL_FLATNESS_MIN:
-        return []
-
-    band_db, overall_db, excess_db = _band_excess_db(
-        mono,
-        sample_rate,
-        2000.0,
-        4000.0,
-    )
-
-    if excess_db <= _BAND_EXCESS_THRESHOLD_DB:
-        return []
-
-    return [
-        ProblemItem(
-            type="harshness",
-            severity="moderate",
-            message=(
-                f"Excessive harshness: 2-4kHz band energy is {excess_db:.1f} dB "
+                f"Excessive {label}: {freq_label} band energy is {excess_db:.1f} dB "
                 f"above expected level."
             ),
             details={
