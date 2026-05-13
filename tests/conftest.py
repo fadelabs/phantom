@@ -162,6 +162,33 @@ def clipped_sine():
     return samples, sr
 
 
+# -- Long audio fixtures (Phase 22) ------------------------------------------
+
+
+@pytest.fixture(scope="session")
+def long_stereo_60s():
+    """60-second stereo signal: 440Hz sine (amp 0.3) + white noise (amp 0.05).
+
+    Left = mono, Right = mono * 0.8. Session-scoped to avoid regenerating
+    2.6M samples per test. Returns (samples, sr) tuple.
+    Purpose: testing duration handling, not analysis accuracy (D-17).
+
+    Seeded RNG (seed 42) for reproducibility, matching conftest convention.
+    """
+    sr = 44100
+    duration = 60.0
+    n_samples = int(sr * duration)  # 2646000
+    t = np.linspace(0, duration, n_samples, endpoint=False, dtype=np.float32)
+    rng = np.random.default_rng(42)
+    sine = (0.3 * np.sin(2 * np.pi * 440 * t)).astype(np.float32)
+    noise = (rng.standard_normal(n_samples).astype(np.float32) * 0.05).astype(
+        np.float32
+    )
+    mono = sine + noise
+    samples = np.column_stack([mono, mono * 0.8])
+    return samples, sr
+
+
 # -- Problem detection fixtures (Phase 4) -------------------------------------
 
 
@@ -392,6 +419,7 @@ def pytest_configure(config):
     config.addinivalue_line(
         "markers", "live: requires real audio in tests/fixtures/live/"
     )
+    config.addinivalue_line("markers", "slow: long-running tests (60s+ audio fixtures)")
 
 
 def pytest_collection_modifyitems(config, items):
