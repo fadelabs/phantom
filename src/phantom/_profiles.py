@@ -115,13 +115,6 @@ def _get_user_profile_path(name: str) -> Path | None:
     return resolved if resolved.is_file() else None
 
 
-def _has_builtin_profile(name: str) -> bool:
-    """Check if a built-in profile exists with this name."""
-    profiles_pkg = importlib.resources.files("phantom.profiles")
-    resource = profiles_pkg.joinpath(f"{name}.json")
-    return resource.is_file()
-
-
 # ---------------------------------------------------------------------------
 # Alias mapping (D-07 case-insensitive, D-08 common aliases)
 # ---------------------------------------------------------------------------
