@@ -16,6 +16,7 @@ from phantom._utils import (
     wrap_errors,
 )
 from phantom.audio import AudioData, load_audio
+from phantom._cache import analysis_cache
 from phantom.dynamics import analyze_dynamics
 from phantom.exceptions import AnalysisError, AudioLoadError, DependencyMissingError
 from phantom.loudness import analyze_loudness
@@ -165,6 +166,20 @@ class MatchResult(BaseModel):
 # ---------------------------------------------------------------------------
 # Private Helpers
 # ---------------------------------------------------------------------------
+
+
+def _cached_analysis(audio: AudioData, func_name: str, func) -> object:
+    """Run an analysis function with cache lookup/store.
+
+    Checks the analysis cache first. On miss, runs the function and
+    stores the result for subsequent calls with the same audio.
+    """
+    result = analysis_cache.get(audio, func_name)
+    if result is not None:
+        return result
+    result = func(audio)
+    analysis_cache.put(audio, func_name, result)
+    return result
 
 
 def _classify_deviation(
@@ -353,10 +368,10 @@ def compare_to_profile(
     if is_near_silent(mono):
         return _silent_comparison_result()
 
-    spectrum = analyze_spectrum(audio)
-    loudness = analyze_loudness(audio)
-    dynamics = analyze_dynamics(audio)
-    stereo = analyze_stereo(audio)
+    spectrum = _cached_analysis(audio, "analyze_spectrum", analyze_spectrum)
+    loudness = _cached_analysis(audio, "analyze_loudness", analyze_loudness)
+    dynamics = _cached_analysis(audio, "analyze_dynamics", analyze_dynamics)
+    stereo = _cached_analysis(audio, "analyze_stereo", analyze_stereo)
 
     # Loudness
     if loudness.integrated_lufs is not None:
@@ -452,14 +467,14 @@ def compare_to_reference(
     if is_near_silent(mono) or is_near_silent(ref_mono):
         return ReferenceComparisonResult()
 
-    spectrum_a = analyze_spectrum(audio)
-    spectrum_b = analyze_spectrum(ref_audio)
-    loudness_a = analyze_loudness(audio)
-    loudness_b = analyze_loudness(ref_audio)
-    dynamics_a = analyze_dynamics(audio)
-    dynamics_b = analyze_dynamics(ref_audio)
-    stereo_a = analyze_stereo(audio)
-    stereo_b = analyze_stereo(ref_audio)
+    spectrum_a = _cached_analysis(audio, "analyze_spectrum", analyze_spectrum)
+    spectrum_b = _cached_analysis(ref_audio, "analyze_spectrum", analyze_spectrum)
+    loudness_a = _cached_analysis(audio, "analyze_loudness", analyze_loudness)
+    loudness_b = _cached_analysis(ref_audio, "analyze_loudness", analyze_loudness)
+    dynamics_a = _cached_analysis(audio, "analyze_dynamics", analyze_dynamics)
+    dynamics_b = _cached_analysis(ref_audio, "analyze_dynamics", analyze_dynamics)
+    stereo_a = _cached_analysis(audio, "analyze_stereo", analyze_stereo)
+    stereo_b = _cached_analysis(ref_audio, "analyze_stereo", analyze_stereo)
 
     # Loudness
     loudness_devs = {}

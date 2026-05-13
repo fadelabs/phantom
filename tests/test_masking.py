@@ -179,10 +179,8 @@ class TestPairwiseMasking:
             assert band.overlap_score == 0.0
         assert result.overall_severity == "none"
 
-    def test_sample_rate_mismatch(self):
-        """Sample rate mismatch (44100 vs 48000) raises AnalysisError."""
-        from phantom.exceptions import AnalysisError
-
+    def test_sample_rate_mismatch_auto_resampled(self):
+        """Sample rate mismatch (44100 vs 48000) auto-resamples (not raises)."""
         sr1, sr2 = 44100, 48000
         t1 = np.linspace(0, 1.0, sr1, endpoint=False, dtype=np.float32)
         t2 = np.linspace(0, 1.0, sr2, endpoint=False, dtype=np.float32)
@@ -192,8 +190,8 @@ class TestPairwiseMasking:
         audio_b = _make_audio(
             (0.5 * np.sin(2 * np.pi * 440 * t2)).astype(np.float32), sr2
         )
-        with pytest.raises(AnalysisError, match="Sample rate mismatch"):
-            analyze_masking(audio_a, audio_b)
+        result = analyze_masking(audio_a, audio_b)
+        assert isinstance(result, MaskingResult)
 
     def test_empty_audio_raises(self):
         """Empty audio (0 samples) raises AnalysisError."""
@@ -387,10 +385,8 @@ class TestMatrixMasking:
             assert pair.stem_a.startswith("stem_")
             assert pair.stem_b.startswith("stem_")
 
-    def test_sample_rate_mismatch_in_matrix(self):
-        """Sample rate mismatch among stems raises AnalysisError."""
-        from phantom.exceptions import AnalysisError
-
+    def test_sample_rate_mismatch_in_matrix_auto_resampled(self):
+        """Sample rate mismatch among stems auto-resamples (not raises)."""
         sr1, sr2 = 44100, 48000
         t1 = np.linspace(0, 1.0, sr1, endpoint=False, dtype=np.float32)
         t2 = np.linspace(0, 1.0, sr2, endpoint=False, dtype=np.float32)
@@ -400,8 +396,9 @@ class TestMatrixMasking:
         stem_b = _make_audio(
             (0.5 * np.sin(2 * np.pi * 350 * t2)).astype(np.float32), sr2
         )
-        with pytest.raises(AnalysisError, match="Sample rate mismatch"):
-            analyze_masking_matrix([stem_a, stem_b])
+        result = analyze_masking_matrix([stem_a, stem_b])
+        assert isinstance(result, MaskingMatrixResult)
+        assert result.pair_count == 1
 
     def test_near_silent_stem_in_matrix(self):
         """Near-silent stem in matrix should not crash; pairs involving it have score 0.0."""
@@ -463,6 +460,62 @@ class TestMatrixRanking:
 # ---------------------------------------------------------------------------
 # Band Energies Edge Cases (sub-frame audio)
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# Resample Integration
+# ---------------------------------------------------------------------------
+
+
+class TestMaskingResample:
+    """Verify masking analysis auto-resamples mismatched sample rates."""
+
+    def test_analyze_masking_mismatched_rates_succeeds(self):
+        """analyze_masking with 44100Hz and 48000Hz should succeed, not raise."""
+        sr1, sr2 = 44100, 48000
+        t1 = np.linspace(0, 1.0, sr1, endpoint=False, dtype=np.float32)
+        t2 = np.linspace(0, 1.0, sr2, endpoint=False, dtype=np.float32)
+        audio_a = _make_audio(
+            (0.5 * np.sin(2 * np.pi * 440 * t1)).astype(np.float32), sr1
+        )
+        audio_b = _make_audio(
+            (0.5 * np.sin(2 * np.pi * 440 * t2)).astype(np.float32), sr2
+        )
+        result = analyze_masking(audio_a, audio_b)
+        assert isinstance(result, MaskingResult)
+        assert result.overall_score >= 0.0
+
+    def test_analyze_masking_matrix_mixed_rates_succeeds(self):
+        """analyze_masking_matrix with stems at [44100, 48000, 44100] should succeed."""
+        sr1, sr2 = 44100, 48000
+        t1 = np.linspace(0, 1.0, sr1, endpoint=False, dtype=np.float32)
+        t2 = np.linspace(0, 1.0, sr2, endpoint=False, dtype=np.float32)
+        stem_0 = _make_audio(
+            (0.5 * np.sin(2 * np.pi * 300 * t1)).astype(np.float32), sr1
+        )
+        stem_1 = _make_audio(
+            (0.5 * np.sin(2 * np.pi * 350 * t2)).astype(np.float32), sr2
+        )
+        stem_2 = _make_audio(
+            (0.5 * np.sin(2 * np.pi * 4000 * t1)).astype(np.float32), sr1
+        )
+        result = analyze_masking_matrix([stem_0, stem_1, stem_2])
+        assert isinstance(result, MaskingMatrixResult)
+        assert result.pair_count == 3
+        assert result.stem_count == 3
+
+    def test_analyze_masking_matched_rates_no_resample(self):
+        """analyze_masking with same sample rate should work without resampling."""
+        sr = 44100
+        t = np.linspace(0, 1.0, sr, endpoint=False, dtype=np.float32)
+        audio_a = _make_audio(
+            (0.5 * np.sin(2 * np.pi * 440 * t)).astype(np.float32), sr
+        )
+        audio_b = _make_audio(
+            (0.5 * np.sin(2 * np.pi * 880 * t)).astype(np.float32), sr
+        )
+        result = analyze_masking(audio_a, audio_b)
+        assert isinstance(result, MaskingResult)
 
 
 class TestBandEnergiesEdgeCases:

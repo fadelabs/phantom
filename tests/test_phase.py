@@ -284,12 +284,10 @@ class TestCrossFilePolarity:
 
 
 class TestSampleRateMismatch:
-    """Verify sample rate mismatch rejection."""
+    """Verify sample rate mismatch is auto-resampled (was: rejected)."""
 
-    def test_rejects_mismatched_rates(self):
-        """compare_phase should raise AnalysisError for mismatched sample rates."""
-        from phantom.exceptions import AnalysisError
-
+    def test_mismatched_rates_auto_resampled(self):
+        """compare_phase should auto-resample mismatched sample rates (not raise)."""
         sr1, sr2 = 44100, 48000
         t1 = np.linspace(0, 1.0, sr1, endpoint=False, dtype=np.float32)
         t2 = np.linspace(0, 1.0, sr2, endpoint=False, dtype=np.float32)
@@ -297,8 +295,8 @@ class TestSampleRateMismatch:
         sig2 = np.sin(2 * np.pi * 440 * t2).astype(np.float32)
         audio1 = _make_audio(sig1, sr1)
         audio2 = _make_audio(sig2, sr2)
-        with pytest.raises(AnalysisError, match="Sample rate mismatch"):
-            compare_phase(audio1, audio2)
+        result = compare_phase(audio1, audio2)
+        assert isinstance(result, PhaseCompareResult)
 
 
 # ---------------------------------------------------------------------------
@@ -462,6 +460,52 @@ class TestComparePhaseResultStructure:
 # ---------------------------------------------------------------------------
 # GCC-PHAT window control (D-09)
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# Resample Integration
+# ---------------------------------------------------------------------------
+
+
+class TestComparePhaseResample:
+    """Verify compare_phase auto-resamples mismatched sample rates."""
+
+    def test_mismatched_rates_succeeds(self):
+        """compare_phase with 44100Hz and 48000Hz should succeed, not raise."""
+        sr1, sr2 = 44100, 48000
+        t1 = np.linspace(0, 1.0, sr1, endpoint=False, dtype=np.float32)
+        t2 = np.linspace(0, 1.0, sr2, endpoint=False, dtype=np.float32)
+        sig1 = np.sin(2 * np.pi * 440 * t1).astype(np.float32)
+        sig2 = np.sin(2 * np.pi * 440 * t2).astype(np.float32)
+        audio1 = _make_audio(sig1, sr1)
+        audio2 = _make_audio(sig2, sr2)
+        result = compare_phase(audio1, audio2)
+        assert isinstance(result, PhaseCompareResult)
+        assert result.correlation is not None
+
+    def test_matched_rates_no_resample(self):
+        """compare_phase with same sample rate should not trigger resampling."""
+        sr = 44100
+        t = np.linspace(0, 1.0, sr, endpoint=False, dtype=np.float32)
+        sig = np.sin(2 * np.pi * 440 * t).astype(np.float32)
+        audio1 = _make_audio(sig.copy(), sr)
+        audio2 = _make_audio(sig.copy(), sr)
+        result = compare_phase(audio1, audio2)
+        assert isinstance(result, PhaseCompareResult)
+        assert result.correlation is not None
+
+    def test_resamples_lower_to_higher(self):
+        """The lower-rate audio is upsampled to match the higher rate."""
+        sr1, sr2 = 44100, 48000
+        rng = np.random.default_rng(99)
+        sig1 = rng.standard_normal(sr1).astype(np.float32)
+        sig2 = rng.standard_normal(sr2).astype(np.float32)
+        audio1 = _make_audio(sig1, sr1)
+        audio2 = _make_audio(sig2, sr2)
+        # Should succeed (auto-resample) and return valid result
+        result = compare_phase(audio1, audio2)
+        assert isinstance(result, PhaseCompareResult)
+        assert result.delay_samples is not None
 
 
 class TestPhatWindow:

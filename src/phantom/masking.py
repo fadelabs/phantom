@@ -17,6 +17,7 @@ from pydantic import BaseModel, field_validator
 
 from phantom.audio import AudioData
 from phantom.exceptions import AnalysisError
+from phantom._resample import resample_to_match
 from phantom._rounding import round_ratio
 from phantom._utils import is_near_silent, wrap_errors
 from phantom.spectral import OCTAVE_EDGES, _BAND_LABELS
@@ -230,6 +231,9 @@ def analyze_masking(audio_a: AudioData, audio_b: AudioData) -> MaskingResult:
     severity labels based on the degree of overlap. Returns a MaskingResult
     with band-level and overall scores.
 
+    If inputs have different sample rates, the lower-rate audio is
+    automatically upsampled to the higher rate.
+
     Args:
         audio_a: First audio stem (AudioData object).
         audio_b: Second audio stem (AudioData object).
@@ -238,14 +242,15 @@ def analyze_masking(audio_a: AudioData, audio_b: AudioData) -> MaskingResult:
         MaskingResult with bands, overall_severity, overall_score.
 
     Raises:
-        AnalysisError: If sample rates mismatch, audio is empty, or analysis fails.
+        AnalysisError: If audio is empty or analysis fails.
     """
-    # Sample rate mismatch guard
+    # Auto-resample on sample rate mismatch
     if audio_a.sample_rate != audio_b.sample_rate:
-        raise AnalysisError(
-            f"Sample rate mismatch: {audio_a.sample_rate} Hz vs "
-            f"{audio_b.sample_rate} Hz. Resample to match before comparing."
-        )
+        target_sr = max(audio_a.sample_rate, audio_b.sample_rate)
+        if audio_a.sample_rate < target_sr:
+            audio_a = resample_to_match(audio_a, target_sr)
+        else:
+            audio_b = resample_to_match(audio_b, target_sr)
 
     # Mono mixdown
     mono_a = audio_a.mono
@@ -275,14 +280,17 @@ def analyze_masking_matrix(stems: list[AudioData]) -> MaskingMatrixResult:
     Pre-computes band energies per stem to avoid redundant Essentia calls
     (per RESEARCH.md Pitfall 4).
 
+    If stems have different sample rates, all are automatically
+    upsampled to the highest rate.
+
     Args:
-        stems: List of AudioData objects (all must share the same sample rate).
+        stems: List of AudioData objects.
 
     Returns:
         MaskingMatrixResult with pairs, stem_count, pair_count.
 
     Raises:
-        AnalysisError: If sample rates mismatch, audio is empty, or analysis fails.
+        AnalysisError: If audio is empty or analysis fails.
     """
     n = len(stems)
 
@@ -290,13 +298,14 @@ def analyze_masking_matrix(stems: list[AudioData]) -> MaskingMatrixResult:
     if n < 2:
         return MaskingMatrixResult(pairs=[], stem_count=n, pair_count=0)
 
-    # Sample rate consistency check
+    # Auto-resample all stems to highest sample rate
     rates = {s.sample_rate for s in stems}
     if len(rates) > 1:
-        raise AnalysisError(
-            f"Sample rate mismatch: stems have rates {rates}. "
-            "All stems must share the same sample rate."
-        )
+        target_sr = max(rates)
+        stems = [
+            resample_to_match(s, target_sr) if s.sample_rate != target_sr else s
+            for s in stems
+        ]
 
     # Pre-compute band energies for all stems (optimization)
     energies: list[np.ndarray | None] = []
