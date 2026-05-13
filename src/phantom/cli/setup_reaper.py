@@ -119,11 +119,19 @@ def _merge_mcp_config(mcp_config: dict, console, yes: bool) -> str | None:
 
     servers = existing.setdefault("mcpServers", {})
     if "reaper" in servers:
-        if not yes and sys.stdin.isatty():
+        if yes:
+            pass  # Explicit --yes flag: user consented to overwrite
+        elif sys.stdin.isatty():
             if not click.confirm(
                 f"Reaper config already exists in {target}. Overwrite?", default=False
             ):
                 return None
+        else:
+            # Non-interactive, no --yes: refuse silent overwrite
+            raise click.ClickException(
+                f"Reaper config already exists in {target}. "
+                "Run with --yes to overwrite."
+            )
 
     servers["reaper"] = mcp_config["mcpServers"]["reaper"]
     # Atomic write: temp file + rename
