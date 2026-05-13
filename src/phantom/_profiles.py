@@ -335,5 +335,7 @@ def load_profile(name: str) -> ReferenceProfile:
             except OSError:
                 post_load_mtime = 0.0
             _profile_cache[resolved] = (post_load_mtime, profile)
+        elif resolved not in _profile_cache:
+            _profile_cache[resolved] = (0.0, profile)
 
     return profile

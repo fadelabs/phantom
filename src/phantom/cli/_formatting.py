@@ -186,7 +186,7 @@ def _format_value(value: object) -> str:
     if isinstance(value, float):
         return f"{value:.2f}"
     if isinstance(value, list):
-        if value and isinstance(value[0], float):
+        if value and all(isinstance(v, (int, float)) for v in value):
             return ", ".join(f"{v:.2f}" for v in value)
         return str(value)
     return str(value)

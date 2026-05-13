@@ -332,12 +332,13 @@ def batch_diagnostic(file_paths: list[str]) -> dict:
                     }
                 )
             )
-        if len(set(file_paths)) != len(file_paths):
+        normalized_paths = [os.path.normpath(p) for p in file_paths]
+        if len(set(normalized_paths)) != len(normalized_paths):
             raise ToolError(
                 json.dumps(
                     {
                         "error_type": "ValidationError",
-                        "message": "Duplicate file paths are not supported.",
+                        "message": "Duplicate file paths (after normalization) are not supported.",
                         "context": {},
                     }
                 )
@@ -345,8 +346,7 @@ def batch_diagnostic(file_paths: list[str]) -> dict:
 
         results: dict[str, StemDiagnosticResult | dict] = {}
         sample_rates = {}
-        for path in file_paths:
-            stem_name = os.path.normpath(path)
+        for path, stem_name in zip(file_paths, normalized_paths):
             try:
                 audio = load_audio(path)
                 sample_rates[stem_name] = audio.sample_rate
