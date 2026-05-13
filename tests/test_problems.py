@@ -14,8 +14,6 @@ from phantom.problems import (
     ProblemsResult,
     _detect_hum,
     _detect_band_excess,
-    _SPECTRAL_FLATNESS_MIN,
-    _BAND_EXCESS_THRESHOLD_DB,
 )
 
 
