@@ -7,13 +7,17 @@ import os
 import numpy as np
 import pytest
 
-from phantom._utils import _block_rms_db, validate_input_path, validate_output_path, wrap_errors
+from phantom._utils import (
+    _block_rms_db,
+    validate_input_path,
+    validate_output_path,
+    wrap_errors,
+)
 from phantom.exceptions import (
     AnalysisError,
     AudioLoadError,
     DependencyMissingError,
     PathSecurityError,
-    PhantomError,
     ProfileLoadError,
 )
 
@@ -256,7 +260,9 @@ class TestWrapErrors:
         def fail() -> None:
             raise ValueError("negative frequency")
 
-        with pytest.raises(AnalysisError, match="Spectral analysis failed: negative frequency"):
+        with pytest.raises(
+            AnalysisError, match="Spectral analysis failed: negative frequency"
+        ):
             fail()
 
     def test_runtime_error_wrapped_with_cause(self) -> None:
@@ -267,7 +273,9 @@ class TestWrapErrors:
         def fail() -> None:
             raise original
 
-        with pytest.raises(AnalysisError, match="Processing failed: something broke") as exc_info:
+        with pytest.raises(
+            AnalysisError, match="Processing failed: something broke"
+        ) as exc_info:
             fail()
         assert exc_info.value.__cause__ is original
 
