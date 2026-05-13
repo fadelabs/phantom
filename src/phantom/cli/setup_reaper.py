@@ -44,8 +44,10 @@ def _run_step(cmd: list[str], step_name: str, timeout: int | None = None) -> Non
     """Run a subprocess, raising a clear error on failure."""
     try:
         subprocess.run(cmd, check=True, capture_output=True, timeout=timeout)
-    except FileNotFoundError:
-        raise click.ClickException(f"{step_name}: command not found: {cmd[0]}")
+    except FileNotFoundError as e:
+        raise click.ClickException(
+            f"{step_name}: command not found: {cmd[0]} ({e})"
+        )
     except subprocess.TimeoutExpired:
         raise click.ClickException(
             f"{step_name} timed out after {timeout} seconds. "
