@@ -1,0 +1,33 @@
+default_install_hook_types: [pre-commit]
+
+repos:
+  # Gitleaks secret scanning (300+ built-in rules)
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
+
+  # Custom local hooks
+  - repo: local
+    hooks:
+      # PII and absolute path detection
+      - id: check-pii
+        name: Check for PII and absolute paths
+        entry: ./scripts/check-pii.sh
+        language: script
+        pass_filenames: false
+
+      # Block planning/internal docs from being committed
+      - id: check-planning-docs
+        name: Block planning and internal docs
+        entry: "BLOCKED: Planning/internal docs must not be committed. These are gitignored for a reason."
+        language: fail
+        files: '^(\.planning/|\.claude/|docs/superpowers/)'
+
+      # Block large audio binaries (>1MB)
+      - id: check-large-binaries
+        name: Block large audio files (>1MB)
+        entry: ./scripts/check-large-binaries.sh
+        language: script
+        types: [file]
+        pass_filenames: true

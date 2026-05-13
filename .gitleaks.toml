@@ -1,0 +1,18 @@
+title = "Phantom Gitleaks Configuration"
+
+[extend]
+useDefault = true
+
+# Global allowlist to reduce false positives
+[[allowlists]]
+description = "Test files and fixtures"
+paths = [
+    '''tests/.*''',
+    '''\.pre-commit-config\.yaml$''',
+]
+
+[[allowlists]]
+description = "Example and placeholder values"
+regexes = [
+    '''(?i)example|sample|placeholder|changeme|xxxxx|your[-_]?api[-_]?key''',
+]
