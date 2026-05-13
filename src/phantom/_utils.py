@@ -25,9 +25,7 @@ def _get_env_int(name: str, default: int) -> int:
         try:
             return int(env_val)
         except ValueError as exc:
-            raise AnalysisError(
-                f"{name} must be an integer, got: '{env_val}'"
-            ) from exc
+            raise AnalysisError(f"{name} must be an integer, got: '{env_val}'") from exc
     return default
 
 
@@ -43,9 +41,7 @@ def _get_env_float(name: str, default: float) -> float:
         try:
             return float(env_val)
         except ValueError as exc:
-            raise AnalysisError(
-                f"{name} must be a number, got: '{env_val}'"
-            ) from exc
+            raise AnalysisError(f"{name} must be a number, got: '{env_val}'") from exc
     return default
 
 
