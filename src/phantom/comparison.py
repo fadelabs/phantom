@@ -22,6 +22,11 @@ from phantom.stereo import analyze_stereo
 # Constants
 # ---------------------------------------------------------------------------
 
+# Deviation classification thresholds (inclusive upper bounds):
+#   <= ON_TARGET  -> "on_target"
+#   <= SLIGHT     -> "slightly_above/below"  (boundary 3.0 dB is "slight")
+#   <= MODERATE   -> "above/below_target"    (boundary 6.0 dB is "moderate")
+#   >  MODERATE   -> "significantly_above/below"
 _THRESHOLD_ON_TARGET = 1.0
 _THRESHOLD_SLIGHT = 3.0
 _THRESHOLD_MODERATE = 6.0
@@ -162,7 +167,11 @@ def _classify_deviation(
     deviation: float,
     thresholds: tuple[float, float, float] | None = None,
 ) -> str:
-    """Classify a deviation magnitude into a rating string."""
+    """Classify a deviation magnitude into a rating string.
+
+    Boundary values are inclusive to the lower category (e.g., exactly 3.0 dB
+    is classified as "slightly_above/below", not "above/below_target").
+    """
     if thresholds is None:
         t_on, t_slight, t_mod = (
             _THRESHOLD_ON_TARGET,
