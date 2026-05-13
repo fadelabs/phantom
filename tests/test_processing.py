@@ -359,7 +359,7 @@ class TestCompareResults:
 
     def test_resolved_when_problem_gone(self):
         """Problem in before but not in after -> status='resolved'."""
-        from phantom.processing import _compare_results, FixComparison
+        from phantom.processing import _compare_results
         from phantom.problems import ProblemsResult, ProblemItem
 
         before = ProblemsResult(
