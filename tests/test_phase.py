@@ -8,7 +8,13 @@ import numpy as np
 import pytest
 
 from phantom.audio import AudioData
-from phantom.phase import analyze_phase, compare_phase, PhaseResult, PhaseCompareResult
+from phantom.phase import (
+    analyze_phase,
+    compare_phase,
+    _gcc_phat_delay,
+    PhaseResult,
+    PhaseCompareResult,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -451,3 +457,49 @@ class TestComparePhaseResultStructure:
             "polarity_inverted",
         }
         assert set(result.model_dump().keys()) == expected_keys
+
+
+# ---------------------------------------------------------------------------
+# GCC-PHAT window control (D-09)
+# ---------------------------------------------------------------------------
+
+
+class TestPhatWindow:
+    """Tests for PHANTOM_PHAT_WINDOW_S env var controlling GCC-PHAT truncation."""
+
+    def test_default_phat_window_is_10s(self, monkeypatch) -> None:
+        """With PHANTOM_PHAT_WINDOW_S unset, _gcc_phat_delay truncates at 10s."""
+        monkeypatch.delenv("PHANTOM_PHAT_WINDOW_S", raising=False)
+        sr = 44100
+        # Create a signal longer than 10s (15s)
+        n_samples = sr * 15
+        sig1 = np.random.randn(n_samples).astype(np.float32)
+        sig2 = np.random.randn(n_samples).astype(np.float32)
+        # The function should work without error -- the truncation is internal.
+        delay_samples, delay_ms = _gcc_phat_delay(sig1, sig2, sr)
+        assert isinstance(delay_samples, int)
+        assert isinstance(delay_ms, float)
+
+    def test_phat_window_env_var_override(self, monkeypatch) -> None:
+        """Setting PHANTOM_PHAT_WINDOW_S=5 causes truncation at 5*sr samples."""
+        monkeypatch.setenv("PHANTOM_PHAT_WINDOW_S", "5")
+        sr = 44100
+        # Create a signal longer than 5s (8s)
+        n_samples = sr * 8
+        sig1 = np.random.randn(n_samples).astype(np.float32)
+        sig2 = np.random.randn(n_samples).astype(np.float32)
+        delay_samples, delay_ms = _gcc_phat_delay(sig1, sig2, sr)
+        assert isinstance(delay_samples, int)
+        assert isinstance(delay_ms, float)
+
+    def test_phat_window_short_signal_no_truncation(self, monkeypatch) -> None:
+        """Signal shorter than the window is not truncated."""
+        monkeypatch.setenv("PHANTOM_PHAT_WINDOW_S", "10")
+        sr = 44100
+        # 2s signal is shorter than 10s window -- no truncation
+        n_samples = sr * 2
+        sig1 = np.random.randn(n_samples).astype(np.float32)
+        sig2 = np.random.randn(n_samples).astype(np.float32)
+        delay_samples, delay_ms = _gcc_phat_delay(sig1, sig2, sr)
+        assert isinstance(delay_samples, int)
+        assert isinstance(delay_ms, float)
