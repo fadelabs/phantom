@@ -96,9 +96,7 @@ class TestUpsampleMono:
 
         g = gcd(sr_in, sr_out)
         up, down = sr_out // g, sr_in // g
-        expected_samples = int(
-            np.ceil(audio.num_samples * up / down)
-        )
+        expected_samples = int(np.ceil(audio.num_samples * up / down))
         # resample_poly may produce exactly expected_samples or +/-1
         assert abs(result.num_samples - expected_samples) <= 1
 
@@ -170,9 +168,7 @@ class TestMetadata:
     """file_path and computed fields preserved correctly."""
 
     def test_file_path_preserved(self) -> None:
-        audio = _make_audio(
-            _sine(440.0, 44100), 44100, file_path="/tmp/test.wav"
-        )
+        audio = _make_audio(_sine(440.0, 44100), 44100, file_path="/tmp/test.wav")
         result = resample_to_match(audio, 48000)
         assert result.file_path == "/tmp/test.wav"
 
