@@ -13,14 +13,16 @@ from __future__ import annotations
 
 import importlib.resources
 import json
+import logging
 import os
-import sys
 import threading
 from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from phantom.exceptions import ProfileLoadError
+
+logger = logging.getLogger(__name__)
 
 
 class LoudnessTargets(BaseModel):
@@ -299,11 +301,7 @@ def load_profile(name: str) -> ReferenceProfile:
 
     if user_raw is not None and builtin_raw is not None:
         if not os.environ.get("PHANTOM_PROFILE_OVERRIDE_QUIET"):
-            print(
-                f"[phantom] User profile '{resolved}' overrides built-in. "
-                f"Set PHANTOM_PROFILE_OVERRIDE_QUIET=1 to silence.",
-                file=sys.stderr,
-            )
+            logger.info("User profile '%s' overrides built-in.", resolved)
         if os.environ.get("PHANTOM_PROFILE_MERGE"):
             raw = _deep_merge(builtin_raw, user_raw)
         else:
