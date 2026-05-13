@@ -34,15 +34,25 @@ _CLIPPING_THRESHOLD = 1.0  # Digital maximum for clipping detection (PROB-01)
 _DC_OFFSET_THRESHOLD = 5e-4  # 0.05% of full scale, above 24-bit noise floor (PROB-02)
 _ISP_OVERSHOOT_THRESHOLD_DB = 0.5  # Min overshoot to flag inter-sample peaks (PROB-03)
 _ISP_SEVERE_DBTP = -1.0  # True peak above this is "significant" severity (PROB-03)
-_DYNAMIC_SPREAD_MIN_DB = 10.0  # Min dynamic range to trust noise floor estimate (PROB-04/05)
+_DYNAMIC_SPREAD_MIN_DB = (
+    10.0  # Min dynamic range to trust noise floor estimate (PROB-04/05)
+)
 _NOISE_FLOOR_MODERATE_DB = -50.0  # Noise floor above this is "moderate" (PROB-04)
 _NOISE_FLOOR_MINOR_DB = -60.0  # Noise floor above this is "minor" (PROB-04)
 _SNR_PROFESSIONAL_DB = 60.0  # SNR above this is professional quality (PROB-05)
 _SNR_POOR_DB = 50.0  # SNR below this is "poor" / "significant" (PROB-05)
-_SPECTRAL_FLATNESS_MIN = 0.01  # Min flatness to run band-excess detectors (PROB-07/08/09)
-_BAND_EXCESS_THRESHOLD_DB = 6.0  # Band excess above this triggers detection (PROB-07/08/09)
-_RESONANCE_MEDIAN_FLOOR_DB = -40.0  # Median spectral level floor for resonance detection (PROB-10)
-_RESONANCE_PROMINENCE_DB = 12  # Peak prominence threshold for resonance detection (PROB-10)
+_SPECTRAL_FLATNESS_MIN = (
+    0.01  # Min flatness to run band-excess detectors (PROB-07/08/09)
+)
+_BAND_EXCESS_THRESHOLD_DB = (
+    6.0  # Band excess above this triggers detection (PROB-07/08/09)
+)
+_RESONANCE_MEDIAN_FLOOR_DB = (
+    -40.0
+)  # Median spectral level floor for resonance detection (PROB-10)
+_RESONANCE_PROMINENCE_DB = (
+    12  # Peak prominence threshold for resonance detection (PROB-10)
+)
 _LOSSY_SHELF_DROP_DB = 20.0  # Shelf drop above this indicates lossy codec (PROB-13)
 
 
@@ -637,7 +647,9 @@ def _detect_resonances(mono: np.ndarray, sample_rate: int) -> list[ProblemItem]:
         return []
 
     # Find narrow peaks with significant prominence
-    peaks, props = sig.find_peaks(avg_db, prominence=_RESONANCE_PROMINENCE_DB, width=(1, 20))
+    peaks, props = sig.find_peaks(
+        avg_db, prominence=_RESONANCE_PROMINENCE_DB, width=(1, 20)
+    )
 
     # Filter: only keep peaks in 30-5000 Hz range with Q > 5
     resonances: list[dict] = []

@@ -157,7 +157,11 @@ def _setup_reaper(console, json_mode: bool) -> dict:
         else:
             if not json_mode:
                 console.print(f"  {WARN} Reaper setup failed (exit code {e.code})")
-            return {"step": "reaper", "status": "error", "message": f"exit code {e.code}"}
+            return {
+                "step": "reaper",
+                "status": "error",
+                "message": f"exit code {e.code}",
+            }
     except Exception as e:
         if not json_mode:
             console.print(f"  {WARN} Reaper setup issue: {e}")
@@ -286,7 +290,9 @@ def setup(json_output: bool, skip_reaper: bool, skip_plugin: bool) -> None:
                     f"--with {extra_packages.get(e, e)}" for e, _ in missing_extras
                 )
                 console.print(f"  {WARN} Install failed. Run manually:")
-                console.print(f"    uv tool install phantom-audio --python {RECOMMENDED_PYTHON} {pkgs}")
+                console.print(
+                    f"    uv tool install phantom-audio --python {RECOMMENDED_PYTHON} {pkgs}"
+                )
 
     console.print()
     console.print(
