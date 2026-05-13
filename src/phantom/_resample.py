@@ -50,7 +50,7 @@ def resample_to_match(audio: AudioData, target_sr: int) -> AudioData:
     up = target_sr // g
     down = audio.sample_rate // g
 
-    logger.warning(
+    logger.info(
         "Resampling audio from %d Hz to %d Hz (up=%d, down=%d)",
         audio.sample_rate,
         target_sr,
