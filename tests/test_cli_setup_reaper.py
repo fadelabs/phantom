@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import os
+import subprocess
 from unittest.mock import MagicMock, patch
 
+import click
 import pytest
 from click.testing import CliRunner
 
@@ -193,3 +195,80 @@ def test_serve_command(runner):
     assert result.exit_code == 0
     output_lower = result.output.lower()
     assert "mcp" in output_lower or "server" in output_lower
+
+
+# ---------------------------------------------------------------------------
+# _run_step timeout tests
+# ---------------------------------------------------------------------------
+
+
+class TestRunStepTimeout:
+    """Tests for _run_step timeout handling."""
+
+    def test_timeout_raises_click_exception(self):
+        """_run_step raises ClickException with 'timed out' when subprocess times out."""
+        from phantom.cli.setup_reaper import _run_step
+
+        with patch(
+            "phantom.cli.setup_reaper.subprocess.run",
+            side_effect=subprocess.TimeoutExpired(
+                cmd=["git", "clone", "https://example.com"], timeout=30
+            ),
+        ):
+            with pytest.raises(click.ClickException, match="timed out"):
+                _run_step(
+                    ["git", "clone", "https://example.com"], "Git clone", timeout=30
+                )
+
+    def test_timeout_passes_to_subprocess(self):
+        """_run_step passes timeout parameter to subprocess.run."""
+        from phantom.cli.setup_reaper import _run_step
+
+        with patch("phantom.cli.setup_reaper.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            _run_step(["git", "status"], "Git status", timeout=30)
+            mock_run.assert_called_once_with(
+                ["git", "status"], check=True, capture_output=True, timeout=30
+            )
+
+    def test_timeout_error_message_content(self):
+        """Timeout error message includes '30 seconds' and 'Check your connection'."""
+        from phantom.cli.setup_reaper import _run_step
+
+        with patch(
+            "phantom.cli.setup_reaper.subprocess.run",
+            side_effect=subprocess.TimeoutExpired(cmd=["git", "pull"], timeout=30),
+        ):
+            with pytest.raises(
+                click.ClickException, match=r"30 seconds.*Check your connection"
+            ):
+                _run_step(["git", "pull"], "Git pull", timeout=30)
+
+    def test_git_clone_uses_timeout_constant(self, runner, tmp_path):
+        """setup-reaper passes _GIT_TIMEOUT_SECONDS to git clone call."""
+        from phantom.cli.setup_reaper import _GIT_TIMEOUT_SECONDS
+
+        install_dir = tmp_path / "reaper-mcp"
+        scripts_dir = tmp_path / "reaper-scripts"
+        scripts_dir.mkdir()
+
+        with (
+            patch("phantom.cli.setup_reaper.shutil.which", return_value="/usr/bin/git"),
+            patch(
+                "phantom.cli.setup_reaper._get_reaper_scripts_dir",
+                return_value=scripts_dir,
+            ),
+            patch("phantom.cli.setup_reaper.subprocess.run") as mock_run,
+        ):
+            mock_run.return_value = MagicMock(returncode=0)
+            runner.invoke(
+                cli,
+                ["setup-reaper", "--install-dir", str(install_dir), "--json"],
+            )
+
+        # Find the clone call and verify timeout was passed
+        clone_calls = [c for c in mock_run.call_args_list if "clone" in str(c)]
+        assert len(clone_calls) >= 1
+        # The clone call should have timeout=_GIT_TIMEOUT_SECONDS
+        clone_kwargs = clone_calls[0][1] if clone_calls[0][1] else {}
+        assert clone_kwargs.get("timeout") == _GIT_TIMEOUT_SECONDS
