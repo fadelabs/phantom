@@ -347,8 +347,8 @@ class TestApplyProcessing:
             apply_processing(path, [{"type": "Gain", "gain_db": 0.0}], path)
 
     def test_allowed_operations_dict_exists(self):
-        """ALLOWED_OPERATIONS maps string names to classes."""
-        from phantom.processing import ALLOWED_OPERATIONS
+        """get_allowed_operations() maps string names to classes."""
+        from phantom.processing import get_allowed_operations
 
         expected_keys = {
             "HighpassFilter",
@@ -361,7 +361,7 @@ class TestApplyProcessing:
             "Gain",
             "NoiseGate",
         }
-        assert set(ALLOWED_OPERATIONS.keys()) == expected_keys
+        assert set(get_allowed_operations().keys()) == expected_keys
 
 
 # ---------------------------------------------------------------------------
