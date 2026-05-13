@@ -216,7 +216,9 @@ class TestRunStepTimeout:
             ),
         ):
             with pytest.raises(click.ClickException, match="timed out"):
-                _run_step(["git", "clone", "https://example.com"], "Git clone", timeout=30)
+                _run_step(
+                    ["git", "clone", "https://example.com"], "Git clone", timeout=30
+                )
 
     def test_timeout_passes_to_subprocess(self):
         """_run_step passes timeout parameter to subprocess.run."""
@@ -235,9 +237,7 @@ class TestRunStepTimeout:
 
         with patch(
             "phantom.cli.setup_reaper.subprocess.run",
-            side_effect=subprocess.TimeoutExpired(
-                cmd=["git", "pull"], timeout=30
-            ),
+            side_effect=subprocess.TimeoutExpired(cmd=["git", "pull"], timeout=30),
         ):
             with pytest.raises(
                 click.ClickException, match=r"30 seconds.*Check your connection"
@@ -267,9 +267,7 @@ class TestRunStepTimeout:
             )
 
         # Find the clone call and verify timeout was passed
-        clone_calls = [
-            c for c in mock_run.call_args_list if "clone" in str(c)
-        ]
+        clone_calls = [c for c in mock_run.call_args_list if "clone" in str(c)]
         assert len(clone_calls) >= 1
         # The clone call should have timeout=_GIT_TIMEOUT_SECONDS
         clone_kwargs = clone_calls[0][1] if clone_calls[0][1] else {}

@@ -17,6 +17,7 @@ from phantom.cli._formatting import get_console, output_json
 
 REAPER_MCP_REPO = "https://github.com/fadelabs/reaper-mcp.git"
 _DEFAULT_INSTALL_DIR = "~/.phantom/reaper-mcp"
+_GIT_TIMEOUT_SECONDS = 30
 
 
 def _get_reaper_scripts_dir() -> Path:
@@ -35,12 +36,17 @@ def _check_tool(name: str) -> bool:
     return shutil.which(name) is not None
 
 
-def _run_step(cmd: list[str], step_name: str) -> None:
+def _run_step(cmd: list[str], step_name: str, timeout: int | None = None) -> None:
     """Run a subprocess, raising a clear error on failure."""
     try:
-        subprocess.run(cmd, check=True, capture_output=True)
+        subprocess.run(cmd, check=True, capture_output=True, timeout=timeout)
     except FileNotFoundError:
         raise click.ClickException(f"{step_name}: command not found: {cmd[0]}")
+    except subprocess.TimeoutExpired:
+        raise click.ClickException(
+            f"{step_name} timed out after {timeout} seconds. "
+            "Check your connection and try again."
+        )
     except subprocess.CalledProcessError as e:
         stderr = e.stderr.decode().strip() if e.stderr else str(e)
         raise click.ClickException(f"{step_name} failed:\n{stderr}")
@@ -198,6 +204,7 @@ def setup_reaper(install_dir: str | None, json_output: bool) -> None:
         _run_step(
             ["git", "-C", str(install_path), "pull", "--ff-only"],
             "Git pull",
+            timeout=_GIT_TIMEOUT_SECONDS,
         )
     else:
         if not json_output:
@@ -206,6 +213,7 @@ def setup_reaper(install_dir: str | None, json_output: bool) -> None:
         _run_step(
             ["git", "clone", "--depth", "1", REAPER_MCP_REPO, str(install_path)],
             "Git clone",
+            timeout=_GIT_TIMEOUT_SECONDS,
         )
 
     # --- Install Python dependencies ---
