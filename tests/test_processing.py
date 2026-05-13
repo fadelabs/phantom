@@ -516,6 +516,66 @@ class TestCompareResults:
         assert _SEVERITY_ORDER["significant"] > _SEVERITY_ORDER["moderate"]
         assert _SEVERITY_ORDER["moderate"] > _SEVERITY_ORDER["minor"]
 
+    def test_unknown_severity_raises_analysis_error(self):
+        """Unknown severity in before or after raises AnalysisError."""
+        from phantom.processing import _compare_results
+        from phantom.problems import ProblemsResult, ProblemItem
+
+        before = ProblemsResult(
+            problems=[
+                ProblemItem(
+                    type="mud",
+                    severity="bogus_severity",
+                    message="Mud",
+                    details={},
+                )
+            ],
+            clean=False,
+        )
+        after = ProblemsResult(
+            problems=[
+                ProblemItem(
+                    type="mud",
+                    severity="moderate",
+                    message="Mud still",
+                    details={},
+                )
+            ],
+            clean=False,
+        )
+        with pytest.raises(AnalysisError, match="Unknown severity 'bogus_severity'"):
+            _compare_results(before, after)
+
+    def test_unknown_severity_in_after_raises(self):
+        """Unknown severity in after results raises AnalysisError."""
+        from phantom.processing import _compare_results
+        from phantom.problems import ProblemsResult, ProblemItem
+
+        before = ProblemsResult(
+            problems=[
+                ProblemItem(
+                    type="mud",
+                    severity="moderate",
+                    message="Mud",
+                    details={},
+                )
+            ],
+            clean=False,
+        )
+        after = ProblemsResult(
+            problems=[
+                ProblemItem(
+                    type="mud",
+                    severity="critical",
+                    message="Mud worse",
+                    details={},
+                )
+            ],
+            clean=False,
+        )
+        with pytest.raises(AnalysisError, match="Unknown severity 'critical'"):
+            _compare_results(before, after)
+
 
 # ---------------------------------------------------------------------------
 # TestBuildChainFromProblems -- Signal chain ordering

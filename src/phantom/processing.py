@@ -360,6 +360,21 @@ def apply_processing(
 # ---------------------------------------------------------------------------
 
 
+def _get_severity_rank(severity: str) -> int:
+    """Return the numeric rank for a severity string.
+
+    Raises AnalysisError on unknown values so that contract violations
+    surface immediately rather than being silently treated as lowest severity.
+    """
+    rank = _SEVERITY_ORDER.get(severity)
+    if rank is None:
+        raise AnalysisError(
+            f"Unknown severity '{severity}' in problem comparison. "
+            f"Expected one of: {sorted(_SEVERITY_ORDER.keys())}"
+        )
+    return rank
+
+
 def _compare_results(
     before: ProblemsResult,
     after: ProblemsResult,
@@ -400,8 +415,8 @@ def _compare_results(
             )
         else:
             after_sev = after_by_type[p.type]
-            before_rank = _SEVERITY_ORDER.get(p.severity, 0)
-            after_rank = _SEVERITY_ORDER.get(after_sev, 0)
+            before_rank = _get_severity_rank(p.severity)
+            after_rank = _get_severity_rank(after_sev)
 
             if after_rank < before_rank:
                 improvements.append(
