@@ -77,6 +77,7 @@ async def test_server_tool_names(client):
 def test_phantom_mcp_entry_point():
     """phantom-mcp console script is configured in pyproject.toml (SRV-08)."""
     import sys
+
     if sys.version_info >= (3, 11):
         import tomllib
     else:
