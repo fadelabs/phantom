@@ -6,6 +6,7 @@ dependency guard, and unfixable problem type skipping.
 
 from __future__ import annotations
 
+import importlib.util
 import os
 
 import numpy as np
@@ -20,6 +21,10 @@ from phantom.exceptions import AnalysisError, DependencyMissingError
 # ---------------------------------------------------------------------------
 
 
+_has_pedalboard = importlib.util.find_spec("pedalboard") is not None
+
+
+@pytest.mark.skipif(not _has_pedalboard, reason="pedalboard not installed")
 class TestRecipes:
     """Each fixable problem type maps to a Recipe with correct plugin chain."""
 
@@ -597,6 +602,7 @@ class TestCompareResults:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.skipif(not _has_pedalboard, reason="pedalboard not installed")
 class TestBuildChainFromProblems:
     """_build_chain_from_problems orders plugins in signal chain priority."""
 
