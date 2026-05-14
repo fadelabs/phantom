@@ -32,7 +32,7 @@ Without Claude, Phantom is a capable CLI analysis tool. With Claude, it becomes 
 
 Four layers that work together:
 
-1. **Measurement.** 17 MCP tools that quantify your audio: spectrum, loudness (EBU R128), dynamics, stereo field, phase coherence, frequency masking between stems, and problems like clipping, hum, DC offset, sibilance, and room resonances.
+1. **Measurement.** 19 MCP tools that quantify your audio: spectrum, loudness (EBU R128), dynamics, stereo field, phase coherence, frequency masking between stems, and problems like clipping, hum, DC offset, sibilance, and room resonances. Plus automated problem fixing and custom processing chains.
 
 2. **Methodology.** Five domain expert skills that encode how professional engineers actually think. Structured decision-making workflows: when to use FET vs VCA compression, how to read crest factor to choose a handling strategy, when a mix needs more work vs when it's ready for mastering.
 
@@ -109,6 +109,9 @@ Then talk to Claude:
 | Comparison | `compare_to_profile`, `compare_to_reference` | Deviation from genre targets or reference tracks across all dimensions |
 | Matching | `match_to_reference` | Automated spectral/loudness/width matching to a reference WAV |
 | Separation | `separate_stems` | Isolate vocals, drums, bass, and instruments via Demucs |
+| Fixing | `fix_audio` | Automatically fix detected problems (DC offset, clipping, hum, etc.) |
+| Processing | `apply_processing` | Apply a custom chain of audio processing operations |
+| Profiles | `list_profiles`, `load_profile` | Browse and inspect genre reference profiles |
 | Diagnostic | `full_diagnostic`, `batch_diagnostic` | All analysis types on one file or up to 50 files in parallel |
 
 ## Domain Expert Skills
@@ -167,6 +170,9 @@ uv tool install "phantom-audio[separation]" --python 3.13
 
 # Reference matching only (GPLv3 -- see License section)
 uv tool install "phantom-audio[matching]" --python 3.13
+
+# Audio processing / auto-fix (Pedalboard)
+uv tool install "phantom-audio[processing]" --python 3.13
 ```
 
 **Using uv** (recommended):
@@ -208,6 +214,9 @@ phantom analyze track.wav --json       # Machine-readable JSON
 phantom compare track.wav --profile rock  # Compare against genre targets
 phantom compare track.wav --reference ref.wav  # A/B against a reference
 phantom separate mix.wav --output ./stems/     # Stem separation
+phantom fix track.wav                  # Auto-fix detected problems
+phantom render mix.wav --reference ref.wav     # Match to reference
+phantom doctor                         # Check installation health
 phantom serve                          # Start the MCP server
 ```
 
@@ -271,6 +280,10 @@ Environment variables for security and resource limits:
 | `PHANTOM_MAX_DURATION` | 900 (15 min) | Maximum audio duration in seconds |
 | `PHANTOM_MAX_FILE_SIZE` | 524288000 (500 MB) | Maximum file size in bytes |
 | `PHANTOM_PROFILES_DIR` | *(built-in)* | Custom reference profile directory |
+| `PHANTOM_MASKING_TOP_N` | *(auto)* | Override number of top masking pairs returned |
+| `PHANTOM_PHAT_WINDOW_S` | 10.0 | PHAT cross-correlation window size in seconds |
+| `PHANTOM_DEBUG` | *(none)* | Enable verbose error output from MCP tools |
+| `PHANTOM_QUIET` | *(none)* | Suppress startup preflight messages |
 
 ## Contributing
 
