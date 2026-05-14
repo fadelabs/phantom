@@ -6,6 +6,7 @@ dependency guard, and unfixable problem type skipping.
 
 from __future__ import annotations
 
+import importlib.util
 import os
 
 import numpy as np
@@ -20,6 +21,10 @@ from phantom.exceptions import AnalysisError, DependencyMissingError
 # ---------------------------------------------------------------------------
 
 
+_has_pedalboard = importlib.util.find_spec("pedalboard") is not None
+
+
+@pytest.mark.skipif(not _has_pedalboard, reason="pedalboard not installed")
 class TestRecipes:
     """Each fixable problem type maps to a Recipe with correct plugin chain."""
 
@@ -267,6 +272,7 @@ class TestDependencyGuard:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.skipif(not _has_pedalboard, reason="pedalboard not installed")
 class TestApplyProcessing:
     """apply_processing validates operations, processes audio, returns FixResult."""
 
@@ -369,6 +375,7 @@ class TestApplyProcessing:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.skipif(not _has_pedalboard, reason="pedalboard not installed")
 class TestCompareResults:
     """_compare_results classifies each problem as resolved/improved/unchanged/worsened."""
 
@@ -597,6 +604,7 @@ class TestCompareResults:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.skipif(not _has_pedalboard, reason="pedalboard not installed")
 class TestBuildChainFromProblems:
     """_build_chain_from_problems orders plugins in signal chain priority."""
 
@@ -717,6 +725,7 @@ class TestBuildChainFromProblems:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.skipif(not _has_pedalboard, reason="pedalboard not installed")
 class TestFixAudio:
     """fix_audio orchestrates detect_problems -> recipe -> process -> compare."""
 

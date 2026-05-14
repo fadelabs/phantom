@@ -76,7 +76,15 @@ async def test_server_tool_names(client):
 
 def test_phantom_mcp_entry_point():
     """phantom-mcp console script is configured in pyproject.toml (SRV-08)."""
-    import tomllib
+    import sys
+
+    if sys.version_info >= (3, 11):
+        import tomllib
+    else:
+        try:
+            import tomli as tomllib
+        except ImportError:
+            pytest.skip("tomllib requires Python 3.11+ or tomli package")
     from pathlib import Path
 
     pyproject = Path(__file__).parent.parent / "pyproject.toml"

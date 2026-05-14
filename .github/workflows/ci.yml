@@ -28,7 +28,7 @@ jobs:
         run: uv python install ${{ matrix.python-version }}
 
       - name: Install dependencies
-        run: uv sync --locked --python ${{ matrix.python-version }}
+        run: uv sync --locked --python ${{ matrix.python-version }} --extra dev
 
       - name: Lint (ruff check)
         run: uv run ruff check src/ tests/
@@ -55,7 +55,7 @@ jobs:
         run: uv python install 3.12
 
       - name: Install with optional extras
-        run: uv sync --locked --python 3.12 --extra matching --extra separation --extra processing
+        run: uv sync --locked --python 3.12 --extra dev --extra matching --extra separation --extra processing
 
       - name: Test optional dependencies
         run: uv run pytest tests/test_optional_deps.py -x -q --tb=short
