@@ -272,6 +272,7 @@ class TestDependencyGuard:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.skipif(not _has_pedalboard, reason="pedalboard not installed")
 class TestApplyProcessing:
     """apply_processing validates operations, processes audio, returns FixResult."""
 
@@ -374,6 +375,7 @@ class TestApplyProcessing:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.skipif(not _has_pedalboard, reason="pedalboard not installed")
 class TestCompareResults:
     """_compare_results classifies each problem as resolved/improved/unchanged/worsened."""
 
@@ -723,6 +725,7 @@ class TestBuildChainFromProblems:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.skipif(not _has_pedalboard, reason="pedalboard not installed")
 class TestFixAudio:
     """fix_audio orchestrates detect_problems -> recipe -> process -> compare."""
 
