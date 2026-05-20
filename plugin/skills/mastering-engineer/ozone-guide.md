@@ -89,7 +89,7 @@ Tape saturation emulation. Speed (7.5/15/30 IPS), bias, emphasis controls. Adds 
 
 ### Vintage EQ
 
-Pultec-style EQ with broad, musical curves. The famous Pultec trick: boost AND cut at the same low frequency creates a resonant shelf that adds weight and tightness simultaneously.
+Pultec-style EQ with broad, musical curves. A classic Pultec-style move: boost AND cut at the same low frequency creates a resonant shelf that adds weight and tightness simultaneously.
 
 ### Vintage Compressor
 

@@ -16,220 +16,211 @@ description: >
 
 # Audio Diagnostician
 
-> **Workflow:** diagnostician -> session-architect -> mix-engineer -> effects-engineer -> mastering-engineer. Always analyze first.
+> **Workflow position:** **audio-diagnostician** → session-architect → mix-engineer → effects-engineer → mastering-engineer. Always analyze first.
 
-## The Diagnostic Workflow
+The diagnostic's job is to find problems BEFORE they waste mixing time. Phase issues masquerading as tonal problems. Noise that accumulates across stems. Masking conflicts that no amount of EQ can fix. Every problem found here saves an hour of guessing later.
 
-### Gather stems
+**Non-negotiable rules (repeated at end as final checklist):**
+1. Check phase before anything else — phase problems masquerade as tonal problems
+2. Interpret every measurement in instrument context — drums at 15 dB crest factor is normal, vocals at 15 dB is uncompressed
+3. Genre context matters — lo-fi at -55 dBFS noise with rolled-off highs is aesthetic, not a problem
+4. Never assume stem provenance — mono in stereo containers is normal, don't speculate on AI separation
+
+## Step 1: Gather Stems
 
 Collect all stem file paths (WAV, mono or stereo). If given a directory, list WAV files.
 
-If genre or reference track is unknown, ask now -- every downstream skill needs genre context.
+If genre or reference track is unknown, **ask now** — every downstream skill needs genre context.
 
-**Alternate takes:** If filenames suggest multiple takes, ask which to use. Exclude unused takes -- they corrupt masking analysis.
+**Alternate takes:** If filenames suggest multiple takes, ask which to use. Exclude unused takes — they corrupt masking analysis.
 
-`multi_stem_masking` accepts a maximum of 20 stems. If the session has more, group stems by instrument family and run multiple passes.
+`multi_stem_masking` accepts max 20 stems. If session has more, group by instrument family and run multiple passes.
 
-### Run the full diagnostic sweep
+## Step 2: Run the Full Diagnostic Sweep
 
-Call `batch_diagnostic` with every stem path in one shot. This runs all six analysis types (spectrum, loudness, dynamics, stereo, phase, problems) on every stem simultaneously. One call, complete picture.
+Call `batch_diagnostic` with every stem path in one shot.
 
-#### First checks from batch results
+### First Checks (in order — each can stop the session)
 
-Work through in order -- each can stop the session:
+| Check | Condition | Severity | Action |
+|-------|-----------|----------|--------|
+| Sample rate mismatch | Different rates between stems | **Dealbreaker** | Stop. Flag which stems mismatch. Convert to highest rate. |
+| Silent stems | Integrated LUFS below -70 or None | **Dealbreaker** | Likely export mistake. Ask user before including. |
+| Bit depth mix | 16/24/32 mixed | **Flag** | Note highest depth for session-architect. 32→16 without dither = quantization noise. |
+| Duration mismatch | Stems differ by > few seconds | **Flag** | Different export sections or excess head/tail silence. |
+| Loudness spread | > 20 LU between loudest and quietest | **Flag** | Gain staging problem. Multi-session recording or inconsistent preamp. |
+| Pre-printed effects | Crest factor < 6 on naturally dynamic source, OR spectral tilt doesn't match instrument type, OR flat loudness contour over time | **Flag** | Distinguish musician's tone (pedal compression, amp distortion, instrument through effects at tracking) from post-production processing. A bass through a compressor pedal = the player's sound, not a problem. Ask about the signal chain before flagging. Printed EQ narrows later options; printed compression on top of more compression destroys transients; printed reverb cannot be removed. |
+| Timing drift | Transient misalignment between stems > 5 ms | **Significant** | Measure using `compare_phase` time-delay value between stems sharing transient events. For non-transient stems, cross-correlate against the reference stem (usually drums). Drift > 5 ms = separate sessions or DAW latency offset. Nudge to align. |
 
-1. **Sample rate mismatch.** Different rates = dealbreaker. Stop, flag which stems mismatch and what to convert to.
+**Bit depth note:** 16-bit = ~96 dB dynamic range, 24-bit = ~144 dB. 16-bit stems with noise floor above -70 dBFS may be quantization-limited — flag as re-export candidates.
 
-2. **Bit depth and dynamic range.** Note bit depth of each stem. If stems mix 16-bit, 24-bit, and 32-bit float, flag it. The session-architect needs the highest bit depth to set the project. Bit depth determines theoretical dynamic range: 16-bit = 96 dB, 24-bit = 144 dB, 32-bit float = ~1500 dB. Downconverting 32-bit float to 16-bit without dither introduces quantization noise.
+## Step 3: Phase and Polarity Check
 
-3. **Silent or near-silent stems.** Check the integrated LUFS of every stem. If a stem reads below -70 LUFS or the loudness analysis returns None (near-silent), flag it immediately -- it's likely an export mistake (empty track, muted channel accidentally bounced) or an unintended room tone track. Ask the user before including it in further analysis.
-
-4. **Duration alignment.** If stems differ by more than a few seconds, note it -- may indicate different export sections or excessive head/tail silence.
-
-5. **Loudness level spread.** Compare integrated LUFS across all stems. If the loudest and quietest differ by more than 20 LU (excluding intentionally quiet elements like room mics or pads), flag a gain staging problem. Stems tracked at wildly different levels suggest a multi-session recording or inconsistent preamp gain.
-
-6. **Pre-printed effects detection.** If a stem shows very low crest factor (<6 dB) on a source that should be dynamic (acoustic guitar, vocals), or if the spectral balance shows steep filter slopes that look like intentional EQ rather than mic character, flag it as "possibly pre-printed effects." Pre-printed reverb, compression, or EQ limits mixing options. Ask the user if effects were intentionally printed.
-
-7. **Timing drift between stems.** If stems were recorded in separate sessions, check for timing drift: compare transient alignment at the start and end of the files. Even 5-10ms of drift over a 4-minute song creates audible flamming and phase smear.
-
-### Check phase and polarity
-
-Phase problems require specific tools (polarity flip, time alignment, phase rotation plugins like Waves InPhase or Sound Radix Auto-Align). Standard EQ/compression worsens them. Find them now.
+Phase problems require specific tools (polarity flip, time alignment). Standard EQ/compression worsens them. Find them now.
 
 Run `analyze_phase` on every stereo stem. Flag any `polarity_inverted: true` immediately.
 
-For multi-mic recordings (drums, guitar cabs), run `compare_phase` between close and room/overhead mics:
-- Kick in vs kick out
-- Snare top vs snare bottom
-- Close mic vs room mic on any source
+**M/S detection (check BEFORE interpreting correlation):** Very low/negative correlation across all bands + one channel sounding "hollow" = possibly mid-side encoded. Run `analyze_stereo` to confirm. M/S files show expected negative correlation — do NOT flag as phase problems. Ask user before proceeding.
 
-Sound travels ~1ms/foot. A room mic 10 feet away has 10ms delay causing comb filtering.
+For multi-mic recordings, run `compare_phase` in this order (fix highest-energy pair first — its correction changes the summed phase picture for subsequent checks):
+1. **Kick in vs kick out** — highest-energy low-frequency pair, most damaging if out of phase
+2. **Snare top vs snare bottom** — flip bottom mic polarity if correlation < +0.3
+3. **Close mic vs room mic** — sound travels ~1 ms/foot — a room mic 10 feet away = 10 ms delay = comb filtering
+4. **DI vs amped version** of same instrument — latency offset from amp processing chain
 
-**Interpreting phase results (instrument-aware):**
-- Correlation > +0.8: excellent mono compatibility, no issues
-- Correlation +0.5 to +0.8: good, normal stereo content -- no action needed
-- Correlation +0.3 to +0.5: context-dependent.
-  - For bass, kick, snare, lead vocal: this is a problem. Low-end and center-image sources must be mono-compatible. Flag and recommend narrowing or phase-aligning.
-  - For drum overheads, room mics, stereo keyboards, acoustic guitar (XY/ORTF): this is normal wide stereo. Note for mono-check but don't flag as an issue.
-  - For anything with stereo widening applied: borderline. Check mono playback -- if level drops >3 dB when summed to mono, the widening is excessive.
-- Correlation < +0.3: problem for any source. Investigate cause.
-- Sustained negative: polarity inversion. Flip one channel. Occasional negative dips are normal; sustained near -1 = definite inversion.
-- "Sounds fine solo but thin/weird in context" = phase cancellation -- run `compare_phase` between the problem stem and everything it's layered with.
+Re-run `compare_phase` after each fix to confirm improvement before moving to the next pair.
 
-**Mid-side encoded files.** Very low/negative correlation across all bands with one channel sounding "hollow" = possibly M/S encoded. Confirm with `analyze_stereo` (distinctive width/balance patterns). Ask user before proceeding.
+### Phase Correlation Interpretation (Instrument-Aware)
 
-### Triage problems by severity
+| Correlation | Bass/Kick/Snare/Lead Vocal | Overheads/Room/Stereo Keys | Anything with Widening |
+|-------------|---------------------------|---------------------------|----------------------|
+| > +0.8 | Excellent | Excellent | Excellent |
+| +0.5 to +0.8 | Good | Good | Good |
+| +0.3 to +0.5 | **Problem — flag** | Normal wide stereo | Borderline — check if mono drops > 3 dB |
+| < +0.3 | **Problem** | **Problem** | **Problem** |
+| Sustained negative | Polarity inversion — flip one channel (unless M/S encoded — see above) | Polarity inversion | Polarity inversion |
 
-Review `detect_problems` results (11 detectors: clipping, DC offset, ISPs, noise floor, SNR, hum, sibilance, mud, harshness, resonant peaks, lossy artifacts). Four severity tiers -- dealbreakers first.
+**Diagnostic pattern:** "Sounds fine solo but thin/weird in context" = phase cancellation. Run `compare_phase` between the problem stem and everything it's layered with.
 
-**Dealbreaker** -- fix before mixing, no exceptions:
-- True peak > 0 dBTP (clipping baked into the file -- samples are hard-clipped)
-- Sample rate mismatch between stems
+**"Fixed enough" threshold:** After correction, correlation should improve by at least +0.2 AND reach the "Good" row for that instrument type. Soloing both stems together should sound full, not hollow or thin. If correction yields only marginal improvement, the problem may be comb filtering from reflections — note this for mix-engineer.
+
+## Step 4: Triage Problems by Severity
+
+Review `detect_problems` results. Four severity tiers — dealbreakers first. **Confidence prefix** each finding: **Definite** (clipping, polarity inversion — measurable, unambiguous), **Likely** (noise above threshold, clear masking), **Possible** (borderline values, context-dependent — needs engineer judgment).
+
+**Intent check:** Before flagging unconventional measurements (distorted vocals, transient-free drums, deliberately clipped signals), consider whether the measurement reflects a creative choice. If the result could be intentional, mark as **Possible** and ask before escalating.
+
+**Dealbreaker** (fix before mixing):
+- True peak > 0 dBTP (baked clipping)
+- Sample rate mismatch
 - Severe phase/polarity inversion between related stems
-- Corrupted or truncated files (start/stop cut detection)
 
-**Significant** -- address early, before you start building the mix:
-- True peak > -1 dBTP (exceeds EBU R128 and streaming platform limits -- tight headroom that limits mastering options)
-- Noise floor -60 to -50 dBFS: gate during silence or use iZotope RX Spectral De-noise (learn noise profile from a silent section, reduce 6-10 dB). **Cumulative noise math:** N stems at same floor sum to `floor + 10*log10(N)` dB. Examples: 4@-55 = -49 dBFS; 6@-58 = -50.2 dBFS; 8@-58 = -49 dBFS; 16@-60 = -48 dBFS. Calculate and report the actual summed floor.
-- Noise floor above -50 dBFS: dedicated noise reduction required (RX Spectral De-noise or Waves NS1/WNS)
-- DC offset present (remove with a dedicated DC offset removal tool, available in most DAWs and iZotope RX; if unavailable, use an HPF set very low at 5-20 Hz)
-- Mains hum detected at 50/60 Hz (notch filter at the fundamental plus harmonics: 50/100/150/200 Hz or 60/120/180/240 Hz). Note: the dominant hum frequency is often 2x the mains frequency (100 Hz or 120 Hz) because magnetic force is proportional to the square of the current. Listen to identify the loudest harmonic before notching.
-- False stereo detected (duplicate channels -- note: mono sources in stereo containers are normal, not a problem)
-- Lossy codec artifacts detected (the source file may have been transcoded from a lossy format)
+**Significant** (address before building mix — report with **playback context**: headphone listeners hear noise at -52 dBFS; club/PA playback masks it under ambient noise):
+- True peak > -1 dBTP (tight headroom)
+- Noise floor -60 to -50 dBFS — gate during silence or spectral de-noise. **Cumulative math:** Calculate per-section, not total stem count. If verse has 4 active stems at -58 dBFS → -52 dBFS floor; chorus with 12 stems at -58 → -47 dBFS. Report worst-case section. **Verification:** After reduction, noise floor should drop to -60 dBFS or below. A/B with original — if you hear "underwater" artifacts or loss of air/breath, the reduction was too aggressive.
+- Noise floor above -50 dBFS — dedicated noise reduction required. Within lo-fi/tape genres, distinguish **aesthetic noise** (tape hiss, vinyl crackle — keep, it's the texture) from **technical noise** (60 Hz hum, ground loop buzz, digital artifacts — always remove regardless of genre).
+- DC offset — remove with DC offset tool or HPF at 5-20 Hz
+- Mains hum at 50/60 Hz — notch at fundamental + harmonics (50/100/150/200 or 60/120/180/240 Hz). The loudest harmonic is often 2× mains frequency.
+- Lossy codec artifacts detected
 
-**Moderate** -- address during mixing:
-- Sibilance 4-10 kHz (male 3-6 kHz, female 6-8 kHz). Use de-esser or dynamic EQ band with 3-6 dB reduction at Q ~2.
-- Mud 200-500 Hz across stems. **Priority fix:** HPF everything that isn't kick or bass: vocals 80-100 Hz, guitars 80 Hz, keys 60-80 Hz. For remaining mud between pairs, cut 2-4 dB with Q 1.5-3 on the less important stem in the conflict band.
-- Moderate harshness in 2-5 kHz
+**Moderate** (address during mixing):
+- Sibilance 4-10 kHz (male 3-6 kHz, female 6-8 kHz) — de-esser or dynamic EQ, 3-6 dB reduction
+- Mud 200-500 Hz across stems — HPF everything except kick/bass, complementary EQ between conflicting pairs
+- Harshness 2-5 kHz
 - Room resonances at specific frequencies
 
-**Minor** -- optional: slight spectral imbalances, minor noise bursts, low-level clicks.
+**Minor** (optional): spectral imbalances, minor noise bursts, low-level clicks.
 
-### Analyze frequency masking between stems
+## Step 5: Frequency Masking Analysis
 
-Run `multi_stem_masking` with all stems. Key conflict pairs:
-- Kick vs bass (60-100 Hz)
-- Guitars vs vocals (2-4 kHz)
-- Keys/synths vs guitars (midrange congestion)
-- Multiple vocal layers
+Run `multi_stem_masking` with all stems. **Pan-aware masking:** If stems are hard-panned to opposite sides (known from session notes or stereo analysis), discount masking severity — L/R separation reduces perceptual masking. Only flag masking between stems sharing the same stereo position. Key conflict pairs:
 
-High masking at 200-500 Hz = mud. **EQ prescription:** Cut 2-4 dB at Q 1.5-3 on the less important stem in each pair. Boost the other 1-2 dB only if needed.
+| Pair | Conflict Zone | Downstream Action |
+|------|--------------|-------------------|
+| Kick vs Bass | 60-100 Hz | → session-architect: prewire sidechain. → mix-engineer: complementary EQ. |
+| Guitars vs Vocals | 2-4 kHz | → mix-engineer: cut guitars at vocal presence frequency. |
+| Keys vs Guitars | 300 Hz-1 kHz | → mix-engineer: pan separation + complementary EQ. |
+| Multiple vocals | 1-5 kHz | → mix-engineer: slight frequency offset per voice + different reverb sends. |
+| 4+ stems masking same band | Arrangement problem | Flag — EQ carving won't fix it. Recommend thinning simultaneous elements. |
 
-**Masking vs bleed (live recordings).** Bleed causes overreported masking. Ask about recording setup, discount severity in bleed frequencies, focus on each instrument's *direct* signal energy.
+**Gain-stage before masking analysis:** If stems differ by more than 12 LU, normalize to common monitoring level (e.g., -18 LUFS) before running masking analysis. Analysis normalization only — do not alter stem files.
 
-**When masking is actually an arrangement problem.** If 4+ stems show high masking in the same band, EQ carving won't fix it. Flag as an arrangement issue -- recommend thinning simultaneous elements.
+**Live recordings:** Bleed causes overreported masking. Discount bleed-frequency masking by one tier. Focus on direct signal energy.
 
-### Assess aggregate headroom
+**Expected outcome after masking fixes:** Complementary EQ should drop masking score from "high" to "moderate" or lower. If it doesn't, the conflict is arrangement-level, not mix-level.
 
-If most stems peak above -6 dBTP, flag that gain staging is critical. Note aggregate headroom in the mix brief.
+## Step 6: Produce the Mix Brief
 
-### Compare to a reference
+1. **Session overview** — stem count, sample rate, bit depth, genre/reference, BPM if known, aggregate headroom
+2. **Per-stem summary table** — LUFS, peak, crest factor, phase correlation, stereo width, key issues
+3. **Problems by severity** — dealbreakers first, always
+4. **Masking map** — worst frequency conflicts between pairs, with downstream routing recommendations
+5. **Overall assessment** — one paragraph, opinionated, honest
+6. **Processing order** — the ordered checklist below
 
-If genre is known: `list_profiles` -> `load_profile` -> `compare_to_profile`. Available: ambient, edm, electronic, hip-hop, lo-fi, metal, pop, rock, rock-metal. If user has a reference WAV: `compare_to_reference` (spectrum, loudness, dynamics, stereo width deviations).
+This order matters — each step depends on the previous:
 
-**Genre context matters.** Lo-fi at -55 dBFS noise with rolled-off highs = aesthetic, not a problem. Always interpret through genre intent.
+1. **Fix sample rate mismatches** (offline SRC)
+2. **Remove DC offset** (RX or DAW utility)
+3. **Fix polarity inversions** (flip on channel)
+4. **Time-align multi-mic pairs** (Auto-Align or manual nudge by ms from `compare_phase`)
+5. **Remove noise/hum** (spectral de-noise, de-hum — BEFORE any compression, which amplifies noise)
+6. **Address clipping** (RX De-clip if baked; otherwise re-export from session)
+7. **Apply HPFs** on non-bass stems (vocals 80-100 Hz, guitars 80 Hz, keys 60-80 Hz)
+8. **Begin mixing** — address sibilance, masking EQ, harshness during mix
 
-### Produce the mix brief
+### Handoff to Downstream Skills
 
-Fill in [mix-brief-template.md](mix-brief-template.md). The brief must include:
-- Session overview (stem count, sample rate, bit depth, genre/reference, BPM if known, aggregate headroom estimate)
-- Per-stem summary table (LUFS, peak, crest factor, phase correlation, stereo width, duration, key issues)
-- Problems organized by severity tier (dealbreakers first, always)
-- Masking map showing the worst frequency conflicts between stem pairs
-- Overall assessment -- one paragraph, opinionated, honest
-- Processing order checklist (below)
+Explicitly tell downstream skills what to do:
 
-**Processing order checklist** (include in brief with stem-specific details):
-1. Fix sample rate mismatches (offline SRC in DAW or SoX: `sox in.wav -r 48000 out.wav`)
-2. Remove DC offset (RX DC Offset module or DAW utility)
-3. Fix polarity inversions (polarity flip on the channel)
-4. Time-align multi-mic pairs (Auto-Align or manual nudge by ms shown in `compare_phase`)
-5. Remove noise/hum (RX Spectral De-noise, De-hum -- before any compression)
-6. Address clipping (RX De-clip if baked in; otherwise re-export from session)
-7. Apply HPFs on non-bass stems (vocals 80-100 Hz, guitars 80 Hz, keys 60-80 Hz)
-8. Begin mixing -- address sibilance, masking EQ, harshness during mix
+| Finding | → Session Architect | → Mix Engineer |
+|---------|-------------------|----------------|
+| Kick/bass masking | Prewire sidechain routing | Complementary EQ + sidechain |
+| Phase issues | Route multi-mic to alignment sub-bus | Check phase before EQ |
+| Over-compressed stems | Mark "no comp needed" | Skip compression on those tracks |
+| Severe noise | Insert gate as first plugin | Noise gate before any dynamics |
+| Guitar/vocal masking | Route guitars through vocal-sidechain bus | Cut guitars at 2-4 kHz |
 
 ## Interpretation Quick Reference
 
-These thresholds drive your triage decisions. For the complete measurement-to-action translation tables, see [measurement-actions.md](measurement-actions.md).
+For the complete measurement-to-action tables: load [measurement-actions.md](measurement-actions.md).
 
-| Measurement | Condition | What it means |
-|-------------|-----------|---------------|
-| Crest factor | > 15 dB | Highly dynamic, likely uncompressed (note: source-dependent -- drums and transient material naturally sit higher; a legato string section may be 6-8 dB without any compression) |
-| Crest factor | 8-12 dB | Well-recorded, normal range for mixing |
-| Crest factor | < 6 dB | Over-compressed -- do not add more compression |
-| True peak | > 0 dBTP | Hard clipping -- dealbreaker |
-| True peak | > -1 dBTP | Exceeds EBU R128 / streaming limits -- significant |
-| True peak | > -3 dBTP | Tight headroom for mastering |
-| Phase correlation | > +0.8 | Excellent mono compatibility |
-| Phase correlation | +0.5 to +0.8 | Good, normal stereo content |
-| Phase correlation | +0.3 to +0.5 | **Instrument-dependent** -- problem for bass/kick/vocal; normal for overheads/rooms/stereo keys |
-| Phase correlation | < +0.3 | Problem for any source |
-| Phase correlation | sustained negative | Possible polarity inversion (near -1 = definite) |
-| SNR | > 70 dB | Professional recording quality |
-| SNR | 60-70 dB | Good -- acceptable, gate during silence if needed |
-| SNR | 50-60 dB | Acceptable, may need noise treatment |
-| SNR | 40-50 dB | Poor -- dedicated noise reduction required |
-| SNR | < 40 dB | Unacceptable -- re-record if possible |
-| Noise floor | below -70 dBFS | Clean, no treatment needed |
-| Noise floor | -60 to -50 dBFS | Audible in quiet passages -- gate or treat quiet sections |
-| Noise floor | above -50 dBFS | Significant noise, address before mixing |
-| Masking severity | "high" at 200-500 Hz | Mud -- complementary EQ needed between conflicting stems |
-| Spectral centroid | below 1 kHz (non-bass) | Dark/muddy recording, may need high-end lift |
-| Spectral centroid | above 5 kHz | Bright/thin recording, check for missing body |
-| LRA | > 15 LU | Very dynamic -- classical, ambient, some jazz |
-| LRA | 7-12 LU | Normal range for pop/rock |
-| LRA | < 5 LU | Heavily compressed -- expected for EDM/hip-hop |
+### Crest Factor (Instrument & Playing-Style Aware)
 
-**Spectral centroid reference ranges by instrument:**
-| Instrument | Expected range | Edge cases |
-|------------|---------------|------------|
-| Vocals | 1-3 kHz | Falsetto/whisper can push to 4+ kHz |
-| Bass guitar (fingerstyle) | 200-600 Hz | Normal -- low centroid expected |
-| Bass guitar (pick/aggressive) | 400-1.2 kHz | Higher centroid is normal, not a mislabel |
-| Distorted/overdriven bass | 800-2 kHz | Harmonics shift centroid up -- expected with distortion |
-| Acoustic guitar | 1-3 kHz | Nylon-string sits lower (800 Hz-2 kHz) |
-| Electric guitar (clean) | 1-3 kHz | |
-| Electric guitar (distorted) | 2-5 kHz | Distortion adds upper harmonics |
-| Drums (overhead) | 3-6 kHz | |
-| Drums (kick) | 60-150 Hz | A "kick" at 2 kHz = mislabeled stem |
-| Synth pad | 500 Hz-3 kHz | Extremely variable by design |
-| Full mix | 2-4 kHz | Genre-dependent: metal 3-5 kHz, lo-fi 1-2 kHz |
+| Crest Factor | Drums/Percussion | Vocals/Guitar/Keys | Synth Pads/Strings |
+|-------------|-----------------|-------------------|-------------------|
+| > 15 dB | Normal — transient-heavy | Very dynamic, handle gently | Unusual — unless plucked/arpeggiated (then normal) |
+| 8-12 dB | Light compression applied | Well-recorded, standard processing | Normal |
+| < 6 dB | Over-compressed | Over-compressed | Normal for sustained sources |
 
-If a stem's centroid falls far outside its expected range, investigate: possible naming mismatch, heavy filtering, or unusual recording technique.
+**Playing style override:** When crest factor contradicts the instrument label, check the actual waveform envelope. A "synth bass" with 14 dB crest factor and percussive transients = plucky playing style, not a problem. A "drum" stem with 5 dB crest = either heavy compression or electronic/programmed drums. Use envelope shape, not instrument name, as the ground truth.
 
-## Critical: Never Assume Stem Provenance
+### Key Thresholds
 
-Mono in stereo containers (correlation=1.0, width=0) is normal. **Never conclude stems are AI-separated or pre-processed unless the user says so.** Note unusual measurements neutrally; don't speculate on provenance.
+| Measurement | Threshold | Action |
+|-------------|-----------|--------|
+| True peak > 0 dBTP | Dealbreaker | Baked clipping — de-clip or re-export |
+| True peak > -1 dBTP | Significant | Tight headroom — leave for mastering to address |
+| Phase correlation < +0.3 | Problem (center sources) | Check for polarity flip or time offset |
+| Noise floor > -50 dBFS | Significant | Dedicated noise reduction — verify with A/B |
+| SNR < 40 dB | Re-record if possible | Noise reduction cannot recover this cleanly |
 
 ## Special Scenarios
 
-### AI-separated stems (Demucs, etc.)
-**Only when user confirms.** Expect: bleed between stems (higher masking than real recordings), phase anomalies from the algorithm, possible false stereo. Check phase coherence between all stems.
+### Pre-Mastering Mix Check
 
-### Pre-mastering mix check
-Run `full_diagnostic` on the mix file, then `compare_to_profile` for the genre. Check these criteria:
+Run `full_diagnostic` on mix file, then `compare_to_profile` for genre:
 
-| # | Check | Pass | Borderline | Fail |
-|---|-------|------|------------|------|
-| 1 | Corrective EQ needed | < 2 dB anywhere | 2-3 dB in 1-2 bands | > 3 dB or multiple bands |
-| 2 | Fundamental balance | Vocals, bass, drums sit naturally | One element slightly off | Vocals buried, bass overwhelming, or drums dominating |
-| 3 | Phase (mix bus correlation) | > +0.5 | +0.3 to +0.5 | < +0.3 |
-| 4 | True peak | < -1 dBTP | -1 to 0 dBTP (tight but workable) | > 0 dBTP (baked clipping) |
-| 5 | Noise floor | < -60 dBFS | -60 to -50 dBFS | > -50 dBFS |
-| 6 | Dynamic range (LRA) | Within genre norms +/- 3 LU | 3-5 LU outside norms | > 5 LU outside genre norms |
+| Check | Pass | Borderline | Fail |
+|-------|------|------------|------|
+| Corrective EQ needed | < 2 dB | 2-3 dB in 1-2 bands | > 3 dB or multiple bands |
+| Balance | Vocals/bass/drums sit naturally | One element slightly off | Vocals buried or bass overwhelming |
+| Phase (mix bus) | > +0.5 | +0.3 to +0.5 | < +0.3 |
+| True peak | < -1 dBTP | -1 to 0 dBTP | > 0 dBTP |
+| Noise floor | < -60 dBFS | -60 to -50 dBFS | > -50 dBFS |
 
-**Borderline handling:** If all checks pass but 1-2 are borderline, the mix *can* go to mastering with a note. If 3+ are borderline, recommend another mix pass. Any single fail = send back with specific fix instructions.
+1-2 borderline = proceed to mastering with notes. 3+ borderline = another mix pass. Any fail = send back with specific fix: "Corrective EQ fail" → identify which bands and by how much; "Vocals buried" → raise 2-4 kHz by estimated amount; "True peak fail" → pull master fader down by excess amount.
 
-### Quick single-stem assessment
-For a single stem with a specific complaint ("this vocal sounds weird"), run `full_diagnostic` on that one file. Don't overcomplicate it. But always check phase if the complaint involves how it sounds *in context* with other stems -- that's the phase cancellation signature.
+### Mid-Mix Diagnostics
 
-### Stem content verification
-If you notice a stem's spectral characteristics don't match its filename -- a "kick.wav" with a spectral centroid at 2 kHz, or a "bass.wav" with most energy above 1 kHz -- flag it. A mislabeled stem will silently corrupt every downstream decision: the masking map, bus routing, and processing choices. When in doubt, note the anomaly and ask the user to confirm.
+When running on a mix-in-progress (not raw stems), processing is already applied. Don't flag compression as "over-compressed stems" or EQ curves as problems if the engineer applied them intentionally. Ask what processing has been done before diagnosing. Focus on: new problems introduced by processing (distortion from overdriven plugins, phase shift from linear-phase EQ on transients), and remaining issues the current processing hasn't addressed.
 
-### Click or metronome bleed
-If a stem shows perfectly regular transient peaks at a consistent frequency (often around 1 kHz or 2-3 kHz for woodblock samples), it may contain click track bleed or an accidentally exported metronome. Flag it for the user -- a click track in the masking analysis would produce misleading results.
+### Quick Single-Stem Assessment
+
+For "this vocal sounds weird" — run `full_diagnostic` on that one file. But always check phase if the complaint involves how it sounds *in context* — that's the phase cancellation signature.
 
 ## Reference Materials
 
-See [measurement-actions.md](measurement-actions.md) and [mix-brief-template.md](mix-brief-template.md).
+- [measurement-actions.md](measurement-actions.md) — complete measurement-to-action translation tables
+- [mix-brief-template.md](mix-brief-template.md) — structured brief template for downstream skills
+- Spectral centroid reference ranges and stem content verification rules are in measurement-actions.md
+
+## Final Checklist (restated for attention)
+
+1. Phase before everything — find phase problems before they waste mixing hours
+2. Interpret in instrument context — crest factor, centroid, and correlation all depend on source type
+3. Genre context — lo-fi noise and rolled-off highs are aesthetic, not problems
+4. Don't speculate on provenance — mono in stereo is normal, don't assume AI separation
+5. Processing order matters — noise removal before compression, phase before EQ
+6. Handoff explicitly — tell downstream skills exactly what to do with each finding
+7. Confidence always — prefix every finding with Definite/Likely/Possible so engineers know what to trust

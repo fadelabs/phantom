@@ -18,7 +18,7 @@ Specific effect chain recipes for common sound design goals. Each recipe lists t
 
 ## Massive Guitars
 
-**Goal:** Wall of sound that fills the stereo field without losing articulation.
+**Goal:** Dense, massive guitar wall that fills the stereo field without losing articulation.
 
 **Chain (for articulate heavy tone):**
 1. Amp distortion (the guitar's own gain)
@@ -33,16 +33,16 @@ Specific effect chain recipes for common sound design goals. Each recipe lists t
 
 **The key distinction:** Distortion-into-reverb = you hear the distortion clearly in a space. Reverb-into-distortion = the reverb itself is distorted, creating a wall where individual notes dissolve.
 
-## Tool-Style Vocal Distortion
+## Aggressive Vocal Distortion
 
-**Goal:** Controlled grit and edge on vocals — Maynard James Keenan's signature sound. Not fuzz, not clean — a focused aggression that sits in a heavy mix.
+**Goal:** Controlled grit and edge on vocals — focused aggression, not fuzz, not clean. A driven tone that sits in a heavy mix without becoming harsh.
 
 **Chain (direct vocal):**
 1. EQ — HPF 80 Hz, gentle cut at 300-400 Hz (remove body mud), presence boost at 3-5 kHz
 2. Compressor — aggressive ratio (4:1+), fast attack, auto-gain. Vocals need to be even before distortion hits.
 3. Pitch correction — before distortion, not after. Correcting pitch on a distorted signal produces artifacts.
-4. Exciter/Saturation — Neutron 4 Exciter with Trash mode on ONE band only (typically band 1, low-mids). **Drive at 10-20%, NOT higher.** 50%+ sounds like a broken speaker, not Tool. Mix at 50-70%.
-5. Tone control — dark the exciter output (tone knob toward warm). Tool vocals are gritty but not bright.
+4. Exciter/Saturation — Neutron 4 Exciter with Trash mode on ONE band only (typically band 1, low-mids). **Drive at 10-20%, NOT higher.** 50%+ sounds like a broken speaker, not controlled aggression. Mix at 50-70%.
+5. Tone control — dark the exciter output (tone knob toward warm). Aggressive vocals should be gritty but not bright.
 
 **Chain (parallel distortion bus):**
 1. Ozone Vintage Tape — input drive 50-60%, harmonics 30-40%, max speed. This is the warmth layer.
@@ -52,7 +52,7 @@ Specific effect chain recipes for common sound design goals. Each recipe lists t
 
 **Send level:** Start at -18 dB and bring up slowly. -8 to -12 dB is typical. The parallel bus adds texture, not volume.
 
-**Critical mistake to avoid:** Setting exciter drive above 40% on the direct vocal. Every 10% above 20% adds exponentially more distortion. The sweet spot for Tool-style is 10-20% direct, 25-35% parallel.
+**Critical mistake to avoid:** Setting exciter drive above 40% on the direct vocal. Every 10% above 20% adds exponentially more distortion. The sweet spot for aggressive vocal distortion is 10-20% direct, 25-35% parallel.
 
 **Vocal doubler for choruses:**
 1. ReaDelay — very short (20-30ms), no feedback, 100% wet (it's a send)
@@ -71,7 +71,7 @@ Specific effect chain recipes for common sound design goals. Each recipe lists t
 
 ## Gated Drums (80s Style)
 
-**Goal:** Big, explosive drum hits that cut off abruptly -- the Phil Collins sound.
+**Goal:** Big, explosive drum hits that cut off abruptly — the classic gated reverb effect.
 
 **Chain:**
 1. Heavy compression (10:1, fast attack 1-3 ms, fast release 30-50 ms) -- squash the dynamics
