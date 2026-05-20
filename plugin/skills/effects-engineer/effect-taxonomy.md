@@ -6,13 +6,15 @@ Deep dive into every effect category with the science behind why they sound the 
 
 ### Harmonic Content by Type
 
-| Type | Clipping Shape | Harmonics Produced | Sonic Character |
-|------|---------------|-------------------|-----------------|
-| Tube | Asymmetrical soft-clip | Even-order (2nd, 4th, 6th) | Warm, musical -- harmonics are octaves and fifths |
-| Tape | Compression + soft saturation | Mix of even and odd, with HF rolloff | Glue, warmth, rounded transients |
-| Transistor | Symmetrical hard-clip | Odd-order (3rd, 5th, 7th) | Gritty, aggressive -- dissonant harmonics |
-| Transformer | Core saturation | Transient softening, subtle harmonics | Dense, weighty, less "distorted" sounding |
-| Digital/Bitcrusher | Quantization + sample rate reduction | Aliasing artifacts, not traditional harmonics | Lo-fi, retro, deliberately degraded |
+
+| Type               | Clipping Shape                       | Harmonics Produced                            | Sonic Character                                   |
+| ------------------ | ------------------------------------ | --------------------------------------------- | ------------------------------------------------- |
+| Tube               | Asymmetrical soft-clip               | Even-order (2nd, 4th, 6th)                    | Warm, musical -- harmonics are octaves and fifths |
+| Tape               | Compression + soft saturation        | Mix of even and odd, with HF rolloff          | Glue, warmth, rounded transients                  |
+| Transistor         | Symmetrical hard-clip                | Odd-order (3rd, 5th, 7th)                     | Gritty, aggressive -- dissonant harmonics         |
+| Transformer        | Core saturation                      | Transient softening, subtle harmonics         | Dense, weighty, less "distorted" sounding         |
+| Digital/Bitcrusher | Quantization + sample rate reduction | Aliasing artifacts, not traditional harmonics | Lo-fi, retro, deliberately degraded               |
+
 
 **Why symmetry matters:** Symmetrical clipping (equal on positive and negative swing) produces only odd-order harmonics. Asymmetrical clipping (different behavior on each swing, like a tube with different plate/cathode characteristics) produces both even and odd harmonics. Even harmonics are musically consonant (the 2nd harmonic is an octave above the fundamental), which is why tube distortion sounds "musical" and transistor distortion sounds "harsh."
 
@@ -72,24 +74,28 @@ Multiplies two signals together. Unlike mixing (additive), multiplication create
 
 ### Delay Taxonomy
 
-| Type | Delay Time | Repeats | Character | Mechanism |
-|------|-----------|---------|-----------|-----------|
-| Slapback | 50-120 ms | 1 | Thickening, doubling | Simple delay, no feedback |
-| Ping-pong | Variable | Multiple, alternating L/R | Width, spatial movement | Stereo delay with alternating output |
-| Tape | Variable | Degrading | Warm, vintage, organic | Wow/flutter modulation, HF rolloff on repeats |
-| Analog/BBD | Variable | Dark, warm | Lo-fi warmth | Bucket-brigade device emulation, noise and artifacts |
-| Digital | Variable | Clean, precise | Transparent, modern | Pure delay, no coloration |
-| Granular | Variable | Fragmented, textural | Experimental, ambient | Audio split into grains, rearranged |
-| Reverse | Variable | Pre-echo swell | Atmospheric, transitional | Reversed delay buffer |
-| Multi-tap | Variable patterns | Rhythmic | Complex grooves, polyrhythmic | Multiple delay taps at different times |
+
+| Type       | Delay Time        | Repeats                   | Character                     | Mechanism                                            |
+| ---------- | ----------------- | ------------------------- | ----------------------------- | ---------------------------------------------------- |
+| Slapback   | 50-120 ms         | 1                         | Thickening, doubling          | Simple delay, no feedback                            |
+| Ping-pong  | Variable          | Multiple, alternating L/R | Width, spatial movement       | Stereo delay with alternating output                 |
+| Tape       | Variable          | Degrading                 | Warm, vintage, organic        | Wow/flutter modulation, HF rolloff on repeats        |
+| Analog/BBD | Variable          | Dark, warm                | Lo-fi warmth                  | Bucket-brigade device emulation, noise and artifacts |
+| Digital    | Variable          | Clean, precise            | Transparent, modern           | Pure delay, no coloration                            |
+| Granular   | Variable          | Fragmented, textural      | Experimental, ambient         | Audio split into grains, rearranged                  |
+| Reverse    | Variable          | Pre-echo swell            | Atmospheric, transitional     | Reversed delay buffer                                |
+| Multi-tap  | Variable patterns | Rhythmic                  | Complex grooves, polyrhythmic | Multiple delay taps at different times               |
+
 
 ### Reverb Deep Dive
 
 **Algorithmic vs Convolution:**
+
 - Algorithmic: mathematically generated, fully adjustable (size, decay, diffusion, damping). Consistent character. Lower CPU. Better for creative use where you need to adjust parameters.
 - Convolution: captured from real spaces (impulse response). Realistic but static -- you can't change the size of a real room. Higher CPU. Better for realistic acoustic simulation.
 
 **Key reverb parameters:**
+
 - **Pre-delay** (0-100 ms): gap between dry signal and reverb onset. Crucial for clarity.
 - **Early reflections**: the first bounces off nearby surfaces. Defines the room character (small/large, reflective/absorbent).
 - **Diffusion**: how quickly the reflections smear into a continuous tail. High diffusion = smooth. Low diffusion = more discrete echoes.
@@ -97,10 +103,9 @@ Multiplies two signals together. Unlike mixing (additive), multiplication create
 - **Damping**: HF absorption over time. High damping = reverb gets darker as it decays (natural -- air absorbs high frequencies). Low damping = bright, ringy tail.
 - **Decay time**: how long the tail lasts. Room: 0.3-1s. Plate: 1-3s. Hall: 2-6s.
 
-## Producer Signature Techniques
+## Creative Mindset Shifts
 
-Techniques worth studying, described by approach rather than attribution (per privacy guidelines):
+- **Plugins as instruments, not just corrective tools.** Building per-song delay patches or saturation chains from scratch, rather than reaching for presets, forces you to listen and shape the effect to the material. The result is processing that serves the song rather than imposing a generic character.
+- **Overdrive as a mixing strategy.** Pushing saturation across multiple channels creates high-contrast mixes where every element occupies a distinct sonic space. The key is aggressive tonal shaping after the drive, each overdriven source needs its own EQ pocket or the density becomes mud.
+- **Embracing imperfection.** Some of the most interesting sounds come from signal paths that aren't "clean." Pushing gear or plugins past their intended range, combining incompatible processing, or leaving in artifacts that add character, these can define a mix's identity more than any technically correct decision.
 
-- **The Soundtoys stack approach**: per-song delay patches using character plugins, heavy harmonic saturation for grit on every source, treating plugins as instruments rather than corrective tools
-- **SansAmp-on-everything approach**: overdriving every channel for high-contrast mixing, binaural recording techniques for width, aggressive tonal shaping that makes every element occupy a distinct sonic space
-- **Hardware-first approach**: analog modular processing, finding sounds through physical interaction with equipment, pushing creative boundaries by embracing imperfection and happy accidents

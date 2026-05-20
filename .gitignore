@@ -56,6 +56,7 @@ venv/
 
 # Internal design specs and milestone plans
 docs/superpowers/
+docs/research/
 
 # Skill evaluation workspaces (contain local paths)
 plugin/eval-workspaces/
