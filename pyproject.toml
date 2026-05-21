@@ -36,7 +36,7 @@ dependencies = [
     "pydantic>=2.0",
     "essentia==2.1b6.dev1389",
     "scipy>=1.12",
-    "fastmcp>=2.0,<3.0",
+    "fastmcp>=2.0,<4.0",
     "click>=8.0",
     "rich>=13.0",
     "rich-click>=1.8",
