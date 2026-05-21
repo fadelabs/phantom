@@ -34,7 +34,7 @@ dependencies = [
     "numpy>=2.0",
     "soundfile>=0.13.0",
     "pydantic>=2.0",
-    "essentia==2.1b6.dev1389",
+    "essentia==2.1b6.dev1438",
     "scipy>=1.12",
     "fastmcp>=2.0,<3.0",
     "click>=8.0",
