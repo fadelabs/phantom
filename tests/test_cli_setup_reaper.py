@@ -494,3 +494,28 @@ class TestLuaWhitelist:
         assert (
             "skipping unexpected" in output_lower or "unexpected lua" in output_lower
         ), f"Expected warning about unexpected Lua files in output: {result.output}"
+
+
+class TestNormalizeGitRemote:
+    """Strict remote matching can't be fooled by substring lookalikes."""
+
+    def test_https_and_ssh_match(self):
+        from phantom.cli.setup_reaper import _normalize_git_remote
+
+        https = _normalize_git_remote("https://github.com/fadelabs/reaper-mcp.git")
+        ssh = _normalize_git_remote("git@github.com:fadelabs/reaper-mcp.git")
+        assert https == ssh == "github.com/fadelabs/reaper-mcp"
+
+    def test_lookalike_host_does_not_match(self):
+        from phantom.cli.setup_reaper import _normalize_git_remote
+
+        expected = _normalize_git_remote("https://github.com/fadelabs/reaper-mcp.git")
+        evil = _normalize_git_remote("https://evil.com/fadelabs/reaper-mcp.git")
+        assert evil != expected
+
+    def test_lookalike_repo_suffix_does_not_match(self):
+        from phantom.cli.setup_reaper import _normalize_git_remote
+
+        expected = _normalize_git_remote("https://github.com/fadelabs/reaper-mcp.git")
+        evil = _normalize_git_remote("https://github.com/fadelabs/reaper-mcp-x.git")
+        assert evil != expected

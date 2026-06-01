@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 import shutil
 import subprocess
 import sys
@@ -13,6 +12,7 @@ import rich_click as click
 from rich.panel import Panel
 from rich.status import Status
 
+from phantom._utils import atomic_write_text
 from phantom.cli._formatting import get_console, output_json
 from phantom.exceptions import RECOMMENDED_PYTHON
 
@@ -66,9 +66,7 @@ def _setup_mcp_config(console, json_mode: bool) -> dict:
 
     servers["phantom"] = _PHANTOM_MCP_ENTRY
 
-    tmp = str(target) + ".tmp"
-    Path(tmp).write_text(json.dumps(existing, indent=2) + "\n")
-    os.replace(tmp, str(target))
+    atomic_write_text(target, json.dumps(existing, indent=2) + "\n")
 
     if not json_mode:
         console.print(f"  {OK} Phantom MCP server configured in {target}")

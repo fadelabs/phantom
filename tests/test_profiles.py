@@ -212,6 +212,21 @@ class TestMalformedProfile:
         with pytest.raises(ProfileLoadError, match="invalid JSON"):
             load_profile("broken")
 
+    def test_deeply_nested_json_rejected_without_recursion_error(
+        self, tmp_path, monkeypatch
+    ):
+        """Pathologically nested JSON raises ProfileLoadError, not RecursionError.
+
+        The depth must be checked on raw text before json.loads(), which would
+        otherwise recurse past sys.getrecursionlimit() while parsing.
+        """
+        depth = 100_000  # far beyond the recursion limit
+        (tmp_path / "bomb.json").write_text("[" * depth + "]" * depth)
+        monkeypatch.setenv("PHANTOM_PROFILES_DIR", str(tmp_path))
+
+        with pytest.raises(ProfileLoadError, match="nesting depth"):
+            load_profile("bomb")
+
     def test_wrong_field_type(self, tmp_path, monkeypatch):
         """Profile with wrong field types raises ProfileLoadError."""
         bad_profile = {

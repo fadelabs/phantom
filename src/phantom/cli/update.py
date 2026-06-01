@@ -22,6 +22,30 @@ RELEASES_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 TAGS_URL = f"https://api.github.com/repos/{GITHUB_REPO}/tags?per_page=1"
 RELEASES_PAGE = f"https://github.com/{GITHUB_REPO}/releases"
 UV_INSTALL_PACKAGE = "phantom-audio"
+
+# User-facing extras that may legitimately be preserved across an upgrade.
+_ALLOWED_EXTRAS = frozenset({"analysis", "separation", "matching", "processing", "all"})
+
+
+def _installed_package_spec(uv_tool_list_output: str) -> str:
+    """Reconstruct the install spec from `uv tool list`, keeping only known extras.
+
+    The parsed extras are reflected into a `uv tool install` argument, so any
+    unknown/crafted bracket content is dropped to avoid influencing what gets
+    installed.
+    """
+    for line in uv_tool_list_output.splitlines():
+        if "phantom-audio" in line and "[" in line and "]" in line:
+            start = line.index("[")
+            end = line.index("]")
+            extras = [e.strip() for e in line[start + 1 : end].split(",") if e.strip()]
+            valid = [e for e in extras if e in _ALLOWED_EXTRAS]
+            if valid:
+                return f"{UV_INSTALL_PACKAGE}[{','.join(valid)}]"
+            break
+    return UV_INSTALL_PACKAGE
+
+
 CACHE_DIR = Path("~/.phantom").expanduser()
 CACHE_FILE = CACHE_DIR / "update-check.json"
 CACHE_TTL_HOURS = 24
@@ -244,7 +268,7 @@ def update(yes: bool) -> None:
     )
 
     if proc.returncode != 0 and "no such command" in proc.stderr.lower():
-        # Detect current extras so reinstall preserves them
+        # Detect current extras so reinstall preserves them (allowlisted only)
         installed_pkg = UV_INSTALL_PACKAGE
         try:
             list_proc = subprocess.run(
@@ -252,12 +276,7 @@ def update(yes: bool) -> None:
                 capture_output=True,
                 text=True,
             )
-            for line in list_proc.stdout.splitlines():
-                if "phantom-audio" in line and "[" in line:
-                    start = line.index("[")
-                    end = line.index("]") + 1
-                    installed_pkg = f"phantom-audio{line[start:end]}"
-                    break
+            installed_pkg = _installed_package_spec(list_proc.stdout)
         except Exception:
             pass
         proc = subprocess.run(

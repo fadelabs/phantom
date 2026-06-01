@@ -86,17 +86,35 @@ class ReferenceProfile(BaseModel):
     processing_notes: str
 
 
-def _json_depth(obj, current: int = 1) -> int:
-    """Return the maximum nesting depth of a parsed JSON structure."""
-    if isinstance(obj, dict):
-        if not obj:
-            return current
-        return max(_json_depth(v, current + 1) for v in obj.values())
-    if isinstance(obj, list):
-        if not obj:
-            return current
-        return max(_json_depth(v, current + 1) for v in obj)
-    return current
+def _max_json_nesting(text: str) -> int:
+    """Max structural nesting depth from raw JSON text, ignoring string contents.
+
+    Scans without parsing so deeply nested input is rejected *before*
+    json.loads(), which would itself recurse and could raise RecursionError on
+    pathological input (e.g. 1 MB of "[").
+    """
+    depth = 0
+    max_depth = 0
+    in_string = False
+    escaped = False
+    for ch in text:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch in "[{":
+            depth += 1
+            if depth > max_depth:
+                max_depth = depth
+        elif ch in "]}":
+            depth -= 1
+    return max_depth
 
 
 # mtime-based cache: {resolved_name: (mtime, ReferenceProfile)}
@@ -174,13 +192,13 @@ def _load_user_profile(name: str) -> dict | None:
         raise ProfileLoadError(f"Profile file too large: {name}")
 
     text = path.read_text(encoding="utf-8")
+    # Depth guard BEFORE parsing: json.loads() recurses while building the
+    # structure, so a deeply nested document must be rejected on the raw text
+    # first, or it raises RecursionError instead of our error.
+    if _max_json_nesting(text) > 10:
+        raise ProfileLoadError(f"Profile '{name}' exceeds maximum nesting depth")
     try:
-        # Depth guard: reject excessively nested JSON (could exhaust recursion)
-        decoder = json.JSONDecoder()
-        result = decoder.decode(text)
-        if _json_depth(result) > 10:
-            raise ProfileLoadError(f"Profile '{name}' exceeds maximum nesting depth")
-        return result
+        return json.loads(text)
     except json.JSONDecodeError as exc:
         raise ProfileLoadError(
             f"Profile '{name}' contains invalid JSON: {exc}"

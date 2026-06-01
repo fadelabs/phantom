@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import functools
 import os
+import tempfile
+from pathlib import Path
 
 import numpy as np
 
@@ -11,6 +13,30 @@ from phantom.exceptions import AnalysisError, PathSecurityError, PhantomError
 
 # Silence threshold in dBFS -- signals below this are treated as silence.
 SILENCE_THRESHOLD_DB = -80.0
+
+
+def atomic_write_text(path: str | Path, content: str) -> None:
+    """Atomically write *content* to *path* without a predictable temp file.
+
+    Creates a unique temp file (O_EXCL, mode 0600) in the destination directory
+    via tempfile.mkstemp, then os.replace() to swap it in. This avoids a
+    predictable '<target>.tmp' sibling that an attacker with directory write
+    access could pre-place as a symlink to redirect the write.
+    """
+    path = Path(path)
+    fd, tmp = tempfile.mkstemp(
+        dir=str(path.parent), prefix=f".{path.name}.", suffix=".tmp"
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(content)
+        os.replace(tmp, str(path))
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def _get_env_int(name: str, default: int) -> int:

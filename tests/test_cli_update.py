@@ -378,3 +378,32 @@ class TestStartupHook:
         with patch("phantom.cli.update.check_for_update", return_value=None):
             result = runner.invoke(cli, ["doctor", "--help"])
             assert "Update available" not in result.output
+
+
+class TestInstalledPackageSpec:
+    """Extras parsed from `uv tool list` are allowlisted before reuse."""
+
+    def test_valid_extras_preserved(self):
+        from phantom.cli.update import _installed_package_spec
+
+        out = "phantom-audio[separation,processing] v1.3.0 (/path)\n"
+        assert _installed_package_spec(out) == "phantom-audio[separation,processing]"
+
+    def test_unknown_extras_dropped(self):
+        from phantom.cli.update import _installed_package_spec
+
+        out = "phantom-audio[evil,separation] v1.3.0 (/path)\n"
+        # Only the known extra survives; the crafted one is dropped.
+        assert _installed_package_spec(out) == "phantom-audio[separation]"
+
+    def test_all_unknown_falls_back_to_bare(self):
+        from phantom.cli.update import _installed_package_spec
+
+        out = "phantom-audio[../../etc/passwd] v1.3.0 (/path)\n"
+        assert _installed_package_spec(out) == "phantom-audio"
+
+    def test_no_extras_returns_bare(self):
+        from phantom.cli.update import _installed_package_spec
+
+        out = "phantom-audio v1.3.0 (/path)\n"
+        assert _installed_package_spec(out) == "phantom-audio"

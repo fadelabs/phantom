@@ -116,7 +116,16 @@ def _to_tool_error(exc: Exception, context: dict | None = None) -> ToolError:
                 f"[phantom-debug] {type(exc).__name__}: {exc}",
                 file=sys.stderr,
             )
-    error_info["context"] = context if context else {}
+    # Redact absolute paths from context values too — they are captured verbatim
+    # from tool arguments and would otherwise leak full paths into shared
+    # logs/transcripts even though `message` is already redacted.
+    if context:
+        error_info["context"] = {
+            k: (_PATH_REGEX.sub("", v) if isinstance(v, str) else v)
+            for k, v in context.items()
+        }
+    else:
+        error_info["context"] = {}
     return ToolError(json.dumps(error_info))
 
 
@@ -477,6 +486,34 @@ def multi_stem_masking(file_paths: list[str]) -> dict:
                     "error_type": "ValidationError",
                     "message": "At least 2 file paths required for masking analysis.",
                     "context": {},
+                }
+            )
+        )
+
+    # Aggregate memory guard: this tool holds every stem in memory at once, so
+    # the per-file size/duration limits in load_audio aren't sufficient. Peek
+    # each header and reject if the combined decoded size would be excessive
+    # (default 4 GB, override via PHANTOM_MAX_AGGREGATE_BYTES).
+    import soundfile as sf
+
+    max_aggregate = _get_env_int("PHANTOM_MAX_AGGREGATE_BYTES", 4_000_000_000)
+    total_bytes = 0
+    for p in file_paths:
+        try:
+            info = sf.info(p)
+        except Exception:
+            continue  # defer to load_audio below for a precise error
+        total_bytes += info.frames * info.channels * 4  # float32 decoded
+    if total_bytes > max_aggregate:
+        raise ToolError(
+            json.dumps(
+                {
+                    "error_type": "ValidationError",
+                    "message": (
+                        f"Combined stem size (~{total_bytes // 1_000_000} MB decoded) "
+                        "exceeds the aggregate limit. Reduce the number or length of stems."
+                    ),
+                    "context": {"max_aggregate_bytes": max_aggregate},
                 }
             )
         )
