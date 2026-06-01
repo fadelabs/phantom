@@ -275,8 +275,8 @@ Environment variables for security and resource limits:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `PHANTOM_AUDIO_DIR` | *(none)* | Restrict file access to this directory tree |
-| `PHANTOM_OUTPUT_DIR` | *(none)* | Restrict output file paths |
+| `PHANTOM_AUDIO_DIR` | *(none)* | Restrict input file reads to this directory tree. When unset, inputs may be read from anywhere (Phantom's core use case); writes are always confined regardless. |
+| `PHANTOM_OUTPUT_DIR` | `~/.phantom/output` | Directory all file writes are confined to. Writes outside it are rejected. Defaults to a sandbox (created on demand); set this to write elsewhere. |
 | `PHANTOM_MAX_DURATION` | 900 (15 min) | Maximum audio duration in seconds |
 | `PHANTOM_MAX_FILE_SIZE` | 524288000 (500 MB) | Maximum file size in bytes |
 | `PHANTOM_PROFILES_DIR` | *(built-in)* | Custom reference profile directory |
