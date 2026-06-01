@@ -20,6 +20,312 @@ def runner():
 
 
 # ---------------------------------------------------------------------------
+# Backup-instead-of-destroy (issue #6)
+# ---------------------------------------------------------------------------
+
+
+class TestBackupDir:
+    """_backup_dir moves a prior install aside instead of deleting it."""
+
+    def test_moves_and_preserves_contents(self, tmp_path):
+        from phantom.cli.setup_reaper import _backup_dir
+
+        d = tmp_path / "reaper-mcp"
+        d.mkdir()
+        (d / "marker.txt").write_text("keep me")
+        backup = _backup_dir(d)
+        assert not d.exists()  # original moved away, not left in place
+        assert backup.exists()
+        assert (backup / "marker.txt").read_text() == "keep me"
+        assert backup.name.startswith("reaper-mcp.bak.")
+
+    def test_collision_disambiguated(self, tmp_path):
+        from phantom.cli.setup_reaper import _backup_dir
+
+        # Pre-create a same-second backup so the helper must disambiguate.
+        d = tmp_path / "reaper-mcp"
+        d.mkdir()
+        b1 = _backup_dir(d)
+        d.mkdir()
+        b2 = _backup_dir(d)
+        assert b1 != b2
+        assert b1.exists() and b2.exists()
+
+
+class TestDryRun:
+    """--dry-run previews actions and mutates nothing (issue #6)."""
+
+    def test_dry_run_makes_no_mutations(self, runner, tmp_path):
+        install_dir = tmp_path / "reaper-mcp"
+        scripts_dir = tmp_path / "reaper-scripts"
+        scripts_dir.mkdir()
+        with (
+            patch("phantom.cli.setup_reaper.shutil.which", return_value="/usr/bin/git"),
+            patch(
+                "phantom.cli.setup_reaper._get_reaper_scripts_dir",
+                return_value=scripts_dir,
+            ),
+            patch("phantom.cli.setup_reaper.subprocess.run") as mock_run,
+        ):
+            result = runner.invoke(
+                cli, ["setup-reaper", "--install-dir", str(install_dir), "--dry-run"]
+            )
+        assert result.exit_code == 0
+        assert not mock_run.called  # no git/uv invoked
+        assert not install_dir.exists()  # nothing cloned
+        assert not (scripts_dir / "__startup.lua").exists()  # no startup write
+        assert not (scripts_dir / "mcp_bridge_data").exists()  # no bridge dir
+        assert "Dry run" in result.output
+
+    def test_dry_run_json_plan(self, runner, tmp_path):
+        install_dir = tmp_path / "reaper-mcp"
+        scripts_dir = tmp_path / "reaper-scripts"
+        scripts_dir.mkdir()
+        with (
+            patch("phantom.cli.setup_reaper.shutil.which", return_value="/usr/bin/git"),
+            patch(
+                "phantom.cli.setup_reaper._get_reaper_scripts_dir",
+                return_value=scripts_dir,
+            ),
+            patch("phantom.cli.setup_reaper.subprocess.run") as mock_run,
+        ):
+            result = runner.invoke(
+                cli,
+                [
+                    "setup-reaper",
+                    "--install-dir",
+                    str(install_dir),
+                    "--dry-run",
+                    "--json",
+                ],
+            )
+        import json
+
+        data = json.loads(result.output)
+        assert data["dry_run"] is True
+        assert data["clone_url"].endswith("reaper-mcp.git")
+        assert data["mcp_config_target"].endswith(".mcp.json")
+        assert not mock_run.called
+        assert not install_dir.exists()
+
+
+class TestUninstall:
+    """--uninstall reverses an install (issue #6)."""
+
+    def _make_install(self, tmp_path):
+        import json
+
+        install_dir = tmp_path / "reaper-mcp"
+        install_dir.mkdir()
+        (install_dir / "reaper_mcp_server.py").write_text("# server\n")
+        scripts_dir = tmp_path / "scripts"
+        scripts_dir.mkdir()
+        (scripts_dir / "reaper_mcp_bridge.lua").write_text("-- bridge\n")
+        (scripts_dir / "mcp_bridge_data").mkdir()
+        startup = scripts_dir / "__startup.lua"
+        startup.write_text(
+            'print("user code")\n\n'
+            "-- [phantom] auto-start MCP bridge\n"
+            'dofile(reaper.GetResourcePath() .. "/Scripts/reaper_mcp_bridge.lua")\n'
+            "-- [/phantom]\n"
+        )
+        mcp = tmp_path / ".mcp.json"
+        mcp.write_text(
+            json.dumps(
+                {"mcpServers": {"reaper": {"command": "uv"}, "other": {"command": "x"}}}
+            )
+        )
+        return install_dir, scripts_dir, startup, mcp
+
+    def test_uninstall_reverses_everything(self, runner, tmp_path):
+        import json
+
+        install_dir, scripts_dir, startup, mcp = self._make_install(tmp_path)
+
+        with (
+            patch(
+                "phantom.cli.setup_reaper._get_reaper_scripts_dir",
+                return_value=scripts_dir,
+            ),
+            patch("phantom.cli.setup_reaper._resolve_mcp_target", return_value=mcp),
+        ):
+            result = runner.invoke(
+                cli,
+                [
+                    "setup-reaper",
+                    "--install-dir",
+                    str(install_dir),
+                    "--uninstall",
+                    "--yes",
+                ],
+            )
+
+        assert result.exit_code == 0
+        assert not install_dir.exists()  # moved to backup
+        assert list(tmp_path.glob("reaper-mcp.bak.*"))  # backup exists
+        assert not (scripts_dir / "reaper_mcp_bridge.lua").exists()
+        assert not (scripts_dir / "mcp_bridge_data").exists()
+        startup_text = startup.read_text()
+        assert "[phantom]" not in startup_text
+        assert 'print("user code")' in startup_text  # unrelated content preserved
+        servers = json.loads(mcp.read_text())["mcpServers"]
+        assert "reaper" not in servers
+        assert "other" in servers  # other entries untouched
+
+    def test_uninstall_dry_run_no_mutations(self, runner, tmp_path):
+        install_dir, scripts_dir, startup, mcp = self._make_install(tmp_path)
+        startup_before = startup.read_text()
+
+        with (
+            patch(
+                "phantom.cli.setup_reaper._get_reaper_scripts_dir",
+                return_value=scripts_dir,
+            ),
+            patch("phantom.cli.setup_reaper._resolve_mcp_target", return_value=mcp),
+        ):
+            result = runner.invoke(
+                cli,
+                [
+                    "setup-reaper",
+                    "--install-dir",
+                    str(install_dir),
+                    "--uninstall",
+                    "--dry-run",
+                ],
+            )
+
+        assert result.exit_code == 0
+        assert install_dir.exists()  # untouched
+        assert (scripts_dir / "reaper_mcp_bridge.lua").exists()
+        assert startup.read_text() == startup_before
+        assert "Dry run" in result.output
+
+    def test_uninstall_nothing_to_remove(self, runner, tmp_path):
+        scripts_dir = tmp_path / "scripts"
+        scripts_dir.mkdir()
+        mcp = tmp_path / ".mcp.json"  # does not exist
+
+        with (
+            patch(
+                "phantom.cli.setup_reaper._get_reaper_scripts_dir",
+                return_value=scripts_dir,
+            ),
+            patch("phantom.cli.setup_reaper._resolve_mcp_target", return_value=mcp),
+        ):
+            result = runner.invoke(
+                cli,
+                [
+                    "setup-reaper",
+                    "--install-dir",
+                    str(tmp_path / "absent"),
+                    "--uninstall",
+                    "--yes",
+                ],
+            )
+
+        assert result.exit_code == 0
+        assert "Nothing to uninstall" in result.output
+
+
+class TestStartupBlockRemoval:
+    """_remove_startup_block strips only the phantom block."""
+
+    def test_strips_block_preserves_rest(self):
+        from phantom.cli.setup_reaper import _remove_startup_block
+
+        content = (
+            'print("a")\n\n'
+            "-- [phantom] auto-start MCP bridge\n"
+            'dofile("x")\n'
+            "-- [/phantom]\n"
+        )
+        out = _remove_startup_block(content)
+        assert "[phantom]" not in out
+        assert 'print("a")' in out
+
+    def test_returns_none_without_block(self):
+        from phantom.cli.setup_reaper import _remove_startup_block
+
+        assert _remove_startup_block('print("a")\n') is None
+
+    def test_empty_when_only_block(self):
+        from phantom.cli.setup_reaper import _remove_startup_block
+
+        content = '-- [phantom] auto-start MCP bridge\ndofile("x")\n-- [/phantom]\n'
+        assert _remove_startup_block(content) == ""
+
+
+class TestTransactionalStaging:
+    """Fresh install stages in a tempdir and moves on success (issue #6)."""
+
+    def test_sync_failure_leaves_fs_unchanged(self, runner, tmp_path):
+        """If uv sync fails after clone, no half-install is left behind."""
+        from pathlib import Path
+
+        install_dir = tmp_path / "reaper-mcp"
+        scripts_dir = tmp_path / "reaper-scripts"
+        scripts_dir.mkdir()
+
+        def fake_run_step(cmd, step_name, timeout=None):
+            if "clone" in cmd:
+                # Simulate a successful clone populating the staging dir.
+                target = Path(cmd[-1])
+                (target / "pyproject.toml").write_text("[project]\nname = 'x'\n")
+                (target / "reaper_mcp_bridge.lua").write_text("-- bridge\n")
+            elif "sync" in cmd:
+                raise click.ClickException("uv sync failed")
+
+        with (
+            patch("phantom.cli.setup_reaper.shutil.which", return_value="/usr/bin/git"),
+            patch(
+                "phantom.cli.setup_reaper._get_reaper_scripts_dir",
+                return_value=scripts_dir,
+            ),
+            patch("phantom.cli.setup_reaper._run_step", side_effect=fake_run_step),
+        ):
+            result = runner.invoke(
+                cli, ["setup-reaper", "--install-dir", str(install_dir)]
+            )
+
+        assert result.exit_code != 0  # failure surfaced
+        assert not install_dir.exists()  # no half-installed bridge
+        assert not (tmp_path / ".staging").exists()  # staging cleaned up
+        # No Lua leaked into the Reaper scripts dir either.
+        assert not (scripts_dir / "reaper_mcp_bridge.lua").exists()
+
+    def test_success_moves_into_place(self, runner, tmp_path):
+        """On success the staged tree is moved to install_dir and staging removed."""
+        from pathlib import Path
+
+        install_dir = tmp_path / "reaper-mcp"
+        scripts_dir = tmp_path / "reaper-scripts"
+        scripts_dir.mkdir()
+
+        def fake_run_step(cmd, step_name, timeout=None):
+            if "clone" in cmd:
+                target = Path(cmd[-1])
+                (target / "pyproject.toml").write_text("[project]\nname = 'x'\n")
+                (target / "reaper_mcp_bridge.lua").write_text("-- bridge\n")
+            # sync succeeds (no-op)
+
+        with (
+            patch("phantom.cli.setup_reaper.shutil.which", return_value="/usr/bin/git"),
+            patch(
+                "phantom.cli.setup_reaper._get_reaper_scripts_dir",
+                return_value=scripts_dir,
+            ),
+            patch("phantom.cli.setup_reaper._run_step", side_effect=fake_run_step),
+        ):
+            result = runner.invoke(
+                cli, ["setup-reaper", "--install-dir", str(install_dir), "--yes"]
+            )
+
+        assert result.exit_code == 0
+        assert (install_dir / "pyproject.toml").exists()  # staged tree moved in
+        assert not (tmp_path / ".staging").exists()  # staging cleaned up
+
+
+# ---------------------------------------------------------------------------
 # setup-reaper tests
 # ---------------------------------------------------------------------------
 
