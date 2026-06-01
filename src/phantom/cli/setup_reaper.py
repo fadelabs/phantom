@@ -8,6 +8,7 @@ import platform
 import shutil
 import subprocess
 import sys
+from datetime import datetime
 from pathlib import Path
 
 import rich_click as click
@@ -63,6 +64,22 @@ def _get_reaper_scripts_dir() -> Path:
 
 def _check_tool(name: str) -> bool:
     return shutil.which(name) is not None
+
+
+def _backup_dir(path: Path) -> Path:
+    """Move *path* aside to a timestamped backup instead of destroying it.
+
+    Returns the backup path. Used in place of shutil.rmtree so a setup-reaper
+    run never irrecoverably deletes a user's prior install (issue #6).
+    """
+    ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+    backup = path.parent / f"{path.name}.bak.{ts}"
+    suffix = 1
+    while backup.exists():
+        backup = path.parent / f"{path.name}.bak.{ts}-{suffix}"
+        suffix += 1
+    shutil.move(str(path), str(backup))
+    return backup
 
 
 def _run_step(cmd: list[str], step_name: str, timeout: int | None = None) -> None:
@@ -241,23 +258,28 @@ def setup_reaper(
         ) == _normalize_git_remote(REAPER_MCP_REPO)
         if not is_fadelabs:
             if yes:
-                # Explicit --yes flag: user consented to destructive actions
-                shutil.rmtree(install_path)
+                # Explicit --yes flag: user consented. Back up, don't destroy.
+                backup = _backup_dir(install_path)
+                if not json_output:
+                    console.print(
+                        f"  Backed up existing install to [dim]{backup}[/dim]"
+                    )
             elif sys.stdin.isatty():
                 if not click.confirm(
                     f"{install_path} has a different remote ({remote_url or 'unknown'}). "
-                    "Remove and re-clone?",
+                    "Back up and re-clone?",
                     default=False,
                 ):
                     raise click.ClickException(
                         "Aborted. Choose a different --install-dir."
                     )
-                shutil.rmtree(install_path)
+                backup = _backup_dir(install_path)
+                console.print(f"  Backed up existing install to [dim]{backup}[/dim]")
             else:
                 # Non-interactive, no --yes: refuse destructive action
                 raise click.ClickException(
                     f"{install_path} has a different remote ({remote_url or 'unknown'}). "
-                    "Run with --yes to overwrite, or choose a different --install-dir."
+                    "Run with --yes to back up and re-clone, or choose a different --install-dir."
                 )
 
     if install_path.exists():

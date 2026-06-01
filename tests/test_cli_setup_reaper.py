@@ -20,6 +20,39 @@ def runner():
 
 
 # ---------------------------------------------------------------------------
+# Backup-instead-of-destroy (issue #6)
+# ---------------------------------------------------------------------------
+
+
+class TestBackupDir:
+    """_backup_dir moves a prior install aside instead of deleting it."""
+
+    def test_moves_and_preserves_contents(self, tmp_path):
+        from phantom.cli.setup_reaper import _backup_dir
+
+        d = tmp_path / "reaper-mcp"
+        d.mkdir()
+        (d / "marker.txt").write_text("keep me")
+        backup = _backup_dir(d)
+        assert not d.exists()  # original moved away, not left in place
+        assert backup.exists()
+        assert (backup / "marker.txt").read_text() == "keep me"
+        assert backup.name.startswith("reaper-mcp.bak.")
+
+    def test_collision_disambiguated(self, tmp_path):
+        from phantom.cli.setup_reaper import _backup_dir
+
+        # Pre-create a same-second backup so the helper must disambiguate.
+        d = tmp_path / "reaper-mcp"
+        d.mkdir()
+        b1 = _backup_dir(d)
+        d.mkdir()
+        b2 = _backup_dir(d)
+        assert b1 != b2
+        assert b1.exists() and b2.exists()
+
+
+# ---------------------------------------------------------------------------
 # setup-reaper tests
 # ---------------------------------------------------------------------------
 
