@@ -535,11 +535,10 @@ def main():
         print(f"phantom-mcp {__version__}")
         return
     if "--tools" in sys.argv:
+        import asyncio
+
         try:
-            if hasattr(mcp, "list_tools"):
-                tools = sorted(t.name for t in mcp.list_tools())
-            else:
-                tools = sorted(t.name for t in mcp._tool_manager._tools.values())
+            tools = sorted(t.name for t in asyncio.run(mcp.list_tools()))
         except (AttributeError, TypeError):
             print(
                 "Cannot list tools — FastMCP version may be incompatible",

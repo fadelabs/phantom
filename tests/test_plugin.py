@@ -83,9 +83,11 @@ def _discover_skills() -> list[Path]:
 
 def _get_phantom_tool_names() -> set[str]:
     """Discover Phantom MCP tool names dynamically from the server registry."""
+    import asyncio
+
     from phantom.server import mcp
 
-    return set(mcp._tool_manager._tools.keys())
+    return {t.name for t in asyncio.run(mcp.list_tools())}
 
 
 SKILLS = _discover_skills()
