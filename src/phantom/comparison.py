@@ -601,28 +601,48 @@ def match_to_reference(
             f"Reference file not found: {os.path.basename(reference_path)}"
         )
 
-    # Advisory lock prevents concurrent writes to the same output path.
-    # Uses fcntl.flock which auto-releases on process crash (unlike O_EXCL
-    # lock files which leave stale .lock files behind).
+    # Same-file guard (Finding 3): never let the output clobber an input. Paths
+    # are already resolved (validate_*); compare the final realpaths.
+    real_target = os.path.realpath(target_path)
+    real_reference = os.path.realpath(reference_path)
+    if output_path == real_target or output_path == real_reference:
+        raise AnalysisError(
+            "Output path must differ from the target and reference files."
+        )
+
+    # Advisory lock prevents concurrent writes; flock auto-releases on crash.
+    # Open the lock with O_NOFOLLOW so a symlink pre-placed at <output>.lock
+    # cannot redirect the lock file outside the validated output directory.
     import fcntl
 
     lock_path = output_path + ".lock"
-    lock_file = open(lock_path, "w")  # noqa: SIM115
+    lock_fd = os.open(lock_path, os.O_CREAT | os.O_WRONLY | os.O_NOFOLLOW, 0o600)
+    created_output = False
     try:
         try:
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except OSError:
-            lock_file.close()
             raise AnalysisError(
                 f"Output path is locked by another process: {os.path.basename(output_path)}. "
                 "Try again shortly or choose a different output path."
             )
 
-        if os.path.exists(output_path):
+        # Atomically reserve the output name (Finding 3). O_CREAT|O_EXCL fails
+        # if it already exists, closing the check-then-write TOCTOU of a prior
+        # os.path.exists() guard; O_NOFOLLOW rejects a final-component symlink.
+        try:
+            out_fd = os.open(
+                output_path,
+                os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW,
+                0o600,
+            )
+        except FileExistsError:
             raise AnalysisError(
                 f"Output file already exists: {os.path.basename(output_path)}. "
                 "Choose a different output path to avoid overwriting."
             )
+        os.close(out_fd)
+        created_output = True
 
         before_audio = load_audio(target_path)
         before_loudness = analyze_loudness(before_audio)
@@ -669,8 +689,17 @@ def match_to_reference(
 
         return MatchResult(output_path=output_path, adjustments=adjustments)
 
+    except BaseException:
+        # Remove the empty reserved stub if we created it but did not finish,
+        # so a failed run does not leave a stale file that blocks the next one.
+        if created_output:
+            try:
+                os.unlink(output_path)
+            except OSError:
+                pass
+        raise
     finally:
-        lock_file.close()
+        os.close(lock_fd)
         try:
             os.unlink(lock_path)
         except OSError:
