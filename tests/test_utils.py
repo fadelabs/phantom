@@ -11,6 +11,7 @@ from phantom._utils import (
     _block_rms_db,
     _get_env_float,
     _get_env_int,
+    open_validated_input,
     validate_input_path,
     validate_output_path,
     wrap_errors,
@@ -153,6 +154,47 @@ class TestValidateInputPath:
         monkeypatch.setenv("PHANTOM_AUDIO_DIR", nonexistent)
         with pytest.raises(PathSecurityError, match="does not exist"):
             validate_input_path(str(tmp_path / "does_not_exist" / "file.wav"))
+
+
+class TestOpenValidatedInput:
+    """Tests for open_validated_input() -- Finding 4 symlink TOCTOU hardening."""
+
+    def test_regular_file_unconfined(self, tmp_path, monkeypatch):
+        """A regular file opens and returns a usable fd when unconfined."""
+        monkeypatch.delenv("PHANTOM_AUDIO_DIR", raising=False)
+        f = tmp_path / "a.wav"
+        f.write_bytes(b"data")
+        fd = open_validated_input(str(f))
+        try:
+            assert os.read(fd, 4) == b"data"
+        finally:
+            os.close(fd)
+
+    def test_symlink_followed_when_unconfined(self, tmp_path, monkeypatch):
+        """When PHANTOM_AUDIO_DIR is unset, symlinks are followed (legacy behavior)."""
+        monkeypatch.delenv("PHANTOM_AUDIO_DIR", raising=False)
+        target = tmp_path / "real.wav"
+        target.write_bytes(b"data")
+        link = tmp_path / "link.wav"
+        link.symlink_to(target)
+        fd = open_validated_input(str(link))
+        os.close(fd)  # no raise == followed
+
+    def test_symlink_rejected_when_confined(self, tmp_path, monkeypatch):
+        """With PHANTOM_AUDIO_DIR set, a final-component symlink is rejected (O_NOFOLLOW)."""
+        monkeypatch.setenv("PHANTOM_AUDIO_DIR", str(tmp_path))
+        target = tmp_path / "real.wav"
+        target.write_bytes(b"data")
+        link = tmp_path / "link.wav"
+        link.symlink_to(target)
+        with pytest.raises(AudioLoadError, match="Cannot read audio file"):
+            open_validated_input(str(link))
+
+    def test_non_regular_rejected(self, tmp_path, monkeypatch):
+        """A directory (non-regular file) is rejected."""
+        monkeypatch.delenv("PHANTOM_AUDIO_DIR", raising=False)
+        with pytest.raises(AudioLoadError):
+            open_validated_input(str(tmp_path))
 
 
 class TestValidateOutputPath:

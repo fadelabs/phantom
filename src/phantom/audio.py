@@ -20,7 +20,11 @@ import soundfile as sf
 from pydantic import BaseModel, ConfigDict, model_validator
 
 from phantom.exceptions import AudioLoadError
-from phantom._utils import enforce_decode_limits, validate_input_path
+from phantom._utils import (
+    check_duration_size,
+    open_validated_input,
+    validate_input_path,
+)
 
 # Sample rate bounds for supported audio files (SC-9)
 MIN_SAMPLE_RATE = 8000  # 8 kHz -- telephone quality floor
@@ -139,40 +143,49 @@ def load_audio(
             f"  phantom render {os.path.basename(path)} --format wav"
         )
 
-    # Step 2: Read header -- validates existence and readability (existing)
+    # Step 2: Open the validated path ONCE and hold the descriptor. When input
+    # confinement is active this uses O_NOFOLLOW and reads every byte via this
+    # fd, closing the validate-then-reopen symlink TOCTOU (Finding 4).
+    fd = open_validated_input(path)
     try:
-        info = sf.info(path)
-    except Exception as exc:
-        raise AudioLoadError(
-            f"Cannot read audio file: {os.path.basename(path)}"
-        ) from exc
+        try:
+            snd = sf.SoundFile(fd, mode="r", closefd=False)
+        except Exception as exc:
+            raise AudioLoadError(
+                f"Cannot read audio file: {os.path.basename(path)}"
+            ) from exc
 
-    # Step 2.5: Sample rate validation (SC-9)
-    if info.samplerate < MIN_SAMPLE_RATE or info.samplerate > MAX_SAMPLE_RATE:
-        raise AudioLoadError(
-            f"Sample rate {info.samplerate} Hz is outside the supported range "
-            f"({MIN_SAMPLE_RATE}-{MAX_SAMPLE_RATE} Hz). "
-            f"Check the file format."
-        )
+        with snd:
+            # Step 2.5: Sample rate validation (SC-9)
+            if snd.samplerate < MIN_SAMPLE_RATE or snd.samplerate > MAX_SAMPLE_RATE:
+                raise AudioLoadError(
+                    f"Sample rate {snd.samplerate} Hz is outside the supported range "
+                    f"({MIN_SAMPLE_RATE}-{MAX_SAMPLE_RATE} Hz). "
+                    f"Check the file format."
+                )
 
-    # Steps 3 & 4: Duration + file-size guards (SEC-03, D-05, D-06, D-08).
-    # Shared with separate_stems via enforce_decode_limits (Advisory 2).
-    enforce_decode_limits(
-        path,
-        info=info,
-        max_duration=max_duration,
-        max_file_size=max_file_size,
-    )
+            # Steps 3 & 4: Duration + file-size guards (SEC-03, D-05, D-06, D-08).
+            # Size comes from the held fd (fstat), not a second path lookup.
+            duration_s = snd.frames / snd.samplerate if snd.samplerate else 0.0
+            check_duration_size(
+                duration_s,
+                os.fstat(fd).st_size,
+                max_duration=max_duration,
+                max_file_size=max_file_size,
+            )
 
-    # Step 5: Channel count check (existing)
-    if info.channels > 2:
-        raise AudioLoadError(
-            f"Cannot load {info.channels}-channel audio file. "
-            f"Phantom supports mono and stereo only."
-        )
+            # Step 5: Channel count check (existing)
+            if snd.channels > 2:
+                raise AudioLoadError(
+                    f"Cannot load {snd.channels}-channel audio file. "
+                    f"Phantom supports mono and stereo only."
+                )
 
-    # Step 6: Load audio as float32 (existing)
-    data, sample_rate = sf.read(path, dtype="float32", always_2d=True)
+            # Step 6: Load audio as float32 via the held descriptor
+            data = snd.read(dtype="float32", always_2d=True)
+            sample_rate = snd.samplerate
+    finally:
+        os.close(fd)
 
     return AudioData(
         samples=data,

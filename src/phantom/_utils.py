@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import functools
 import os
+import stat
 import tempfile
 from pathlib import Path
 
@@ -65,7 +66,29 @@ def enforce_decode_limits(
                 f"Cannot read audio file: {os.path.basename(path)}"
             ) from exc
 
-    # Duration guard
+    check_duration_size(
+        info.duration,
+        os.path.getsize(path),
+        max_duration=max_duration,
+        max_file_size=max_file_size,
+    )
+    return info
+
+
+def check_duration_size(
+    duration: float,
+    file_size: int,
+    *,
+    max_duration: float | None = None,
+    max_file_size: int | None = None,
+) -> None:
+    """Enforce duration and file-size caps given already-measured values.
+
+    Split out from :func:`enforce_decode_limits` so callers that hold an open
+    file descriptor (load_audio) can pass an fd-derived duration/size and avoid
+    a second open-by-path (Finding 4). Messages match the original load_audio
+    guards.
+    """
     effective_max_duration = max_duration
     if effective_max_duration is None:
         env_val = os.environ.get("PHANTOM_MAX_DURATION")
@@ -83,18 +106,17 @@ def enforce_decode_limits(
             f"max_duration must be a positive number, got {effective_max_duration}. "
             f"Check PHANTOM_MAX_DURATION env var or max_duration parameter."
         )
-    if info.duration > effective_max_duration:
-        mins = info.duration / 60
+    if duration > effective_max_duration:
+        mins = duration / 60
         limit_mins = effective_max_duration / 60
         raise AudioLoadError(
-            f"Audio file is {mins:.1f} minutes ({info.duration:.0f}s), "
+            f"Audio file is {mins:.1f} minutes ({duration:.0f}s), "
             f"which exceeds the {limit_mins:.0f}-minute limit "
             f"({effective_max_duration:.0f}s). "
             f"Set PHANTOM_MAX_DURATION to increase the limit, "
             f"or trim the file."
         )
 
-    # File size guard
     effective_max_size = max_file_size
     if effective_max_size is None:
         env_val = os.environ.get("PHANTOM_MAX_FILE_SIZE")
@@ -112,15 +134,54 @@ def enforce_decode_limits(
             f"max_file_size must be a positive number, got {effective_max_size}. "
             f"Check PHANTOM_MAX_FILE_SIZE env var or max_file_size parameter."
         )
-    actual_size = os.path.getsize(path)
-    if actual_size > effective_max_size:
+    if file_size > effective_max_size:
         raise AudioLoadError(
-            f"Audio file is {actual_size / 1_000_000:.1f} MB, "
+            f"Audio file is {file_size / 1_000_000:.1f} MB, "
             f"which exceeds the {effective_max_size / 1_000_000:.0f} MB limit. "
             f"Set PHANTOM_MAX_FILE_SIZE to increase the limit."
         )
 
-    return info
+
+def open_validated_input(path: str) -> int:
+    """Open an already-validated input path for reading, returning a held fd.
+
+    The caller MUST read via this descriptor (not re-open by path) and is
+    responsible for closing it. When input confinement is active
+    (PHANTOM_AUDIO_DIR set), the final component is opened with O_NOFOLLOW so a
+    symlink swapped in after validate_input_path resolved the path is rejected
+    (TOCTOU, Finding 4); the resolved target is a regular file, so legitimate
+    symlinks *inside* the allowed dir are unaffected (they were already
+    resolved). When confinement is unset, symlinks are followed as before.
+
+    Residual: an attacker who can swap an intermediate *directory* component
+    between validation and this open could still redirect; fully closing that
+    needs openat-based traversal. The dominant final-component vector and the
+    re-open-by-path gap are closed here.
+
+    Raises:
+        AudioLoadError: If the path cannot be opened safely or is not a regular
+            file.
+    """
+    confined = bool(os.environ.get("PHANTOM_AUDIO_DIR"))
+    flags = os.O_RDONLY
+    if confined and hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        fd = os.open(path, flags)
+    except OSError as exc:
+        raise AudioLoadError(
+            f"Cannot read audio file: {os.path.basename(path)}"
+        ) from exc
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise AudioLoadError(
+                f"Cannot read audio file: {os.path.basename(path)} "
+                "(not a regular file)."
+            )
+    except BaseException:
+        os.close(fd)
+        raise
+    return fd
 
 
 # Default sandbox for file writes when PHANTOM_OUTPUT_DIR is unset (Finding 1).
