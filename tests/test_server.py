@@ -207,9 +207,7 @@ async def test_multi_stem_masking_aggregate_limit(client, make_wav, monkeypatch)
     # 1 KB budget is far below two 1-second stems' decoded size.
     monkeypatch.setenv("PHANTOM_MAX_AGGREGATE_BYTES", "1000")
     with pytest.raises(ToolError, match="aggregate limit"):
-        await client.call_tool(
-            "multi_stem_masking", {"file_paths": [path_a, path_b]}
-        )
+        await client.call_tool("multi_stem_masking", {"file_paths": [path_a, path_b]})
 
 
 # ---------------------------------------------------------------------------
