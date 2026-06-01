@@ -31,3 +31,12 @@ repos:
         language: script
         types: [file]
         pass_filenames: false
+
+      # Semgrep SAST — same rulesets as the CI security-scan job. Runs via uv
+      # (ephemeral, no project dep) and scans src/ when any source file changes.
+      - id: semgrep
+        name: Semgrep (SAST)
+        entry: uv run --with semgrep semgrep scan --config p/python --config p/security-audit --config p/command-injection --error --metrics off --quiet src/
+        language: system
+        files: ^src/.*\.py$
+        pass_filenames: false

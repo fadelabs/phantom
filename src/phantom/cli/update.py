@@ -58,10 +58,18 @@ def _parse_version(tag: str) -> tuple[int, ...]:
 
 
 def _fetch_json(url: str) -> dict | None:
-    """Fetch JSON from a URL. Returns None on any failure."""
+    """Fetch JSON from an https URL. Returns None on any failure.
+
+    The scheme is pinned to https so a non-https value (e.g. a ``file://`` URL)
+    can never be handed to urlopen, which otherwise supports local-file reads.
+    All callers pass hardcoded GitHub API constants; this guards future callers.
+    """
+    if not url.startswith("https://"):
+        return None
     req = Request(url, headers={"User-Agent": f"phantom-audio/{__version__}"})
     try:
-        with urlopen(req, timeout=REQUEST_TIMEOUT) as resp:
+        # url is https-pinned above; all callers pass hardcoded GitHub API constants
+        with urlopen(req, timeout=REQUEST_TIMEOUT) as resp:  # nosemgrep
             if resp.status == 200:
                 return json.loads(resp.read().decode())
     except (URLError, OSError, json.JSONDecodeError, ValueError):

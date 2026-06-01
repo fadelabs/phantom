@@ -65,3 +65,24 @@ jobs:
             echo "::error::Planning/internal docs detected in PR"
             exit 1
           fi
+
+  semgrep:
+    name: Semgrep (SAST)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Install Python 3.12
+        run: uv python install 3.12
+
+      - name: Semgrep scan
+        run: >
+          uv run --with semgrep semgrep scan
+          --config p/python
+          --config p/security-audit
+          --config p/command-injection
+          --error --metrics off src/
