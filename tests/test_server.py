@@ -196,6 +196,22 @@ async def test_analyze_masking(client, make_wav):
     assert "overall_severity" in data
 
 
+async def test_multi_stem_masking_aggregate_limit(client, make_wav, monkeypatch):
+    """Combined stem size over PHANTOM_MAX_AGGREGATE_BYTES is rejected."""
+    sr = 44100
+    t = np.linspace(0, 1.0, sr, endpoint=False, dtype=np.float32)
+    stem_a = (0.5 * np.sin(2 * np.pi * 300 * t)).astype(np.float32)
+    stem_b = (0.5 * np.sin(2 * np.pi * 350 * t)).astype(np.float32)
+    path_a = make_wav(stem_a, sr, name="agg_a.wav")
+    path_b = make_wav(stem_b, sr, name="agg_b.wav")
+    # 1 KB budget is far below two 1-second stems' decoded size.
+    monkeypatch.setenv("PHANTOM_MAX_AGGREGATE_BYTES", "1000")
+    with pytest.raises(ToolError, match="aggregate limit"):
+        await client.call_tool(
+            "multi_stem_masking", {"file_paths": [path_a, path_b]}
+        )
+
+
 # ---------------------------------------------------------------------------
 # Profile and reference tools (SRV-01)
 # ---------------------------------------------------------------------------
