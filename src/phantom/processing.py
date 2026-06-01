@@ -20,7 +20,12 @@ from typing import Callable
 from pydantic import BaseModel
 
 from phantom.exceptions import AnalysisError, DependencyMissingError
-from phantom._utils import validate_input_path, validate_output_path, wrap_errors
+from phantom._utils import (
+    get_output_dir,
+    validate_input_path,
+    validate_output_path,
+    wrap_errors,
+)
 from phantom.audio import load_audio
 from phantom.problems import ProblemItem, ProblemsResult
 
@@ -222,36 +227,49 @@ def get_allowed_operations() -> dict[str, type]:
 
 
 def _resolve_output_path(input_path: str, output_path: str | None) -> str:
-    """Determine and validate the output file path.
+    """Determine, confine, and validate the output file path.
 
-    Default: input stem + '_fixed.wav'.
-    Guard: raises AnalysisError if resolved output == resolved input (T-23-03).
+    Confine first, then derive (Finding 5): when no output path is given, the
+    default '<stem>_fixed.wav' is created INSIDE the confined output directory
+    rather than next to the input -- otherwise default outputs for inputs that
+    live outside the sandbox would be rejected. The chosen path is run through
+    validate_output_path (containment + symlink resolution) and re-checked with
+    samefile so it can never resolve to the input file (T-23-03).
 
     Args:
         input_path: Path to the input audio file.
         output_path: User-provided output path, or None for default.
 
     Returns:
-        Resolved output path string.
+        The confined, fully resolved (realpath) output path.
 
     Raises:
         AnalysisError: If output path resolves to the same file as input.
+        PathSecurityError: If the output path escapes the output directory.
     """
     if output_path is None:
-        stem, _ext = os.path.splitext(input_path)
-        output_path = f"{stem}_fixed.wav"
+        stem, _ext = os.path.splitext(os.path.basename(input_path))
+        output_path = os.path.join(get_output_dir(), f"{stem}_fixed.wav")
 
-    # T-23-03: Same-path guard
+    # Confine + resolve symlinks on the final path.
+    real_out = validate_output_path(output_path)
+
+    # T-23-03: Same-path guard, re-checked on the final path. samefile catches
+    # hardlink / same-inode cases that a string compare would miss.
     real_in = os.path.realpath(input_path)
-    real_out = os.path.realpath(output_path)
-    if real_in == real_out:
+    same = real_in == real_out or (
+        os.path.exists(real_in)
+        and os.path.exists(real_out)
+        and os.path.samefile(real_in, real_out)
+    )
+    if same:
         raise AnalysisError(
             "Cannot overwrite the original file: output path resolves to the "
             "same location as input path. Use a different output path or let "
             "Phantom generate the default '_fixed' suffix."
         )
 
-    return output_path
+    return real_out
 
 
 # ---------------------------------------------------------------------------
@@ -295,10 +313,10 @@ def apply_processing(
             ),
         )
 
-    # Step 1: Validate paths (T-23-02, T-23-05)
+    # Step 1: Validate paths (T-23-02, T-23-05). _resolve_output_path confines
+    # and validates the output (Finding 5), so no separate validate call here.
     file_path = validate_input_path(file_path)
     output_path = _resolve_output_path(file_path, output_path)
-    output_path = validate_output_path(output_path)
 
     # Step 2: Build plugin chain from operations (T-23-01)
     allowed = get_allowed_operations()
@@ -539,10 +557,10 @@ def fix_audio(
             ),
         )
 
-    # Step 1: Validate paths
+    # Step 1: Validate paths. _resolve_output_path confines + validates the
+    # output (Finding 5).
     file_path = validate_input_path(file_path)
     output_path = _resolve_output_path(file_path, output_path)
-    output_path = validate_output_path(output_path)
 
     # Step 2: Load audio and detect problems (before)
     audio = load_audio(file_path)

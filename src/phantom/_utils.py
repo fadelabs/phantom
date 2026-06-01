@@ -4,15 +4,227 @@ from __future__ import annotations
 
 import functools
 import os
+import stat
 import tempfile
 from pathlib import Path
 
 import numpy as np
 
-from phantom.exceptions import AnalysisError, PathSecurityError, PhantomError
+from phantom.exceptions import (
+    AnalysisError,
+    AudioLoadError,
+    PathSecurityError,
+    PhantomError,
+)
 
 # Silence threshold in dBFS -- signals below this are treated as silence.
 SILENCE_THRESHOLD_DB = -80.0
+
+# Decode-safety defaults (shared by load_audio and separate_stems).
+DEFAULT_MAX_DURATION = 900.0  # 15 minutes
+DEFAULT_MAX_FILE_SIZE = 500_000_000  # 500 MB
+
+
+def enforce_decode_limits(
+    path: str,
+    *,
+    info=None,
+    max_duration: float | None = None,
+    max_file_size: int | None = None,
+):
+    """Reject over-long or oversized audio before it is decoded (SEC-03).
+
+    Reads only the file header via ``sf.info`` (no full decode) and enforces
+    duration and file-size caps. Mirrored from ``load_audio`` so paths that
+    feed decoders directly -- e.g. demucs in ``separate_stems`` -- get the same
+    decompression-bomb / unbounded-decode protection (Advisory 2). A small,
+    highly compressed FLAC/OGG can otherwise expand to multi-gigabyte PCM, and
+    this also bounds exposure to decoder bugs such as libsndfile CVE-2026-37555.
+
+    Args:
+        path: Path to an audio file (already path-validated by the caller).
+        info: Pre-read ``sf.info`` result to avoid a second header read; read
+            internally when None.
+        max_duration: Override for the duration cap (seconds). Precedence:
+            param > PHANTOM_MAX_DURATION > DEFAULT_MAX_DURATION.
+        max_file_size: Override for the size cap (bytes). Precedence:
+            param > PHANTOM_MAX_FILE_SIZE > DEFAULT_MAX_FILE_SIZE.
+
+    Returns:
+        The ``sf.info`` result (read here or passed in), so callers can reuse it.
+
+    Raises:
+        AudioLoadError: If the file is unreadable, too long, or too large.
+    """
+    import soundfile as sf
+
+    if info is None:
+        try:
+            info = sf.info(path)
+        except Exception as exc:
+            raise AudioLoadError(
+                f"Cannot read audio file: {os.path.basename(path)}"
+            ) from exc
+
+    check_duration_size(
+        info.duration,
+        os.path.getsize(path),
+        max_duration=max_duration,
+        max_file_size=max_file_size,
+    )
+    return info
+
+
+def check_duration_size(
+    duration: float,
+    file_size: int,
+    *,
+    max_duration: float | None = None,
+    max_file_size: int | None = None,
+) -> None:
+    """Enforce duration and file-size caps given already-measured values.
+
+    Split out from :func:`enforce_decode_limits` so callers that hold an open
+    file descriptor (load_audio) can pass an fd-derived duration/size and avoid
+    a second open-by-path (Finding 4). Messages match the original load_audio
+    guards.
+    """
+    effective_max_duration = max_duration
+    if effective_max_duration is None:
+        env_val = os.environ.get("PHANTOM_MAX_DURATION")
+        if env_val is not None and env_val.strip():
+            try:
+                effective_max_duration = float(env_val)
+            except ValueError:
+                raise AudioLoadError(
+                    f"PHANTOM_MAX_DURATION must be a number (seconds), got: '{env_val}'"
+                )
+        else:
+            effective_max_duration = DEFAULT_MAX_DURATION
+    if effective_max_duration <= 0:
+        raise AudioLoadError(
+            f"max_duration must be a positive number, got {effective_max_duration}. "
+            f"Check PHANTOM_MAX_DURATION env var or max_duration parameter."
+        )
+    if duration > effective_max_duration:
+        mins = duration / 60
+        limit_mins = effective_max_duration / 60
+        raise AudioLoadError(
+            f"Audio file is {mins:.1f} minutes ({duration:.0f}s), "
+            f"which exceeds the {limit_mins:.0f}-minute limit "
+            f"({effective_max_duration:.0f}s). "
+            f"Set PHANTOM_MAX_DURATION to increase the limit, "
+            f"or trim the file."
+        )
+
+    effective_max_size = max_file_size
+    if effective_max_size is None:
+        env_val = os.environ.get("PHANTOM_MAX_FILE_SIZE")
+        if env_val is not None and env_val.strip():
+            try:
+                effective_max_size = int(env_val)
+            except ValueError:
+                raise AudioLoadError(
+                    f"PHANTOM_MAX_FILE_SIZE must be an integer (bytes), got: '{env_val}'"
+                )
+        else:
+            effective_max_size = DEFAULT_MAX_FILE_SIZE
+    if effective_max_size <= 0:
+        raise AudioLoadError(
+            f"max_file_size must be a positive number, got {effective_max_size}. "
+            f"Check PHANTOM_MAX_FILE_SIZE env var or max_file_size parameter."
+        )
+    if file_size > effective_max_size:
+        raise AudioLoadError(
+            f"Audio file is {file_size / 1_000_000:.1f} MB, "
+            f"which exceeds the {effective_max_size / 1_000_000:.0f} MB limit. "
+            f"Set PHANTOM_MAX_FILE_SIZE to increase the limit."
+        )
+
+
+def open_validated_input(path: str) -> int:
+    """Open an already-validated input path for reading, returning a held fd.
+
+    The caller MUST read via this descriptor (not re-open by path) and is
+    responsible for closing it. When input confinement is active
+    (PHANTOM_AUDIO_DIR set), the final component is opened with O_NOFOLLOW so a
+    symlink swapped in after validate_input_path resolved the path is rejected
+    (TOCTOU, Finding 4); the resolved target is a regular file, so legitimate
+    symlinks *inside* the allowed dir are unaffected (they were already
+    resolved). When confinement is unset, symlinks are followed as before.
+
+    Residual: an attacker who can swap an intermediate *directory* component
+    between validation and this open could still redirect; fully closing that
+    needs openat-based traversal. The dominant final-component vector and the
+    re-open-by-path gap are closed here.
+
+    Raises:
+        AudioLoadError: If the path cannot be opened safely or is not a regular
+            file.
+    """
+    confined = bool(os.environ.get("PHANTOM_AUDIO_DIR"))
+    flags = os.O_RDONLY
+    if confined and hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        fd = os.open(path, flags)
+    except OSError as exc:
+        raise AudioLoadError(
+            f"Cannot read audio file: {os.path.basename(path)}"
+        ) from exc
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise AudioLoadError(
+                f"Cannot read audio file: {os.path.basename(path)} "
+                "(not a regular file)."
+            )
+    except BaseException:
+        os.close(fd)
+        raise
+    return fd
+
+
+# Default sandbox for file writes when PHANTOM_OUTPUT_DIR is unset (Finding 1).
+# Writes are ALWAYS confined; this is the fallback root, created on demand.
+DEFAULT_OUTPUT_DIR = "~/.phantom/output"
+
+
+def get_output_dir() -> str:
+    """Return the confined output directory, creating the default if needed.
+
+    Phantom confines every file write to an output directory (SEC-02, Finding 1).
+    There is no longer an "unconfined" mode:
+
+    - ``PHANTOM_OUTPUT_DIR`` set   -> use it; it must already exist.
+    - ``PHANTOM_OUTPUT_DIR`` unset -> default ``~/.phantom/output``, created on
+      demand so writes work out of the box.
+
+    Returns:
+        The realpath of the output directory.
+
+    Raises:
+        PathSecurityError: If an explicitly configured dir does not exist, or
+            the default sandbox cannot be created.
+    """
+    configured = os.environ.get("PHANTOM_OUTPUT_DIR")
+    if configured and configured.strip():
+        real_base = os.path.realpath(configured)
+        if not os.path.isdir(real_base):
+            raise PathSecurityError(
+                "PHANTOM_OUTPUT_DIR points to a directory that does not exist: "
+                "check the path and create the directory."
+            )
+        return real_base
+
+    default = os.path.expanduser(DEFAULT_OUTPUT_DIR)
+    try:
+        os.makedirs(default, exist_ok=True)
+    except OSError as exc:
+        raise PathSecurityError(
+            f"Could not create the default output directory ({DEFAULT_OUTPUT_DIR}): "
+            f"{exc}. Set PHANTOM_OUTPUT_DIR to a writable directory."
+        ) from exc
+    return os.path.realpath(default)
 
 
 def atomic_write_text(path: str | Path, content: str) -> None:
@@ -160,6 +372,12 @@ def validate_input_path(path: str) -> str:
     When PHANTOM_AUDIO_DIR is unset:
     - Returns path unchanged (D-13, backwards compatible)
 
+    Input reads are intentionally NOT confined by default: Phantom's core
+    purpose is analyzing arbitrary audio files anywhere on disk. The residual
+    risk is a read/parseability oracle (e.g. probing /etc/passwd) -- lower
+    severity than writes, which ARE always confined (see validate_output_path).
+    Set PHANTOM_AUDIO_DIR to confine reads as well.
+
     Args:
         path: File path string to validate.
 
@@ -199,46 +417,38 @@ def validate_input_path(path: str) -> str:
 
 
 def validate_output_path(path: str) -> str:
-    """Validate an output path against PHANTOM_OUTPUT_DIR restriction.
+    """Validate an output path against the confined output directory.
 
-    When PHANTOM_OUTPUT_DIR is set:
-    - Resolved path must be within the allowed output directory
-    - Symlinks resolved via os.path.realpath()
-
-    When PHANTOM_OUTPUT_DIR is unset:
-    - Returns path unchanged (D-11, backwards compatible)
+    Writes are ALWAYS confined (SEC-02, Finding 1). The base directory is
+    ``PHANTOM_OUTPUT_DIR`` when set, otherwise the default ``~/.phantom/output``
+    sandbox (see :func:`get_output_dir`). Relative paths resolve against the
+    base; symlinks are resolved and containment is re-verified on the final
+    realpath before it is returned to the caller for opening.
 
     Args:
         path: Output path string to validate.
 
     Returns:
-        The validated (possibly resolved) path string.
+        The validated, fully resolved (realpath) output path.
 
     Raises:
-        PathSecurityError: If the resolved path is outside PHANTOM_OUTPUT_DIR.
+        PathSecurityError: If the resolved path escapes the output directory,
+            or the output directory is missing/uncreatable.
     """
-    output_dir = os.environ.get("PHANTOM_OUTPUT_DIR")
-    if not output_dir:
-        return path  # No restriction (D-11)
+    real_base = get_output_dir()
 
-    # Resolve relative paths against PHANTOM_OUTPUT_DIR (consistent with input)
+    # Resolve relative paths against the confined base.
     if not os.path.isabs(path):
-        path = os.path.join(output_dir, path)
+        path = os.path.join(real_base, path)
 
-    real_base = os.path.realpath(output_dir)
+    # Resolve symlinks and re-verify containment on the FINAL path.
     real_path = os.path.realpath(path)
-
-    # Directory existence check (consistent with validate_input_path)
-    if not os.path.isdir(real_base):
-        raise PathSecurityError(
-            "PHANTOM_OUTPUT_DIR points to a directory that does not exist: "
-            "check the path and create the directory."
-        )
 
     if not (real_path.startswith(real_base + os.sep) or real_path == real_base):
         raise PathSecurityError(
             "Access denied: output path is outside the allowed directory. "
-            "Set PHANTOM_OUTPUT_DIR to a directory where outputs should be written."
+            "Set PHANTOM_OUTPUT_DIR to the directory where outputs should be "
+            "written, or write within the default ~/.phantom/output sandbox."
         )
 
     return real_path

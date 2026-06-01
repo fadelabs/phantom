@@ -69,6 +69,15 @@ def test_render_format_required(runner, make_wav):
     assert result.exit_code != 0
 
 
+def test_render_rejects_oversized_input(runner, make_wav, monkeypatch):
+    """Input larger than PHANTOM_MAX_FILE_SIZE is rejected before ffmpeg runs (Advisory 2)."""
+    monkeypatch.setenv("PHANTOM_MAX_FILE_SIZE", "100")  # 100 bytes
+    with patch("phantom.cli.render.shutil.which", return_value="/usr/bin/ffmpeg"):
+        result = runner.invoke(cli, ["render", make_wav, "--format", "mp3"])
+    assert result.exit_code != 0
+    assert "exceeds" in result.output.lower()
+
+
 def test_render_with_mock_ffmpeg(runner, make_wav, tmp_path):
     """Mocked ffmpeg conversion produces valid JSON output."""
     mock_ff_instance = MagicMock()

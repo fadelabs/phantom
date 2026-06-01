@@ -12,6 +12,19 @@ import scipy.signal as _sig
 import soundfile as sf
 
 
+@pytest.fixture(autouse=True)
+def _confine_writes_to_tmp(tmp_path, monkeypatch):
+    """Confine writes to each test's tmp_path by default (Finding 1).
+
+    Phantom now confines all file writes to PHANTOM_OUTPUT_DIR (default
+    ~/.phantom/output). Point it at the per-test tmp_path so write-path tests
+    keep their outputs inside the sandbox and never touch the real home dir.
+    Tests that need PHANTOM_OUTPUT_DIR unset or set elsewhere override this
+    via their own monkeypatch (later setenv/delenv wins).
+    """
+    monkeypatch.setenv("PHANTOM_OUTPUT_DIR", str(tmp_path))
+
+
 @pytest.fixture
 def mono_sine_440hz():
     """1-second 440Hz sine wave, mono, 44100 Hz, float32."""

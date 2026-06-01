@@ -172,17 +172,20 @@ class TestUnfixable:
 class TestOutputPath:
     """Output path logic: default suffix, custom path, same-path guard."""
 
-    def test_default_output_path_adds_fixed_suffix(self):
+    def test_default_output_path_in_confined_dir(self, tmp_path):
+        """Default output is '<stem>_fixed.wav' INSIDE the confined dir (Finding 5)."""
         from phantom.processing import _resolve_output_path
+        from phantom._utils import get_output_dir
 
         result = _resolve_output_path("/audio/song.wav", None)
-        assert result == "/audio/song_fixed.wav"
+        assert result == os.path.join(get_output_dir(), "song_fixed.wav")
 
-    def test_custom_output_path_used(self):
+    def test_custom_output_path_used(self, tmp_path):
         from phantom.processing import _resolve_output_path
 
-        result = _resolve_output_path("/audio/song.wav", "/output/custom.wav")
-        assert result == "/output/custom.wav"
+        custom = tmp_path / "custom.wav"
+        result = _resolve_output_path("/audio/song.wav", str(custom))
+        assert result == os.path.realpath(str(custom))
 
     def test_same_path_raises_analysis_error(self, tmp_path):
         from phantom.processing import _resolve_output_path
@@ -941,9 +944,10 @@ class TestFixAudio:
         assert "clipping" not in result.fixes_applied
 
     def test_fix_audio_default_output_path(self, stereo_wav, monkeypatch):
-        """Default output path uses _fixed suffix."""
+        """Default output is '<stem>_fixed.wav' inside the confined dir (Finding 5)."""
         from phantom.processing import fix_audio
         from phantom.problems import ProblemsResult
+        from phantom._utils import get_output_dir
 
         monkeypatch.setattr(
             "phantom.processing.detect_problems",
@@ -951,7 +955,8 @@ class TestFixAudio:
         )
 
         result = fix_audio(stereo_wav)
-        expected = stereo_wav.replace(".wav", "_fixed.wav")
+        stem = os.path.splitext(os.path.basename(stereo_wav))[0]
+        expected = os.path.join(get_output_dir(), f"{stem}_fixed.wav")
         assert result.output_path == expected
         assert os.path.isfile(expected)
 

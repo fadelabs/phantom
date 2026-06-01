@@ -271,12 +271,12 @@ async def test_compare_to_reference(client, make_wav):
     _has_module("demucs"),
     reason="demucs is installed — test requires it to be absent",
 )
-async def test_separate_stems_missing_dep(client):
+async def test_separate_stems_missing_dep(client, tmp_path):
     """separate_stems raises ToolError with DependencyMissingError when Demucs not installed."""
     with pytest.raises(ToolError) as exc_info:
         await client.call_tool(
             "separate_stems",
-            {"file_path": "/tmp/test.wav", "output_dir": "/tmp"},
+            {"file_path": "/tmp/test.wav", "output_dir": str(tmp_path / "stems")},
         )
     error = json.loads(str(exc_info.value))
     assert error["error_type"] == "DependencyMissingError"
@@ -287,7 +287,7 @@ async def test_separate_stems_missing_dep(client):
     _has_module("matchering"),
     reason="matchering is installed — test requires it to be absent",
 )
-async def test_match_to_reference_missing_dep(client):
+async def test_match_to_reference_missing_dep(client, tmp_path):
     """match_to_reference raises ToolError with DependencyMissingError when Matchering not installed."""
     with pytest.raises(ToolError) as exc_info:
         await client.call_tool(
@@ -295,7 +295,7 @@ async def test_match_to_reference_missing_dep(client):
             {
                 "target_path": "/tmp/test.wav",
                 "reference_path": "/tmp/ref.wav",
-                "output_path": "/tmp/out.wav",
+                "output_path": str(tmp_path / "out.wav"),
             },
         )
     error = json.loads(str(exc_info.value))

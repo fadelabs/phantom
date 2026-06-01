@@ -20,7 +20,11 @@ import soundfile as sf
 from pydantic import BaseModel, ConfigDict, model_validator
 
 from phantom.exceptions import AudioLoadError
-from phantom._utils import validate_input_path
+from phantom._utils import (
+    check_duration_size,
+    open_validated_input,
+    validate_input_path,
+)
 
 # Sample rate bounds for supported audio files (SC-9)
 MIN_SAMPLE_RATE = 8000  # 8 kHz -- telephone quality floor
@@ -139,86 +143,49 @@ def load_audio(
             f"  phantom render {os.path.basename(path)} --format wav"
         )
 
-    # Step 2: Read header -- validates existence and readability (existing)
+    # Step 2: Open the validated path ONCE and hold the descriptor. When input
+    # confinement is active this uses O_NOFOLLOW and reads every byte via this
+    # fd, closing the validate-then-reopen symlink TOCTOU (Finding 4).
+    fd = open_validated_input(path)
     try:
-        info = sf.info(path)
-    except Exception as exc:
-        raise AudioLoadError(
-            f"Cannot read audio file: {os.path.basename(path)}"
-        ) from exc
+        try:
+            snd = sf.SoundFile(fd, mode="r", closefd=False)
+        except Exception as exc:
+            raise AudioLoadError(
+                f"Cannot read audio file: {os.path.basename(path)}"
+            ) from exc
 
-    # Step 2.5: Sample rate validation (SC-9)
-    if info.samplerate < MIN_SAMPLE_RATE or info.samplerate > MAX_SAMPLE_RATE:
-        raise AudioLoadError(
-            f"Sample rate {info.samplerate} Hz is outside the supported range "
-            f"({MIN_SAMPLE_RATE}-{MAX_SAMPLE_RATE} Hz). "
-            f"Check the file format."
-        )
-
-    # Step 3: Duration guard (SEC-03, D-05, D-06)
-    effective_max_duration = max_duration
-    if effective_max_duration is None:
-        env_val = os.environ.get("PHANTOM_MAX_DURATION")
-        if env_val is not None and env_val.strip():
-            try:
-                effective_max_duration = float(env_val)
-            except ValueError:
+        with snd:
+            # Step 2.5: Sample rate validation (SC-9)
+            if snd.samplerate < MIN_SAMPLE_RATE or snd.samplerate > MAX_SAMPLE_RATE:
                 raise AudioLoadError(
-                    f"PHANTOM_MAX_DURATION must be a number (seconds), got: '{env_val}'"
+                    f"Sample rate {snd.samplerate} Hz is outside the supported range "
+                    f"({MIN_SAMPLE_RATE}-{MAX_SAMPLE_RATE} Hz). "
+                    f"Check the file format."
                 )
-        else:
-            effective_max_duration = 900.0  # 15 minutes default
-    if effective_max_duration <= 0:
-        raise AudioLoadError(
-            f"max_duration must be a positive number, got {effective_max_duration}. "
-            f"Check PHANTOM_MAX_DURATION env var or max_duration parameter."
-        )
-    if info.duration > effective_max_duration:
-        mins = info.duration / 60
-        limit_mins = effective_max_duration / 60
-        raise AudioLoadError(
-            f"Audio file is {mins:.1f} minutes ({info.duration:.0f}s), "
-            f"which exceeds the {limit_mins:.0f}-minute limit "
-            f"({effective_max_duration:.0f}s). "
-            f"Set PHANTOM_MAX_DURATION to increase the limit, "
-            f"or trim the file."
-        )
 
-    # Step 4: File size guard (D-08)
-    effective_max_size = max_file_size
-    if effective_max_size is None:
-        env_val = os.environ.get("PHANTOM_MAX_FILE_SIZE")
-        if env_val is not None and env_val.strip():
-            try:
-                effective_max_size = int(env_val)
-            except ValueError:
+            # Steps 3 & 4: Duration + file-size guards (SEC-03, D-05, D-06, D-08).
+            # Size comes from the held fd (fstat), not a second path lookup.
+            duration_s = snd.frames / snd.samplerate if snd.samplerate else 0.0
+            check_duration_size(
+                duration_s,
+                os.fstat(fd).st_size,
+                max_duration=max_duration,
+                max_file_size=max_file_size,
+            )
+
+            # Step 5: Channel count check (existing)
+            if snd.channels > 2:
                 raise AudioLoadError(
-                    f"PHANTOM_MAX_FILE_SIZE must be an integer (bytes), got: '{env_val}'"
+                    f"Cannot load {snd.channels}-channel audio file. "
+                    f"Phantom supports mono and stereo only."
                 )
-        else:
-            effective_max_size = 500_000_000  # 500 MB default
-    if effective_max_size <= 0:
-        raise AudioLoadError(
-            f"max_file_size must be a positive number, got {effective_max_size}. "
-            f"Check PHANTOM_MAX_FILE_SIZE env var or max_file_size parameter."
-        )
-    actual_size = os.path.getsize(path)
-    if actual_size > effective_max_size:
-        raise AudioLoadError(
-            f"Audio file is {actual_size / 1_000_000:.1f} MB, "
-            f"which exceeds the {effective_max_size / 1_000_000:.0f} MB limit. "
-            f"Set PHANTOM_MAX_FILE_SIZE to increase the limit."
-        )
 
-    # Step 5: Channel count check (existing)
-    if info.channels > 2:
-        raise AudioLoadError(
-            f"Cannot load {info.channels}-channel audio file. "
-            f"Phantom supports mono and stereo only."
-        )
-
-    # Step 6: Load audio as float32 (existing)
-    data, sample_rate = sf.read(path, dtype="float32", always_2d=True)
+            # Step 6: Load audio as float32 via the held descriptor
+            data = snd.read(dtype="float32", always_2d=True)
+            sample_rate = snd.samplerate
+    finally:
+        os.close(fd)
 
     return AudioData(
         samples=data,

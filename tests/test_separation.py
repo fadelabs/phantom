@@ -78,7 +78,7 @@ def _make_demucs_mocks(samplerate=44100):
 class TestSeparateStems:
     """Tests for Demucs-based source separation (SEP-01 through SEP-03)."""
 
-    def test_missing_demucs_raises_dependency_error(self, monkeypatch):
+    def test_missing_demucs_raises_dependency_error(self, monkeypatch, tmp_path):
         """When demucs is not installed, DependencyMissingError is raised (SEP-03)."""
         import builtins
         import sys
@@ -96,7 +96,7 @@ class TestSeparateStems:
         monkeypatch.setattr("builtins.__import__", _mock_import)
 
         with pytest.raises(DependencyMissingError) as exc_info:
-            separate_stems("any.wav", "/tmp/out")
+            separate_stems("any.wav", str(tmp_path / "out"))
         assert 'uv tool install "phantom-audio[separation]"' in str(exc_info.value)
 
     def test_missing_input_raises_file_not_found(self, tmp_path):
@@ -276,6 +276,45 @@ class TestSeparateStems:
         importlib.reload(phantom.separation)
 
 
+class TestDecodeLimits:
+    """Tests for the decode-bomb guard in separate_stems() (Advisory 2).
+
+    demucs is mocked present so execution reaches the guard (which runs after
+    the dependency import but before any model load / decode).
+    """
+
+    def _demucs_patch(self):
+        mocks = _make_demucs_mocks()
+        return patch.dict(
+            "sys.modules",
+            {
+                "demucs.pretrained": mocks["demucs.pretrained"],
+                "demucs.apply": mocks["demucs.apply"],
+                "demucs.audio": mocks["demucs.audio"],
+                "demucs": mocks["demucs"],
+                "torch": mocks["torch"],
+            },
+        )
+
+    def test_over_duration_input_rejected(
+        self, tmp_path, wav_file_factory, monkeypatch
+    ):
+        """An input longer than PHANTOM_MAX_DURATION is rejected before decode."""
+        monkeypatch.setenv("PHANTOM_MAX_DURATION", "0.5")
+        input_path = wav_file_factory(np.zeros((44100 * 2, 2), dtype=np.float32))  # 2s
+        with self._demucs_patch():
+            with pytest.raises(AudioLoadError, match="exceeds the"):
+                separate_stems(input_path, str(tmp_path / "stems"))
+
+    def test_over_size_input_rejected(self, tmp_path, wav_file_factory, monkeypatch):
+        """An input larger than PHANTOM_MAX_FILE_SIZE is rejected before decode."""
+        monkeypatch.setenv("PHANTOM_MAX_FILE_SIZE", "100")  # 100 bytes
+        input_path = wav_file_factory(np.zeros((44100, 2), dtype=np.float32))
+        with self._demucs_patch():
+            with pytest.raises(AudioLoadError, match="exceeds the"):
+                separate_stems(input_path, str(tmp_path / "stems"))
+
+
 class TestOutputDirValidation:
     """Tests for PHANTOM_OUTPUT_DIR validation in separate_stems()."""
 
@@ -289,12 +328,9 @@ class TestOutputDirValidation:
         with pytest.raises(PathSecurityError, match="outside the allowed directory"):
             separate_stems(str(input_file), str(tmp_path / "forbidden"))
 
-    def test_output_dir_unrestricted_without_env(self, monkeypatch):
-        """separate_stems does not restrict output_dir when PHANTOM_OUTPUT_DIR unset (D-11)."""
+    def test_output_dir_confined_to_default_when_unset(self, tmp_path, monkeypatch):
+        """With PHANTOM_OUTPUT_DIR unset, output_dir outside the default sandbox is rejected (Finding 1)."""
         monkeypatch.delenv("PHANTOM_OUTPUT_DIR", raising=False)
-        try:
-            separate_stems("/nonexistent/input.wav", "/any/output/dir")
-        except PathSecurityError:
-            pytest.fail("PathSecurityError raised when PHANTOM_OUTPUT_DIR is unset")
-        except Exception:
-            pass
+        monkeypatch.setenv("HOME", str(tmp_path))
+        with pytest.raises(PathSecurityError, match="outside the allowed directory"):
+            separate_stems("/nonexistent/input.wav", str(tmp_path / "elsewhere"))

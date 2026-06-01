@@ -11,6 +11,7 @@ from phantom._utils import (
     _block_rms_db,
     _get_env_float,
     _get_env_int,
+    open_validated_input,
     validate_input_path,
     validate_output_path,
     wrap_errors,
@@ -155,14 +156,65 @@ class TestValidateInputPath:
             validate_input_path(str(tmp_path / "does_not_exist" / "file.wav"))
 
 
+class TestOpenValidatedInput:
+    """Tests for open_validated_input() -- Finding 4 symlink TOCTOU hardening."""
+
+    def test_regular_file_unconfined(self, tmp_path, monkeypatch):
+        """A regular file opens and returns a usable fd when unconfined."""
+        monkeypatch.delenv("PHANTOM_AUDIO_DIR", raising=False)
+        f = tmp_path / "a.wav"
+        f.write_bytes(b"data")
+        fd = open_validated_input(str(f))
+        try:
+            assert os.read(fd, 4) == b"data"
+        finally:
+            os.close(fd)
+
+    def test_symlink_followed_when_unconfined(self, tmp_path, monkeypatch):
+        """When PHANTOM_AUDIO_DIR is unset, symlinks are followed (legacy behavior)."""
+        monkeypatch.delenv("PHANTOM_AUDIO_DIR", raising=False)
+        target = tmp_path / "real.wav"
+        target.write_bytes(b"data")
+        link = tmp_path / "link.wav"
+        link.symlink_to(target)
+        fd = open_validated_input(str(link))
+        os.close(fd)  # no raise == followed
+
+    def test_symlink_rejected_when_confined(self, tmp_path, monkeypatch):
+        """With PHANTOM_AUDIO_DIR set, a final-component symlink is rejected (O_NOFOLLOW)."""
+        monkeypatch.setenv("PHANTOM_AUDIO_DIR", str(tmp_path))
+        target = tmp_path / "real.wav"
+        target.write_bytes(b"data")
+        link = tmp_path / "link.wav"
+        link.symlink_to(target)
+        with pytest.raises(AudioLoadError, match="Cannot read audio file"):
+            open_validated_input(str(link))
+
+    def test_non_regular_rejected(self, tmp_path, monkeypatch):
+        """A directory (non-regular file) is rejected."""
+        monkeypatch.delenv("PHANTOM_AUDIO_DIR", raising=False)
+        with pytest.raises(AudioLoadError):
+            open_validated_input(str(tmp_path))
+
+
 class TestValidateOutputPath:
     """Tests for validate_output_path() -- SEC-02 output containment."""
 
-    def test_unrestricted_when_env_unset(self, monkeypatch) -> None:
-        """Returns path unchanged when PHANTOM_OUTPUT_DIR is not set (D-11)."""
+    def test_default_sandbox_when_env_unset(self, tmp_path, monkeypatch) -> None:
+        """Unset PHANTOM_OUTPUT_DIR confines writes to ~/.phantom/output (Finding 1)."""
         monkeypatch.delenv("PHANTOM_OUTPUT_DIR", raising=False)
-        result = validate_output_path("/any/output/path")
-        assert result == "/any/output/path"
+        monkeypatch.setenv("HOME", str(tmp_path))
+        result = validate_output_path("song.wav")
+        sandbox = tmp_path / ".phantom" / "output"
+        assert sandbox.is_dir()  # created on demand
+        assert result == os.path.realpath(str(sandbox / "song.wav"))
+
+    def test_outside_default_sandbox_rejected(self, tmp_path, monkeypatch) -> None:
+        """Absolute path outside the default sandbox is rejected (Finding 1)."""
+        monkeypatch.delenv("PHANTOM_OUTPUT_DIR", raising=False)
+        monkeypatch.setenv("HOME", str(tmp_path))
+        with pytest.raises(PathSecurityError, match="outside the allowed directory"):
+            validate_output_path(str(tmp_path / "elsewhere" / "evil.wav"))
 
     def test_inside_accepted(self, tmp_path, monkeypatch) -> None:
         """Path inside PHANTOM_OUTPUT_DIR is accepted."""
