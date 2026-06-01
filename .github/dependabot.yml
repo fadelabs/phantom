@@ -8,6 +8,12 @@ updates:
     labels:
       - dependencies
     open-pull-requests-limit: 5
+    ignore:
+      # essentia is exact-pinned to a known-good pre-release dev build. Nightly
+      # dev bumps frequently ship wheels for only one Python ABI (e.g. dev1438
+      # was cp314-only), breaking our 3.10+ support, and can silently shift
+      # analysis numbers. Bump deliberately, with an analysis-output check.
+      - dependency-name: "essentia"
 
   - package-ecosystem: github-actions
     directory: "/"
