@@ -59,3 +59,23 @@ jobs:
 
       - name: Test optional dependencies
         run: uv run pytest tests/test_optional_deps.py -x -q --tb=short
+
+  security:
+    name: Dependency audit (pip-audit)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Install Python 3.12
+        run: uv python install 3.12
+
+      # CVE-2025-69872: diskcache, no upstream fix. Pulled transitively via
+      # fastmcp[disk]; Phantom uses its own flock-based cache (_cache.py), not
+      # fastmcp's disk backend, so this is not reachable. Revisit when a fix ships.
+      - name: Audit dependencies
+        run: uv run --with pip-audit pip-audit --ignore-vuln CVE-2025-69872
