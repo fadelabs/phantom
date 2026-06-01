@@ -268,6 +268,50 @@ def _render_mcp_diff(target: Path, old_text: str, new_text: str, console) -> Non
             console.print(f"    [dim]{line}[/dim]")
 
 
+def _remove_startup_block(content: str) -> str | None:
+    """Strip the phantom auto-start block from __startup.lua content.
+
+    Returns the new content, or None if no phantom block is present.
+    """
+    if _STARTUP_MARKER not in content:
+        return None
+    lines = content.splitlines(keepends=True)
+    out, skipping = [], False
+    for line in lines:
+        if _STARTUP_MARKER in line:
+            skipping = True
+            continue
+        if skipping:
+            if "-- [/phantom]" in line:
+                skipping = False
+            continue
+        out.append(line)
+    return "".join(out).rstrip() + "\n" if "".join(out).strip() else ""
+
+
+def _compute_mcp_unmerge():
+    """Compute removal of the reaper entry from .mcp.json without writing.
+
+    Returns (target, old_text, new_text, had_reaper). new_text is None when the
+    file is absent or unparseable; had_reaper is False when there's nothing to
+    remove.
+    """
+    target = _resolve_mcp_target()
+    if not target.exists():
+        return target, "", None, False
+    try:
+        old_text = target.read_text()
+        existing = json.loads(old_text)
+    except (json.JSONDecodeError, OSError):
+        return target, "", None, False
+    servers = existing.get("mcpServers", {})
+    if "reaper" not in servers:
+        return target, old_text, old_text, False
+    del servers["reaper"]
+    new_text = json.dumps(existing, indent=2) + "\n"
+    return target, old_text, new_text, True
+
+
 def _merge_mcp_config(mcp_config: dict, console, yes: bool) -> str | None:
     """Merge reaper MCP config into .mcp.json, showing the diff. Returns path written."""
     target, old_text, new_text, reaper_exists = _compute_mcp_merge(mcp_config)
@@ -341,6 +385,116 @@ def _print_dry_run_plan(
     console.print("\n[dim]Re-run without --dry-run to apply.[/dim]")
 
 
+def _do_uninstall(
+    install_path: Path,
+    scripts_dir: Path,
+    console,
+    json_output: bool,
+    dry_run: bool,
+    yes: bool,
+) -> None:
+    """Reverse a setup-reaper install (issue #6).
+
+    Backs up the bridge dir, removes copied Lua + bridge data, strips the
+    phantom block from __startup.lua, and removes the reaper entry from
+    .mcp.json. Honors --dry-run and --yes.
+    """
+    lua_targets = [scripts_dir / name for name in EXPECTED_LUA_FILES]
+    lua_present = [p for p in lua_targets if p.exists()]
+    bridge_data = scripts_dir / "mcp_bridge_data"
+    startup = scripts_dir / "__startup.lua"
+    startup_has_block = startup.exists() and _STARTUP_MARKER in startup.read_text()
+    mcp_target, _old, mcp_new, had_reaper = _compute_mcp_unmerge()
+
+    nothing = not any(
+        [
+            install_path.exists(),
+            lua_present,
+            bridge_data.exists(),
+            startup_has_block,
+            had_reaper,
+        ]
+    )
+    if nothing:
+        if json_output:
+            output_json({"uninstalled": False, "reason": "nothing to remove"})
+        else:
+            console.print(
+                "[dim]Nothing to uninstall — no Phantom Reaper bridge found.[/dim]"
+            )
+        return
+
+    if dry_run:
+        if not json_output:
+            console.print("[bold]Dry run — nothing will be removed.[/bold]\n")
+            if install_path.exists():
+                console.print(f"  Back up + remove bridge: [dim]{install_path}[/dim]")
+            for p in lua_present:
+                console.print(f"  Remove Lua: [dim]{p}[/dim]")
+            if bridge_data.exists():
+                console.print(f"  Remove bridge data: [dim]{bridge_data}[/dim]")
+            if startup_has_block:
+                console.print(f"  Strip phantom block from [dim]{startup}[/dim]")
+            if had_reaper:
+                console.print(f"  Remove 'reaper' entry from [dim]{mcp_target}[/dim]")
+            console.print("\n[dim]Re-run without --dry-run to apply.[/dim]")
+        else:
+            output_json(
+                {
+                    "uninstalled": False,
+                    "dry_run": True,
+                    "install_dir": str(install_path) if install_path.exists() else None,
+                    "lua": [str(p) for p in lua_present],
+                    "bridge_data": str(bridge_data) if bridge_data.exists() else None,
+                    "startup_block": startup_has_block,
+                    "mcp_entry": str(mcp_target) if had_reaper else None,
+                }
+            )
+        return
+
+    if not yes:
+        if sys.stdin.isatty():
+            if not click.confirm("Remove the Phantom Reaper bridge?", default=False):
+                raise click.ClickException("Aborted.")
+        else:
+            raise click.ClickException("Run with --yes to uninstall non-interactively.")
+
+    backup = None
+    if install_path.exists():
+        backup = _backup_dir(install_path)
+    for p in lua_present:
+        p.unlink()
+    if bridge_data.exists():
+        shutil.rmtree(bridge_data)
+    if startup_has_block:
+        new_startup = _remove_startup_block(startup.read_text())
+        if new_startup:
+            atomic_write_text(startup, new_startup)
+        else:
+            startup.unlink()  # file held only the phantom block
+    if had_reaper and mcp_new is not None:
+        atomic_write_text(mcp_target, mcp_new)
+
+    if json_output:
+        output_json(
+            {
+                "uninstalled": True,
+                "backup": str(backup) if backup else None,
+                "lua_removed": [str(p) for p in lua_present],
+                "mcp_entry_removed": had_reaper,
+            }
+        )
+    else:
+        console.print(
+            Panel(
+                "[bold green]Phantom Reaper bridge removed.[/bold green]"
+                + (f"\n\n  Bridge backed up to: {backup}" if backup else ""),
+                title="Uninstalled",
+                border_style="green",
+            )
+        )
+
+
 @click.command()
 @click.option(
     "--install-dir",
@@ -355,6 +509,11 @@ def _print_dry_run_plan(
     help="Show exactly what would be installed/changed without touching anything",
 )
 @click.option(
+    "--uninstall",
+    is_flag=True,
+    help="Remove the Phantom Reaper bridge (backs up the install, reverts config)",
+)
+@click.option(
     "--allow-unverified",
     is_flag=True,
     help="Permit cloning reaper-mcp HEAD when the version tag is missing (runs unverified code)",
@@ -364,6 +523,7 @@ def setup_reaper(
     json_output: bool,
     yes: bool,
     dry_run: bool,
+    uninstall: bool,
     allow_unverified: bool,
 ) -> None:
     """Set up Reaper MCP bridge for DAW integration.
@@ -376,6 +536,17 @@ def setup_reaper(
     """
     console = get_console(json_mode=json_output)
 
+    install_path = Path(
+        install_dir if install_dir else _DEFAULT_INSTALL_DIR
+    ).expanduser()
+    scripts_dir = _get_reaper_scripts_dir()
+
+    # Uninstall reverses a prior install and needs neither git/uv nor a
+    # detected Reaper — handle it before the install-only preconditions.
+    if uninstall:
+        _do_uninstall(install_path, scripts_dir, console, json_output, dry_run, yes)
+        return
+
     if not _check_tool("git"):
         raise click.ClickException(
             "git is required. Install: xcode-select --install (macOS), "
@@ -387,10 +558,6 @@ def setup_reaper(
             "uv is required. Install: curl -LsSf https://astral.sh/uv/install.sh | sh"
         )
 
-    install_path = Path(
-        install_dir if install_dir else _DEFAULT_INSTALL_DIR
-    ).expanduser()
-    scripts_dir = _get_reaper_scripts_dir()
     reaper_found = scripts_dir.exists()
 
     if not reaper_found:
