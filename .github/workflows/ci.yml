@@ -74,8 +74,5 @@ jobs:
       - name: Install Python 3.12
         run: uv python install 3.12
 
-      # CVE-2025-69872: diskcache, no upstream fix. Pulled transitively via
-      # fastmcp[disk]; Phantom uses its own flock-based cache (_cache.py), not
-      # fastmcp's disk backend, so this is not reachable. Revisit when a fix ships.
       - name: Audit dependencies
-        run: uv run --with pip-audit pip-audit --ignore-vuln CVE-2025-69872
+        run: uv run --with pip-audit pip-audit
