@@ -52,6 +52,63 @@ class TestBackupDir:
         assert b1.exists() and b2.exists()
 
 
+class TestDryRun:
+    """--dry-run previews actions and mutates nothing (issue #6)."""
+
+    def test_dry_run_makes_no_mutations(self, runner, tmp_path):
+        install_dir = tmp_path / "reaper-mcp"
+        scripts_dir = tmp_path / "reaper-scripts"
+        scripts_dir.mkdir()
+        with (
+            patch("phantom.cli.setup_reaper.shutil.which", return_value="/usr/bin/git"),
+            patch(
+                "phantom.cli.setup_reaper._get_reaper_scripts_dir",
+                return_value=scripts_dir,
+            ),
+            patch("phantom.cli.setup_reaper.subprocess.run") as mock_run,
+        ):
+            result = runner.invoke(
+                cli, ["setup-reaper", "--install-dir", str(install_dir), "--dry-run"]
+            )
+        assert result.exit_code == 0
+        assert not mock_run.called  # no git/uv invoked
+        assert not install_dir.exists()  # nothing cloned
+        assert not (scripts_dir / "__startup.lua").exists()  # no startup write
+        assert not (scripts_dir / "mcp_bridge_data").exists()  # no bridge dir
+        assert "Dry run" in result.output
+
+    def test_dry_run_json_plan(self, runner, tmp_path):
+        install_dir = tmp_path / "reaper-mcp"
+        scripts_dir = tmp_path / "reaper-scripts"
+        scripts_dir.mkdir()
+        with (
+            patch("phantom.cli.setup_reaper.shutil.which", return_value="/usr/bin/git"),
+            patch(
+                "phantom.cli.setup_reaper._get_reaper_scripts_dir",
+                return_value=scripts_dir,
+            ),
+            patch("phantom.cli.setup_reaper.subprocess.run") as mock_run,
+        ):
+            result = runner.invoke(
+                cli,
+                [
+                    "setup-reaper",
+                    "--install-dir",
+                    str(install_dir),
+                    "--dry-run",
+                    "--json",
+                ],
+            )
+        import json
+
+        data = json.loads(result.output)
+        assert data["dry_run"] is True
+        assert data["clone_url"].endswith("reaper-mcp.git")
+        assert data["mcp_config_target"].endswith(".mcp.json")
+        assert not mock_run.called
+        assert not install_dir.exists()
+
+
 # ---------------------------------------------------------------------------
 # setup-reaper tests
 # ---------------------------------------------------------------------------

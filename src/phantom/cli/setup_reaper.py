@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import difflib
 import json
 import os
 import platform
@@ -132,32 +133,73 @@ def _configure_startup_script(scripts_dir: Path, console, json_output: bool) -> 
     return True
 
 
-def _merge_mcp_config(mcp_config: dict, console, yes: bool) -> str | None:
-    """Merge reaper MCP config into .mcp.json. Returns path written to."""
+def _resolve_mcp_target() -> Path:
+    """Pick the .mcp.json to write: first existing of $HOME/cwd, else $HOME."""
     candidates = [Path.home() / ".mcp.json", Path.cwd() / ".mcp.json"]
-    target = None
+    return next((c for c in candidates if c.exists()), candidates[0])
 
-    for candidate in candidates:
-        if candidate.exists():
-            target = candidate
-            break
 
-    if target is None:
-        target = candidates[0]
+def _compute_mcp_merge(mcp_config: dict):
+    """Compute the proposed .mcp.json change without writing it.
 
-    try:
-        if target.exists():
-            existing = json.loads(target.read_text())
+    Returns (target, old_text, new_text, reaper_exists). new_text is None when
+    the existing file can't be parsed (caller should skip auto-config).
+    """
+    target = _resolve_mcp_target()
+    if target.exists():
+        try:
+            old_text = target.read_text()
+            existing = json.loads(old_text)
+        except (json.JSONDecodeError, OSError):
+            return target, target.read_text() if target.exists() else "", None, False
+    else:
+        old_text = ""
+        existing = {}
+
+    reaper_exists = "reaper" in existing.get("mcpServers", {})
+    servers = existing.setdefault("mcpServers", {})
+    servers["reaper"] = mcp_config["mcpServers"]["reaper"]
+    new_text = json.dumps(existing, indent=2) + "\n"
+    return target, old_text, new_text, reaper_exists
+
+
+def _render_mcp_diff(target: Path, old_text: str, new_text: str, console) -> None:
+    """Print a unified diff of the proposed .mcp.json change."""
+    diff = "".join(
+        difflib.unified_diff(
+            old_text.splitlines(keepends=True),
+            new_text.splitlines(keepends=True),
+            fromfile=f"{target} (current)",
+            tofile=f"{target} (proposed)",
+        )
+    )
+    if not diff.strip():
+        console.print(f"  [dim]{target} already up to date — no change.[/dim]")
+        return
+    console.print(f"  [bold].mcp.json change[/bold] ({target}):")
+    for line in diff.splitlines():
+        if line.startswith("+") and not line.startswith("+++"):
+            console.print(f"    [green]{line}[/green]")
+        elif line.startswith("-") and not line.startswith("---"):
+            console.print(f"    [red]{line}[/red]")
         else:
-            existing = {}
-    except (json.JSONDecodeError, OSError):
+            console.print(f"    [dim]{line}[/dim]")
+
+
+def _merge_mcp_config(mcp_config: dict, console, yes: bool) -> str | None:
+    """Merge reaper MCP config into .mcp.json, showing the diff. Returns path written."""
+    target, old_text, new_text, reaper_exists = _compute_mcp_merge(mcp_config)
+
+    if new_text is None:
         console.print(
             f"[yellow]Could not parse {target} — skipping auto-config.[/yellow]"
         )
         return None
 
-    servers = existing.setdefault("mcpServers", {})
-    if "reaper" in servers:
+    # Transparency: always show what will change before writing (issue #6).
+    _render_mcp_diff(target, old_text, new_text, console)
+
+    if reaper_exists:
         if yes:
             pass  # Explicit --yes flag: user consented to overwrite
         elif sys.stdin.isatty():
@@ -172,9 +214,49 @@ def _merge_mcp_config(mcp_config: dict, console, yes: bool) -> str | None:
                 "Run with --yes to overwrite."
             )
 
-    servers["reaper"] = mcp_config["mcpServers"]["reaper"]
-    atomic_write_text(target, json.dumps(existing, indent=2) + "\n")
+    atomic_write_text(target, new_text)
     return str(target)
+
+
+def _print_dry_run_plan(
+    install_path: Path,
+    scripts_dir: Path,
+    bridge_data_dir: Path,
+    mcp_config: dict,
+    console,
+) -> None:
+    """Print exactly what a real run would do, mutating nothing (issue #6)."""
+    will_update = install_path.exists() and (install_path / ".git").is_dir()
+    console.print("[bold]Dry run — no changes will be made.[/bold]\n")
+    if will_update:
+        console.print(
+            f"  Update existing bridge at [cyan]{install_path}[/cyan] "
+            f"(git fetch + checkout v{__version__})"
+        )
+    else:
+        console.print(
+            f"  Clone [cyan]{REAPER_MCP_REPO}[/cyan] (tag v{__version__}) "
+            f"into [cyan]{install_path}[/cyan]"
+        )
+    console.print(f"  Run: [dim]uv sync --directory {install_path}[/dim]")
+    for name in EXPECTED_LUA_FILES:
+        console.print(
+            f"  Copy Lua: [dim]{install_path / name}[/dim] -> [dim]{scripts_dir / name}[/dim]"
+        )
+    console.print(f"  Create bridge data dir: [dim]{bridge_data_dir}[/dim]")
+    startup = scripts_dir / "__startup.lua"
+    if startup.exists() and _STARTUP_MARKER in startup.read_text():
+        console.print(f"  Auto-start: already configured in [dim]{startup}[/dim]")
+    else:
+        console.print(f"  Configure auto-start in [dim]{startup}[/dim]")
+    target, old_text, new_text, _ = _compute_mcp_merge(mcp_config)
+    if new_text is None:
+        console.print(
+            f"  [yellow]{target} cannot be parsed — would skip auto-config.[/yellow]"
+        )
+    else:
+        _render_mcp_diff(target, old_text, new_text, console)
+    console.print("\n[dim]Re-run without --dry-run to apply.[/dim]")
 
 
 @click.command()
@@ -186,6 +268,11 @@ def _merge_mcp_config(mcp_config: dict, console, yes: bool) -> str | None:
 @click.option("--json", "-j", "json_output", is_flag=True, help="Output raw JSON")
 @click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompts")
 @click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Show exactly what would be installed/changed without touching anything",
+)
+@click.option(
     "--allow-unverified",
     is_flag=True,
     help="Permit cloning reaper-mcp HEAD when the version tag is missing (runs unverified code)",
@@ -194,12 +281,16 @@ def setup_reaper(
     install_dir: str | None,
     json_output: bool,
     yes: bool,
+    dry_run: bool,
     allow_unverified: bool,
 ) -> None:
     """Set up Reaper MCP bridge for DAW integration.
 
     Auto-detects Reaper installation, clones the bridge, copies Lua scripts,
     configures auto-start, and writes MCP config. No prompts needed.
+
+    Use --dry-run to preview every action (clone target, install command, Lua
+    file destinations, and the .mcp.json diff) without changing anything.
     """
     console = get_console(json_mode=json_output)
 
@@ -228,6 +319,53 @@ def setup_reaper(
         else:
             console.print(
                 f"[dim]Reaper not detected at {scripts_dir} — skipping setup.[/dim]"
+            )
+        return
+
+    # Build the MCP config + bridge paths up front so --dry-run can preview the
+    # exact .mcp.json change without performing any installation.
+    bridge_data_dir = scripts_dir / "mcp_bridge_data"
+    mcp_config = {
+        "mcpServers": {
+            "reaper": {
+                "command": "uv",
+                "args": [
+                    "run",
+                    "--directory",
+                    str(install_path),
+                    "python",
+                    "reaper_mcp_server.py",
+                ],
+                "cwd": str(install_path),
+                "env": {"REAPER_BRIDGE_DIR": str(bridge_data_dir)},
+            }
+        }
+    }
+
+    if dry_run:
+        if json_output:
+            target, _old, _new, _exists = _compute_mcp_merge(mcp_config)
+            output_json(
+                {
+                    "dry_run": True,
+                    "install_dir": str(install_path),
+                    "reaper_scripts_dir": str(scripts_dir),
+                    "would_update": install_path.exists()
+                    and (install_path / ".git").is_dir(),
+                    "clone_url": REAPER_MCP_REPO,
+                    "version_tag": f"v{__version__}",
+                    "uv_sync_cmd": ["uv", "sync", "--directory", str(install_path)],
+                    "lua_files": {
+                        name: str(scripts_dir / name) for name in EXPECTED_LUA_FILES
+                    },
+                    "bridge_data_dir": str(bridge_data_dir),
+                    "mcp_config_target": str(target),
+                    "mcp_config": mcp_config,
+                }
+            )
+        else:
+            _print_dry_run_plan(
+                install_path, scripts_dir, bridge_data_dir, mcp_config, console
             )
         return
 
@@ -363,30 +501,13 @@ def setup_reaper(
         lua_copied.append(str(dest))
 
     # --- Create bridge data directory ---
-    bridge_data_dir = scripts_dir / "mcp_bridge_data"
+    # bridge_data_dir / mcp_config were computed before the dry-run gate above.
     bridge_data_dir.mkdir(parents=True, exist_ok=True)
 
     # --- Configure auto-start via __startup.lua ---
     _configure_startup_script(scripts_dir, console, json_output)
 
-    # --- Write MCP config ---
-    mcp_config = {
-        "mcpServers": {
-            "reaper": {
-                "command": "uv",
-                "args": [
-                    "run",
-                    "--directory",
-                    str(install_path),
-                    "python",
-                    "reaper_mcp_server.py",
-                ],
-                "cwd": str(install_path),
-                "env": {"REAPER_BRIDGE_DIR": str(bridge_data_dir)},
-            }
-        }
-    }
-
+    # --- Write MCP config (shows a diff before writing) ---
     config_written_to = _merge_mcp_config(mcp_config, console, yes=yes)
 
     # --- Output ---
