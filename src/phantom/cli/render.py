@@ -1,4 +1,8 @@
-"""Phantom render command -- audio format conversion via ffmpeg."""
+"""Phantom render command -- audio format conversion via ffmpeg.
+
+Requires ffmpeg >= 4.0 (for the -max_alloc / -fs resource guards used to
+bound decode work against decompression bombs; see Advisory 2).
+"""
 
 from __future__ import annotations
 
@@ -127,6 +131,37 @@ def render(
         )
         sys.exit(1)
 
+    # Decode-bomb guard (Advisory 2). render handles formats libsndfile cannot
+    # probe (mp3/aac), so we use a format-agnostic input file-size cap here and
+    # hand ffmpeg explicit duration/size/allocation limits below.
+    from phantom._utils import (
+        DEFAULT_MAX_DURATION,
+        DEFAULT_MAX_FILE_SIZE,
+        _get_env_float,
+        _get_env_int,
+    )
+    from phantom.exceptions import AnalysisError
+
+    try:
+        max_file_size = _get_env_int("PHANTOM_MAX_FILE_SIZE", DEFAULT_MAX_FILE_SIZE)
+        max_duration = _get_env_float("PHANTOM_MAX_DURATION", DEFAULT_MAX_DURATION)
+    except AnalysisError as e:
+        render_error(e, console)
+        sys.exit(1)
+
+    input_size = os.path.getsize(file)
+    if input_size > max_file_size:
+        console.print(
+            Panel(
+                f"Input file is {input_size / 1_000_000:.1f} MB, which exceeds the "
+                f"{max_file_size / 1_000_000:.0f} MB limit. "
+                f"Set PHANTOM_MAX_FILE_SIZE to increase the limit.",
+                title="File Too Large",
+                border_style="red",
+            )
+        )
+        sys.exit(1)
+
     # Determine output path
     if output_path is None:
         output_path = os.path.splitext(file)[0] + "." + output_format
@@ -138,12 +173,24 @@ def render(
         render_error(e, console)
         sys.exit(1)
 
-    # Build ffmpeg command as list (NEVER shell=True -- T-12-11)
-    cmd = ["ffmpeg", "-y", "-i", file]
+    # Build ffmpeg command as list (NEVER shell=True -- T-12-11).
+    # Resource guards (Advisory 2): -max_alloc caps a single allocation;
+    # -t (input option) bounds how much audio is decoded; -fs caps output size.
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-max_alloc",
+        str(max_file_size),
+        "-t",
+        f"{max_duration:.3f}",
+        "-i",
+        file,
+    ]
     if bitrate:
         cmd.extend(["-b:a", bitrate])
     if sample_rate:
         cmd.extend(["-ar", sample_rate])
+    cmd.extend(["-fs", str(max_file_size)])
     cmd.append(output_path)
 
     # Import ffmpeg-progress-yield with a clear error if missing

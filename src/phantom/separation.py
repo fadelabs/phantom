@@ -17,7 +17,12 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeou
 from pydantic import BaseModel
 
 from phantom.exceptions import AnalysisError, AudioLoadError, DependencyMissingError
-from phantom._utils import validate_input_path, validate_output_path, wrap_errors
+from phantom._utils import (
+    enforce_decode_limits,
+    validate_input_path,
+    validate_output_path,
+    wrap_errors,
+)
 
 
 class SeparationResult(BaseModel):
@@ -80,6 +85,10 @@ def separate_stems(input_path: str, output_dir: str) -> SeparationResult:
     # Step 2: Validate input file exists
     if not os.path.isfile(input_path):
         raise AudioLoadError(f"Input file not found: {os.path.basename(input_path)}")
+
+    # Step 2.5: Decode-bomb guard -- reject over-long/oversized input before
+    # demucs decodes it (Advisory 2). Mirrors load_audio's sf.info pre-check.
+    enforce_decode_limits(input_path)
 
     # Step 3: Ensure output directory exists
     os.makedirs(output_dir, exist_ok=True)

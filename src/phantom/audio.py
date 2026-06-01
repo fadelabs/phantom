@@ -20,7 +20,7 @@ import soundfile as sf
 from pydantic import BaseModel, ConfigDict, model_validator
 
 from phantom.exceptions import AudioLoadError
-from phantom._utils import validate_input_path
+from phantom._utils import enforce_decode_limits, validate_input_path
 
 # Sample rate bounds for supported audio files (SC-9)
 MIN_SAMPLE_RATE = 8000  # 8 kHz -- telephone quality floor
@@ -155,60 +155,14 @@ def load_audio(
             f"Check the file format."
         )
 
-    # Step 3: Duration guard (SEC-03, D-05, D-06)
-    effective_max_duration = max_duration
-    if effective_max_duration is None:
-        env_val = os.environ.get("PHANTOM_MAX_DURATION")
-        if env_val is not None and env_val.strip():
-            try:
-                effective_max_duration = float(env_val)
-            except ValueError:
-                raise AudioLoadError(
-                    f"PHANTOM_MAX_DURATION must be a number (seconds), got: '{env_val}'"
-                )
-        else:
-            effective_max_duration = 900.0  # 15 minutes default
-    if effective_max_duration <= 0:
-        raise AudioLoadError(
-            f"max_duration must be a positive number, got {effective_max_duration}. "
-            f"Check PHANTOM_MAX_DURATION env var or max_duration parameter."
-        )
-    if info.duration > effective_max_duration:
-        mins = info.duration / 60
-        limit_mins = effective_max_duration / 60
-        raise AudioLoadError(
-            f"Audio file is {mins:.1f} minutes ({info.duration:.0f}s), "
-            f"which exceeds the {limit_mins:.0f}-minute limit "
-            f"({effective_max_duration:.0f}s). "
-            f"Set PHANTOM_MAX_DURATION to increase the limit, "
-            f"or trim the file."
-        )
-
-    # Step 4: File size guard (D-08)
-    effective_max_size = max_file_size
-    if effective_max_size is None:
-        env_val = os.environ.get("PHANTOM_MAX_FILE_SIZE")
-        if env_val is not None and env_val.strip():
-            try:
-                effective_max_size = int(env_val)
-            except ValueError:
-                raise AudioLoadError(
-                    f"PHANTOM_MAX_FILE_SIZE must be an integer (bytes), got: '{env_val}'"
-                )
-        else:
-            effective_max_size = 500_000_000  # 500 MB default
-    if effective_max_size <= 0:
-        raise AudioLoadError(
-            f"max_file_size must be a positive number, got {effective_max_size}. "
-            f"Check PHANTOM_MAX_FILE_SIZE env var or max_file_size parameter."
-        )
-    actual_size = os.path.getsize(path)
-    if actual_size > effective_max_size:
-        raise AudioLoadError(
-            f"Audio file is {actual_size / 1_000_000:.1f} MB, "
-            f"which exceeds the {effective_max_size / 1_000_000:.0f} MB limit. "
-            f"Set PHANTOM_MAX_FILE_SIZE to increase the limit."
-        )
+    # Steps 3 & 4: Duration + file-size guards (SEC-03, D-05, D-06, D-08).
+    # Shared with separate_stems via enforce_decode_limits (Advisory 2).
+    enforce_decode_limits(
+        path,
+        info=info,
+        max_duration=max_duration,
+        max_file_size=max_file_size,
+    )
 
     # Step 5: Channel count check (existing)
     if info.channels > 2:

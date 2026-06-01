@@ -276,6 +276,45 @@ class TestSeparateStems:
         importlib.reload(phantom.separation)
 
 
+class TestDecodeLimits:
+    """Tests for the decode-bomb guard in separate_stems() (Advisory 2).
+
+    demucs is mocked present so execution reaches the guard (which runs after
+    the dependency import but before any model load / decode).
+    """
+
+    def _demucs_patch(self):
+        mocks = _make_demucs_mocks()
+        return patch.dict(
+            "sys.modules",
+            {
+                "demucs.pretrained": mocks["demucs.pretrained"],
+                "demucs.apply": mocks["demucs.apply"],
+                "demucs.audio": mocks["demucs.audio"],
+                "demucs": mocks["demucs"],
+                "torch": mocks["torch"],
+            },
+        )
+
+    def test_over_duration_input_rejected(
+        self, tmp_path, wav_file_factory, monkeypatch
+    ):
+        """An input longer than PHANTOM_MAX_DURATION is rejected before decode."""
+        monkeypatch.setenv("PHANTOM_MAX_DURATION", "0.5")
+        input_path = wav_file_factory(np.zeros((44100 * 2, 2), dtype=np.float32))  # 2s
+        with self._demucs_patch():
+            with pytest.raises(AudioLoadError, match="exceeds the"):
+                separate_stems(input_path, str(tmp_path / "stems"))
+
+    def test_over_size_input_rejected(self, tmp_path, wav_file_factory, monkeypatch):
+        """An input larger than PHANTOM_MAX_FILE_SIZE is rejected before decode."""
+        monkeypatch.setenv("PHANTOM_MAX_FILE_SIZE", "100")  # 100 bytes
+        input_path = wav_file_factory(np.zeros((44100, 2), dtype=np.float32))
+        with self._demucs_patch():
+            with pytest.raises(AudioLoadError, match="exceeds the"):
+                separate_stems(input_path, str(tmp_path / "stems"))
+
+
 class TestOutputDirValidation:
     """Tests for PHANTOM_OUTPUT_DIR validation in separate_stems()."""
 

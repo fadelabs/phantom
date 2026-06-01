@@ -9,10 +9,119 @@ from pathlib import Path
 
 import numpy as np
 
-from phantom.exceptions import AnalysisError, PathSecurityError, PhantomError
+from phantom.exceptions import (
+    AnalysisError,
+    AudioLoadError,
+    PathSecurityError,
+    PhantomError,
+)
 
 # Silence threshold in dBFS -- signals below this are treated as silence.
 SILENCE_THRESHOLD_DB = -80.0
+
+# Decode-safety defaults (shared by load_audio and separate_stems).
+DEFAULT_MAX_DURATION = 900.0  # 15 minutes
+DEFAULT_MAX_FILE_SIZE = 500_000_000  # 500 MB
+
+
+def enforce_decode_limits(
+    path: str,
+    *,
+    info=None,
+    max_duration: float | None = None,
+    max_file_size: int | None = None,
+):
+    """Reject over-long or oversized audio before it is decoded (SEC-03).
+
+    Reads only the file header via ``sf.info`` (no full decode) and enforces
+    duration and file-size caps. Mirrored from ``load_audio`` so paths that
+    feed decoders directly -- e.g. demucs in ``separate_stems`` -- get the same
+    decompression-bomb / unbounded-decode protection (Advisory 2). A small,
+    highly compressed FLAC/OGG can otherwise expand to multi-gigabyte PCM, and
+    this also bounds exposure to decoder bugs such as libsndfile CVE-2026-37555.
+
+    Args:
+        path: Path to an audio file (already path-validated by the caller).
+        info: Pre-read ``sf.info`` result to avoid a second header read; read
+            internally when None.
+        max_duration: Override for the duration cap (seconds). Precedence:
+            param > PHANTOM_MAX_DURATION > DEFAULT_MAX_DURATION.
+        max_file_size: Override for the size cap (bytes). Precedence:
+            param > PHANTOM_MAX_FILE_SIZE > DEFAULT_MAX_FILE_SIZE.
+
+    Returns:
+        The ``sf.info`` result (read here or passed in), so callers can reuse it.
+
+    Raises:
+        AudioLoadError: If the file is unreadable, too long, or too large.
+    """
+    import soundfile as sf
+
+    if info is None:
+        try:
+            info = sf.info(path)
+        except Exception as exc:
+            raise AudioLoadError(
+                f"Cannot read audio file: {os.path.basename(path)}"
+            ) from exc
+
+    # Duration guard
+    effective_max_duration = max_duration
+    if effective_max_duration is None:
+        env_val = os.environ.get("PHANTOM_MAX_DURATION")
+        if env_val is not None and env_val.strip():
+            try:
+                effective_max_duration = float(env_val)
+            except ValueError:
+                raise AudioLoadError(
+                    f"PHANTOM_MAX_DURATION must be a number (seconds), got: '{env_val}'"
+                )
+        else:
+            effective_max_duration = DEFAULT_MAX_DURATION
+    if effective_max_duration <= 0:
+        raise AudioLoadError(
+            f"max_duration must be a positive number, got {effective_max_duration}. "
+            f"Check PHANTOM_MAX_DURATION env var or max_duration parameter."
+        )
+    if info.duration > effective_max_duration:
+        mins = info.duration / 60
+        limit_mins = effective_max_duration / 60
+        raise AudioLoadError(
+            f"Audio file is {mins:.1f} minutes ({info.duration:.0f}s), "
+            f"which exceeds the {limit_mins:.0f}-minute limit "
+            f"({effective_max_duration:.0f}s). "
+            f"Set PHANTOM_MAX_DURATION to increase the limit, "
+            f"or trim the file."
+        )
+
+    # File size guard
+    effective_max_size = max_file_size
+    if effective_max_size is None:
+        env_val = os.environ.get("PHANTOM_MAX_FILE_SIZE")
+        if env_val is not None and env_val.strip():
+            try:
+                effective_max_size = int(env_val)
+            except ValueError:
+                raise AudioLoadError(
+                    f"PHANTOM_MAX_FILE_SIZE must be an integer (bytes), got: '{env_val}'"
+                )
+        else:
+            effective_max_size = DEFAULT_MAX_FILE_SIZE
+    if effective_max_size <= 0:
+        raise AudioLoadError(
+            f"max_file_size must be a positive number, got {effective_max_size}. "
+            f"Check PHANTOM_MAX_FILE_SIZE env var or max_file_size parameter."
+        )
+    actual_size = os.path.getsize(path)
+    if actual_size > effective_max_size:
+        raise AudioLoadError(
+            f"Audio file is {actual_size / 1_000_000:.1f} MB, "
+            f"which exceeds the {effective_max_size / 1_000_000:.0f} MB limit. "
+            f"Set PHANTOM_MAX_FILE_SIZE to increase the limit."
+        )
+
+    return info
+
 
 # Default sandbox for file writes when PHANTOM_OUTPUT_DIR is unset (Finding 1).
 # Writes are ALWAYS confined; this is the fallback root, created on demand.
