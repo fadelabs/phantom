@@ -17,6 +17,30 @@ from phantom.cli._formatting import get_console, output_json
 from phantom import __version__
 
 REAPER_MCP_REPO = "https://github.com/fadelabs/reaper-mcp.git"
+
+
+def _normalize_git_remote(url: str) -> str:
+    """Normalize a git remote URL to 'host/owner/repo' for exact comparison.
+
+    Handles https, ssh:// and scp-style git@host:owner/repo forms so the
+    expected-remote check can't be fooled by a substring match (e.g.
+    evil.com/fadelabs/reaper-mcp-x).
+    """
+    u = url.strip().lower().removesuffix(".git").rstrip("/")
+    if u.startswith("git@"):
+        host, _, path = u[4:].partition(":")
+        return f"{host}/{path}"
+    for scheme in ("https://", "http://", "ssh://", "git://"):
+        if u.startswith(scheme):
+            u = u[len(scheme) :]
+            break
+    # strip optional userinfo@ in the authority component
+    authority, _, rest = u.partition("/")
+    if "@" in authority:
+        authority = authority.split("@", 1)[1]
+    return f"{authority}/{rest}" if rest else authority
+
+
 _DEFAULT_INSTALL_DIR = "~/.phantom/reaper-mcp"
 _GIT_TIMEOUT_SECONDS = 30
 EXPECTED_LUA_FILES = ["reaper_mcp_bridge.lua"]
@@ -149,7 +173,17 @@ def _merge_mcp_config(mcp_config: dict, console, yes: bool) -> str | None:
 )
 @click.option("--json", "-j", "json_output", is_flag=True, help="Output raw JSON")
 @click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompts")
-def setup_reaper(install_dir: str | None, json_output: bool, yes: bool) -> None:
+@click.option(
+    "--allow-unverified",
+    is_flag=True,
+    help="Permit cloning reaper-mcp HEAD when the version tag is missing (runs unverified code)",
+)
+def setup_reaper(
+    install_dir: str | None,
+    json_output: bool,
+    yes: bool,
+    allow_unverified: bool,
+) -> None:
     """Set up Reaper MCP bridge for DAW integration.
 
     Auto-detects Reaper installation, clones the bridge, copies Lua scripts,
@@ -207,10 +241,9 @@ def setup_reaper(install_dir: str | None, json_output: bool, yes: bool) -> None:
         except Exception:
             pass
 
-        expected_remote = REAPER_MCP_REPO.removesuffix(".git")
-        is_fadelabs = remote_url and (
-            expected_remote in remote_url or "fadelabs/reaper-mcp" in remote_url
-        )
+        is_fadelabs = bool(remote_url) and _normalize_git_remote(
+            remote_url
+        ) == _normalize_git_remote(REAPER_MCP_REPO)
         if not is_fadelabs:
             if yes:
                 # Explicit --yes flag: user consented to destructive actions
@@ -272,6 +305,11 @@ def setup_reaper(install_dir: str | None, json_output: bool, yes: bool) -> None:
                 timeout=_GIT_TIMEOUT_SECONDS,
             )
         except click.ClickException:
+            if not allow_unverified:
+                raise click.ClickException(
+                    f"Tag v{__version__} not found in reaper-mcp. Refusing to clone "
+                    "unverified HEAD. Re-run with --allow-unverified to proceed."
+                )
             if not json_output:
                 console.print(
                     f"[yellow]Warning: tag v{__version__} not found — "
