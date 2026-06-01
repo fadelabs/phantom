@@ -369,3 +369,45 @@ class TestGetEnvHelpers:
         """Returns default when env var is whitespace only."""
         monkeypatch.setenv("PHANTOM_PHAT_WINDOW_S", "   ")
         assert _get_env_float("PHANTOM_PHAT_WINDOW_S", 10.0) == 10.0
+
+
+class TestAtomicWriteText:
+    """atomic_write_text writes safely without a predictable temp file."""
+
+    def test_writes_content(self, tmp_path):
+        from phantom._utils import atomic_write_text
+
+        target = tmp_path / "config.json"
+        atomic_write_text(target, '{"ok": true}\n')
+        assert target.read_text() == '{"ok": true}\n'
+
+    def test_overwrites_existing(self, tmp_path):
+        from phantom._utils import atomic_write_text
+
+        target = tmp_path / "config.json"
+        target.write_text("old")
+        atomic_write_text(target, "new")
+        assert target.read_text() == "new"
+
+    def test_no_predictable_tmp_left_behind(self, tmp_path):
+        from phantom._utils import atomic_write_text
+
+        target = tmp_path / "config.json"
+        atomic_write_text(target, "data")
+        # The old predictable sibling must not exist, nor any leftover temp.
+        assert not (tmp_path / "config.json.tmp").exists()
+        assert list(tmp_path.iterdir()) == [target]
+
+    def test_tmp_symlink_not_followed(self, tmp_path):
+        """A pre-placed predictable temp symlink can't redirect the write."""
+        from phantom._utils import atomic_write_text
+
+        target = tmp_path / "config.json"
+        outside = tmp_path / "outside.txt"
+        outside.write_text("untouched")
+        # Pre-place the old predictable temp name as a symlink to a victim file.
+        (tmp_path / "config.json.tmp").symlink_to(outside)
+
+        atomic_write_text(target, "safe")
+        assert target.read_text() == "safe"
+        assert outside.read_text() == "untouched"  # not clobbered

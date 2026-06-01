@@ -15,6 +15,7 @@ from rich.table import Table
 
 from rich.status import Status
 
+from phantom._utils import atomic_write_text
 from phantom.cli._formatting import get_console
 
 _PHANTOM_DIR = Path("~/.phantom").expanduser()
@@ -96,9 +97,7 @@ def _remove_mcp_entries(
             data.pop("mcpServers", None)
 
         if data:
-            tmp = str(path) + ".tmp"
-            Path(tmp).write_text(json.dumps(data, indent=2) + "\n")
-            os.replace(tmp, config_path)
+            atomic_write_text(config_path, json.dumps(data, indent=2) + "\n")
         else:
             path.unlink()
     except (json.JSONDecodeError, OSError):
@@ -125,9 +124,7 @@ def _remove_startup_hook(startup_path: str) -> None:
 
         new_content = "\n".join(new_lines).strip()
         if new_content:
-            tmp = str(path) + ".tmp"
-            Path(tmp).write_text(new_content + "\n")
-            os.replace(tmp, startup_path)
+            atomic_write_text(startup_path, new_content + "\n")
         else:
             path.unlink()
     except OSError:

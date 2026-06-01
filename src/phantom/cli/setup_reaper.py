@@ -13,6 +13,7 @@ from pathlib import Path
 import rich_click as click
 from rich.panel import Panel
 
+from phantom._utils import atomic_write_text
 from phantom.cli._formatting import get_console, output_json
 from phantom import __version__
 
@@ -106,10 +107,7 @@ def _configure_startup_script(scripts_dir: Path, console, json_output: bool) -> 
     else:
         new_content = _STARTUP_BLOCK
 
-    # Atomic write: temp file + rename
-    tmp_path = str(startup_file) + ".tmp"
-    Path(tmp_path).write_text(new_content)
-    os.replace(tmp_path, str(startup_file))
+    atomic_write_text(startup_file, new_content)
     if not json_output:
         console.print(
             "  Configured [green]__startup.lua[/green] — bridge will auto-start with Reaper"
@@ -158,10 +156,7 @@ def _merge_mcp_config(mcp_config: dict, console, yes: bool) -> str | None:
             )
 
     servers["reaper"] = mcp_config["mcpServers"]["reaper"]
-    # Atomic write: temp file + rename
-    tmp_path = str(target) + ".tmp"
-    Path(tmp_path).write_text(json.dumps(existing, indent=2) + "\n")
-    os.replace(tmp_path, str(target))
+    atomic_write_text(target, json.dumps(existing, indent=2) + "\n")
     return str(target)
 
 
