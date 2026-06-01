@@ -9,6 +9,7 @@ import platform
 import shutil
 import subprocess
 import sys
+import tempfile
 from datetime import datetime
 from pathlib import Path
 
@@ -81,6 +82,87 @@ def _backup_dir(path: Path) -> Path:
         suffix += 1
     shutil.move(str(path), str(backup))
     return backup
+
+
+def _fresh_clone_staged(
+    install_path: Path, allow_unverified: bool, json_output: bool, console
+) -> None:
+    """Clone + dependency-install into a staging dir, then move into place.
+
+    Transactional (issue #6): the clone and `uv sync` both run inside
+    ~/.phantom/.staging/<tmp>; install_path is created only by a final move
+    after every step succeeds. If any step fails, the staging dir is removed
+    and the live filesystem is left unchanged — no half-installed bridge.
+
+    The bridge is launched via `uv run --directory <install_path>`, which
+    revalidates/rebuilds the environment, so the staged .venv being moved is
+    self-healing.
+    """
+    if not json_output:
+        console.print("[dim]Installing reaper-mcp...[/dim]")
+
+    install_path.parent.mkdir(parents=True, exist_ok=True)
+    staging_root = install_path.parent / ".staging"
+    staging_root.mkdir(parents=True, exist_ok=True)
+    staging = Path(
+        tempfile.mkdtemp(prefix=f"{install_path.name}.", dir=str(staging_root))
+    )
+
+    try:
+        try:
+            _run_step(
+                [
+                    "git",
+                    "clone",
+                    "--depth",
+                    "1",
+                    "--branch",
+                    f"v{__version__}",
+                    REAPER_MCP_REPO,
+                    str(staging),
+                ],
+                "Git clone (version-pinned)",
+                timeout=_GIT_TIMEOUT_SECONDS,
+            )
+        except click.ClickException:
+            if not allow_unverified:
+                raise click.ClickException(
+                    f"Tag v{__version__} not found in reaper-mcp. Refusing to clone "
+                    "unverified HEAD. Re-run with --allow-unverified to proceed."
+                )
+            if not json_output:
+                console.print(
+                    f"[yellow]Warning: tag v{__version__} not found — "
+                    "cloning HEAD (unverified version).[/yellow]"
+                )
+            # Reset the staging dir so the fallback clones into an empty target.
+            shutil.rmtree(staging)
+            staging.mkdir()
+            _run_step(
+                ["git", "clone", "--depth", "1", REAPER_MCP_REPO, str(staging)],
+                "Git clone (HEAD fallback)",
+                timeout=_GIT_TIMEOUT_SECONDS,
+            )
+
+        if (staging / "pyproject.toml").exists():
+            _run_step(
+                ["uv", "sync", "--directory", str(staging)],
+                "Dependency install",
+                timeout=120,
+            )
+
+        # Every step succeeded — move the staged tree into place (same fs).
+        shutil.move(str(staging), str(install_path))
+    except BaseException:
+        # Any failure: discard staging, leave the live filesystem untouched.
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
+    finally:
+        # Best-effort cleanup of the staging root once it's empty.
+        try:
+            staging_root.rmdir()
+        except OSError:
+            pass
 
 
 def _run_step(cmd: list[str], step_name: str, timeout: int | None = None) -> None:
@@ -421,6 +503,7 @@ def setup_reaper(
                 )
 
     if install_path.exists():
+        # --- Update an existing, verified install in place ---
         if not json_output:
             console.print("[dim]Updating reaper-mcp...[/dim]")
         _run_step(
@@ -440,49 +523,15 @@ def setup_reaper(
                     f"[yellow]Warning: tag v{__version__} not found — "
                     "staying on current version (unverified).[/yellow]"
                 )
+        if (install_path / "pyproject.toml").exists():
+            _run_step(
+                ["uv", "sync", "--directory", str(install_path)],
+                "Dependency install",
+                timeout=120,  # 2-minute timeout for dependency install
+            )
     else:
-        if not json_output:
-            console.print("[dim]Installing reaper-mcp...[/dim]")
-        install_path.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            _run_step(
-                [
-                    "git",
-                    "clone",
-                    "--depth",
-                    "1",
-                    "--branch",
-                    f"v{__version__}",
-                    REAPER_MCP_REPO,
-                    str(install_path),
-                ],
-                "Git clone (version-pinned)",
-                timeout=_GIT_TIMEOUT_SECONDS,
-            )
-        except click.ClickException:
-            if not allow_unverified:
-                raise click.ClickException(
-                    f"Tag v{__version__} not found in reaper-mcp. Refusing to clone "
-                    "unverified HEAD. Re-run with --allow-unverified to proceed."
-                )
-            if not json_output:
-                console.print(
-                    f"[yellow]Warning: tag v{__version__} not found — "
-                    "cloning HEAD (unverified version).[/yellow]"
-                )
-            _run_step(
-                ["git", "clone", "--depth", "1", REAPER_MCP_REPO, str(install_path)],
-                "Git clone (HEAD fallback)",
-                timeout=_GIT_TIMEOUT_SECONDS,
-            )
-
-    # --- Install Python dependencies ---
-    if (install_path / "pyproject.toml").exists():
-        _run_step(
-            ["uv", "sync", "--directory", str(install_path)],
-            "Dependency install",
-            timeout=120,  # 2-minute timeout for dependency install
-        )
+        # --- Fresh install: stage clone + sync, then move into place ---
+        _fresh_clone_staged(install_path, allow_unverified, json_output, console)
 
     # --- Copy Lua bridge to Reaper ---
     lua_copied: list[str] = []

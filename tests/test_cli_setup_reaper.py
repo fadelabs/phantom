@@ -109,6 +109,76 @@ class TestDryRun:
         assert not install_dir.exists()
 
 
+class TestTransactionalStaging:
+    """Fresh install stages in a tempdir and moves on success (issue #6)."""
+
+    def test_sync_failure_leaves_fs_unchanged(self, runner, tmp_path):
+        """If uv sync fails after clone, no half-install is left behind."""
+        from pathlib import Path
+
+        install_dir = tmp_path / "reaper-mcp"
+        scripts_dir = tmp_path / "reaper-scripts"
+        scripts_dir.mkdir()
+
+        def fake_run_step(cmd, step_name, timeout=None):
+            if "clone" in cmd:
+                # Simulate a successful clone populating the staging dir.
+                target = Path(cmd[-1])
+                (target / "pyproject.toml").write_text("[project]\nname = 'x'\n")
+                (target / "reaper_mcp_bridge.lua").write_text("-- bridge\n")
+            elif "sync" in cmd:
+                raise click.ClickException("uv sync failed")
+
+        with (
+            patch("phantom.cli.setup_reaper.shutil.which", return_value="/usr/bin/git"),
+            patch(
+                "phantom.cli.setup_reaper._get_reaper_scripts_dir",
+                return_value=scripts_dir,
+            ),
+            patch("phantom.cli.setup_reaper._run_step", side_effect=fake_run_step),
+        ):
+            result = runner.invoke(
+                cli, ["setup-reaper", "--install-dir", str(install_dir)]
+            )
+
+        assert result.exit_code != 0  # failure surfaced
+        assert not install_dir.exists()  # no half-installed bridge
+        assert not (tmp_path / ".staging").exists()  # staging cleaned up
+        # No Lua leaked into the Reaper scripts dir either.
+        assert not (scripts_dir / "reaper_mcp_bridge.lua").exists()
+
+    def test_success_moves_into_place(self, runner, tmp_path):
+        """On success the staged tree is moved to install_dir and staging removed."""
+        from pathlib import Path
+
+        install_dir = tmp_path / "reaper-mcp"
+        scripts_dir = tmp_path / "reaper-scripts"
+        scripts_dir.mkdir()
+
+        def fake_run_step(cmd, step_name, timeout=None):
+            if "clone" in cmd:
+                target = Path(cmd[-1])
+                (target / "pyproject.toml").write_text("[project]\nname = 'x'\n")
+                (target / "reaper_mcp_bridge.lua").write_text("-- bridge\n")
+            # sync succeeds (no-op)
+
+        with (
+            patch("phantom.cli.setup_reaper.shutil.which", return_value="/usr/bin/git"),
+            patch(
+                "phantom.cli.setup_reaper._get_reaper_scripts_dir",
+                return_value=scripts_dir,
+            ),
+            patch("phantom.cli.setup_reaper._run_step", side_effect=fake_run_step),
+        ):
+            result = runner.invoke(
+                cli, ["setup-reaper", "--install-dir", str(install_dir), "--yes"]
+            )
+
+        assert result.exit_code == 0
+        assert (install_dir / "pyproject.toml").exists()  # staged tree moved in
+        assert not (tmp_path / ".staging").exists()  # staging cleaned up
+
+
 # ---------------------------------------------------------------------------
 # setup-reaper tests
 # ---------------------------------------------------------------------------
