@@ -161,8 +161,11 @@ def _fresh_clone_staged(
         # Best-effort cleanup of the staging root once it's empty.
         try:
             staging_root.rmdir()
-        except OSError:
-            pass
+        except OSError as e:
+            # Ignore only the expected "directory not empty" case; surface
+            # other filesystem problems instead of silently swallowing them.
+            if getattr(e, "errno", None) not in (39, 145):  # ENOTEMPTY (POSIX/Windows)
+                raise
 
 
 def _run_step(cmd: list[str], step_name: str, timeout: int | None = None) -> None:
