@@ -156,13 +156,15 @@ def test_error_context_redacts_absolute_paths():
     from phantom.exceptions import AnalysisError
     from phantom.server import _to_tool_error
 
-    secret = "/Users/someone/private/session/vocal_take_3.wav"
+    # Neutral fake root: exercises the generic path redaction without tripping
+    # the repo's /Users//home/ privacy-guard CI check on source literals.
+    secret = "/data/private/session/vocal_take_3.wav"
     err = _to_tool_error(AnalysisError("boom"), context={"file_path": secret})
     payload = json.loads(str(err))
 
     assert secret not in json.dumps(payload)
     # The directory prefix is stripped; a basename may remain for context.
-    assert "/Users/someone/private/session/" not in payload["context"]["file_path"]
+    assert "/data/private/session/" not in payload["context"]["file_path"]
 
 
 def test_wrap_errors_coverage():
