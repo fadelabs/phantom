@@ -116,7 +116,16 @@ def _to_tool_error(exc: Exception, context: dict | None = None) -> ToolError:
                 f"[phantom-debug] {type(exc).__name__}: {exc}",
                 file=sys.stderr,
             )
-    error_info["context"] = context if context else {}
+    # Redact absolute paths from context values too — they are captured verbatim
+    # from tool arguments and would otherwise leak full paths into shared
+    # logs/transcripts even though `message` is already redacted.
+    if context:
+        error_info["context"] = {
+            k: (_PATH_REGEX.sub("", v) if isinstance(v, str) else v)
+            for k, v in context.items()
+        }
+    else:
+        error_info["context"] = {}
     return ToolError(json.dumps(error_info))
 
 
