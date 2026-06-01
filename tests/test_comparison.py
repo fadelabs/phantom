@@ -929,14 +929,13 @@ class TestMatchOutputValidation:
                 str(target), str(ref), str(tmp_path / "forbidden" / "out.wav")
             )
 
-    def test_match_output_unrestricted_without_env(self, monkeypatch, tmp_path):
-        """match_to_reference does not restrict output when PHANTOM_OUTPUT_DIR unset (D-11)."""
+    def test_match_output_confined_to_default_when_unset(self, monkeypatch, tmp_path):
+        """With PHANTOM_OUTPUT_DIR unset, output outside the default sandbox is rejected (Finding 1)."""
         monkeypatch.delenv("PHANTOM_OUTPUT_DIR", raising=False)
-        try:
+        monkeypatch.setenv("HOME", str(tmp_path))
+        with pytest.raises(PathSecurityError, match="outside the allowed directory"):
             match_to_reference(
-                "/nonexistent/t.wav", "/nonexistent/r.wav", "/any/out.wav"
+                "/nonexistent/t.wav",
+                "/nonexistent/r.wav",
+                str(tmp_path / "elsewhere" / "out.wav"),
             )
-        except PathSecurityError:
-            pytest.fail("PathSecurityError raised when PHANTOM_OUTPUT_DIR is unset")
-        except Exception:
-            pass  # Expected: DependencyMissingError or AudioLoadError

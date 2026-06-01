@@ -158,11 +158,21 @@ class TestValidateInputPath:
 class TestValidateOutputPath:
     """Tests for validate_output_path() -- SEC-02 output containment."""
 
-    def test_unrestricted_when_env_unset(self, monkeypatch) -> None:
-        """Returns path unchanged when PHANTOM_OUTPUT_DIR is not set (D-11)."""
+    def test_default_sandbox_when_env_unset(self, tmp_path, monkeypatch) -> None:
+        """Unset PHANTOM_OUTPUT_DIR confines writes to ~/.phantom/output (Finding 1)."""
         monkeypatch.delenv("PHANTOM_OUTPUT_DIR", raising=False)
-        result = validate_output_path("/any/output/path")
-        assert result == "/any/output/path"
+        monkeypatch.setenv("HOME", str(tmp_path))
+        result = validate_output_path("song.wav")
+        sandbox = tmp_path / ".phantom" / "output"
+        assert sandbox.is_dir()  # created on demand
+        assert result == os.path.realpath(str(sandbox / "song.wav"))
+
+    def test_outside_default_sandbox_rejected(self, tmp_path, monkeypatch) -> None:
+        """Absolute path outside the default sandbox is rejected (Finding 1)."""
+        monkeypatch.delenv("PHANTOM_OUTPUT_DIR", raising=False)
+        monkeypatch.setenv("HOME", str(tmp_path))
+        with pytest.raises(PathSecurityError, match="outside the allowed directory"):
+            validate_output_path(str(tmp_path / "elsewhere" / "evil.wav"))
 
     def test_inside_accepted(self, tmp_path, monkeypatch) -> None:
         """Path inside PHANTOM_OUTPUT_DIR is accepted."""

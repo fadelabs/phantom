@@ -14,6 +14,48 @@ from phantom.exceptions import AnalysisError, PathSecurityError, PhantomError
 # Silence threshold in dBFS -- signals below this are treated as silence.
 SILENCE_THRESHOLD_DB = -80.0
 
+# Default sandbox for file writes when PHANTOM_OUTPUT_DIR is unset (Finding 1).
+# Writes are ALWAYS confined; this is the fallback root, created on demand.
+DEFAULT_OUTPUT_DIR = "~/.phantom/output"
+
+
+def get_output_dir() -> str:
+    """Return the confined output directory, creating the default if needed.
+
+    Phantom confines every file write to an output directory (SEC-02, Finding 1).
+    There is no longer an "unconfined" mode:
+
+    - ``PHANTOM_OUTPUT_DIR`` set   -> use it; it must already exist.
+    - ``PHANTOM_OUTPUT_DIR`` unset -> default ``~/.phantom/output``, created on
+      demand so writes work out of the box.
+
+    Returns:
+        The realpath of the output directory.
+
+    Raises:
+        PathSecurityError: If an explicitly configured dir does not exist, or
+            the default sandbox cannot be created.
+    """
+    configured = os.environ.get("PHANTOM_OUTPUT_DIR")
+    if configured and configured.strip():
+        real_base = os.path.realpath(configured)
+        if not os.path.isdir(real_base):
+            raise PathSecurityError(
+                "PHANTOM_OUTPUT_DIR points to a directory that does not exist: "
+                "check the path and create the directory."
+            )
+        return real_base
+
+    default = os.path.expanduser(DEFAULT_OUTPUT_DIR)
+    try:
+        os.makedirs(default, exist_ok=True)
+    except OSError as exc:
+        raise PathSecurityError(
+            f"Could not create the default output directory ({DEFAULT_OUTPUT_DIR}): "
+            f"{exc}. Set PHANTOM_OUTPUT_DIR to a writable directory."
+        ) from exc
+    return os.path.realpath(default)
+
 
 def atomic_write_text(path: str | Path, content: str) -> None:
     """Atomically write *content* to *path* without a predictable temp file.
@@ -160,6 +202,12 @@ def validate_input_path(path: str) -> str:
     When PHANTOM_AUDIO_DIR is unset:
     - Returns path unchanged (D-13, backwards compatible)
 
+    Input reads are intentionally NOT confined by default: Phantom's core
+    purpose is analyzing arbitrary audio files anywhere on disk. The residual
+    risk is a read/parseability oracle (e.g. probing /etc/passwd) -- lower
+    severity than writes, which ARE always confined (see validate_output_path).
+    Set PHANTOM_AUDIO_DIR to confine reads as well.
+
     Args:
         path: File path string to validate.
 
@@ -199,46 +247,38 @@ def validate_input_path(path: str) -> str:
 
 
 def validate_output_path(path: str) -> str:
-    """Validate an output path against PHANTOM_OUTPUT_DIR restriction.
+    """Validate an output path against the confined output directory.
 
-    When PHANTOM_OUTPUT_DIR is set:
-    - Resolved path must be within the allowed output directory
-    - Symlinks resolved via os.path.realpath()
-
-    When PHANTOM_OUTPUT_DIR is unset:
-    - Returns path unchanged (D-11, backwards compatible)
+    Writes are ALWAYS confined (SEC-02, Finding 1). The base directory is
+    ``PHANTOM_OUTPUT_DIR`` when set, otherwise the default ``~/.phantom/output``
+    sandbox (see :func:`get_output_dir`). Relative paths resolve against the
+    base; symlinks are resolved and containment is re-verified on the final
+    realpath before it is returned to the caller for opening.
 
     Args:
         path: Output path string to validate.
 
     Returns:
-        The validated (possibly resolved) path string.
+        The validated, fully resolved (realpath) output path.
 
     Raises:
-        PathSecurityError: If the resolved path is outside PHANTOM_OUTPUT_DIR.
+        PathSecurityError: If the resolved path escapes the output directory,
+            or the output directory is missing/uncreatable.
     """
-    output_dir = os.environ.get("PHANTOM_OUTPUT_DIR")
-    if not output_dir:
-        return path  # No restriction (D-11)
+    real_base = get_output_dir()
 
-    # Resolve relative paths against PHANTOM_OUTPUT_DIR (consistent with input)
+    # Resolve relative paths against the confined base.
     if not os.path.isabs(path):
-        path = os.path.join(output_dir, path)
+        path = os.path.join(real_base, path)
 
-    real_base = os.path.realpath(output_dir)
+    # Resolve symlinks and re-verify containment on the FINAL path.
     real_path = os.path.realpath(path)
-
-    # Directory existence check (consistent with validate_input_path)
-    if not os.path.isdir(real_base):
-        raise PathSecurityError(
-            "PHANTOM_OUTPUT_DIR points to a directory that does not exist: "
-            "check the path and create the directory."
-        )
 
     if not (real_path.startswith(real_base + os.sep) or real_path == real_base):
         raise PathSecurityError(
             "Access denied: output path is outside the allowed directory. "
-            "Set PHANTOM_OUTPUT_DIR to a directory where outputs should be written."
+            "Set PHANTOM_OUTPUT_DIR to the directory where outputs should be "
+            "written, or write within the default ~/.phantom/output sandbox."
         )
 
     return real_path
