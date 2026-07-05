@@ -35,6 +35,7 @@ from phantom.masking import (
     analyze_masking_matrix as _analyze_masking_matrix,
     MaskingPair,
 )
+from phantom.live_metrics import read_live_metrics as _read_live_metrics
 from phantom._profiles import load_profile as _load_profile
 from phantom._profiles import list_profiles as _list_profiles
 from phantom.comparison import compare_to_profile as _compare_to_profile
@@ -540,6 +541,18 @@ def multi_stem_masking(file_paths: list[str]) -> dict:
         stem_paths={f"stem_{i}": os.path.basename(p) for i, p in enumerate(file_paths)},
     )
     return result.model_dump()
+
+
+# ---------------------------------------------------------------------------
+# Live metrics (Phantom Link)
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool
+@_phantom_tool
+def read_live_metrics(instance_id: str | None = None) -> dict:
+    """Read the Phantom Studio plugin's live meter snapshot (loudness, true peak, stereo, band energy, verdicts). Omit instance_id for the most recent instance."""
+    return _read_live_metrics(instance_id).model_dump()
 
 
 # ---------------------------------------------------------------------------
