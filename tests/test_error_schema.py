@@ -91,6 +91,11 @@ def _get_bad_args(tool_name: str) -> dict:
         "batch_diagnostic": {
             "file_paths": [],  # empty list triggers validation error
         },
+        "read_live_metrics": {
+            # Malformed id fails validation before any filesystem access,
+            # so this stays hermetic even if a real metrics dir exists.
+            "instance_id": "../nonexistent",
+        },
     }
 
     if tool_name in mapping:

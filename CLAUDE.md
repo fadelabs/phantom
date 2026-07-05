@@ -71,9 +71,9 @@ Artist personal information must never appear in commits or public-facing docume
 | `phantom` | `src/phantom/cli/__init__.py` | CLI entry point (click group) |
 | `phantom-mcp` | `src/phantom/server.py` | MCP server entry point |
 
-### MCP Tools (17)
+### MCP Tools (18)
 
-`analyze_spectrum`, `analyze_loudness`, `analyze_dynamics`, `analyze_stereo`, `analyze_phase`, `compare_phase`, `detect_problems`, `analyze_masking`, `analyze_masking_matrix`, `multi_stem_masking`, `compare_to_profile`, `compare_to_reference`, `match_to_reference`, `separate_stems`, `full_diagnostic`, `batch_diagnostic`, `setup_reaper`
+`analyze_spectrum`, `analyze_loudness`, `analyze_dynamics`, `analyze_stereo`, `analyze_phase`, `compare_phase`, `detect_problems`, `analyze_masking`, `analyze_masking_matrix`, `multi_stem_masking`, `compare_to_profile`, `compare_to_reference`, `match_to_reference`, `separate_stems`, `full_diagnostic`, `batch_diagnostic`, `read_live_metrics`, `setup_reaper`
 
 ### CLI Commands
 
