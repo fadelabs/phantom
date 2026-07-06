@@ -339,3 +339,94 @@ class TestLufsStats:
             val = getattr(stats, field)
             # Check at most 2 decimal places
             assert val == round(val, 2)
+
+
+# ---------------------------------------------------------------------------
+# Shared true-peak (P-02 + P-06): compute once, byte-identical to legacy
+# ---------------------------------------------------------------------------
+
+
+def _asymmetric_stereo(sr: int = 44100) -> AudioData:
+    """Asymmetric stereo fixture: left near full scale, right much quieter.
+
+    Distinct per-channel content proves that reusing a single
+    TruePeakDetector across channels stays stateless (parity gate).
+    """
+    t = np.linspace(0, 2.0, sr * 2, endpoint=False, dtype=np.float32)
+    left = (0.95 * np.sin(2 * np.pi * 14700 * t)).astype(np.float32)
+    right = (0.2 * np.sin(2 * np.pi * 440 * t)).astype(np.float32)
+    stereo = np.column_stack([left, right])
+    return AudioData(
+        samples=stereo,
+        sample_rate=sr,
+        num_channels=2,
+        duration=len(left) / sr,
+        num_samples=len(left),
+    )
+
+
+class TestSharedTruePeak:
+    """P-02 + P-06: true peak computed once, byte-identical to per-channel legacy."""
+
+    def test_true_peak_matches_legacy_perchannel(self):
+        """dBTP must match a fresh-per-channel detector to <1e-6 on asymmetric stereo.
+
+        This also validates that reusing ONE TruePeakDetector across the two
+        channels (P-06) is safe: if Essentia were stateful across calls, the
+        shared-detector path would diverge from this per-channel-fresh legacy.
+        """
+        import essentia.standard as es
+
+        audio = _asymmetric_stereo()
+        samples = audio.samples
+        sr = audio.sample_rate
+
+        eps = np.finfo(np.float32).eps
+        peaks = []
+        for ch in range(2):
+            tp = es.TruePeakDetector(version=4, sampleRate=sr, oversamplingFactor=4)
+            _, o = tp(samples[:, ch])
+            peaks.append(float(np.max(np.abs(o))))
+        legacy = float(20 * np.log10(max(peaks) + eps))
+
+        result = analyze_loudness(audio)
+        # LoudnessResult rounds true_peak_dbtp to 1 decimal via round_db, so
+        # compare against the same rounding of the legacy value.
+        from phantom._rounding import round_db
+
+        assert abs(result.true_peak_dbtp - round_db(legacy)) < 1e-6
+
+    def test_true_peak_computed_once(self, monkeypatch):
+        """analyze_loudness then detect_problems on the SAME AudioData constructs
+        es.TruePeakDetector exactly once.
+
+        Spy on the essentia constructor and count instances built across both
+        calls. On the shared-memo implementation this is 1; on the legacy code
+        (two independent per-channel loops) it is 4 for stereo.
+        """
+        import essentia.standard as es
+        import phantom.loudness as loudness_mod
+        import phantom.problems as problems_mod
+
+        calls = {"n": 0}
+        real_ctor = es.TruePeakDetector
+
+        def _counting_ctor(*args, **kwargs):
+            calls["n"] += 1
+            return real_ctor(*args, **kwargs)
+
+        # Patch the name where each module looks it up (both import es).
+        monkeypatch.setattr(loudness_mod.es, "TruePeakDetector", _counting_ctor)
+        monkeypatch.setattr(problems_mod.es, "TruePeakDetector", _counting_ctor)
+
+        audio = _asymmetric_stereo()
+        analyze_loudness(audio)
+        from phantom.problems import detect_problems
+
+        detect_problems(audio)
+
+        assert calls["n"] == 1, (
+            f"Expected TruePeakDetector constructed exactly once across "
+            f"analyze_loudness + detect_problems on the same AudioData, "
+            f"got {calls['n']}"
+        )

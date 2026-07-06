@@ -262,20 +262,13 @@ def _detect_dc_offset(mono: np.ndarray) -> list[ProblemItem]:
 
 def _detect_inter_sample_peaks(audio: AudioData) -> list[ProblemItem]:
     """Detect inter-sample peaks exceeding sample peak by >0.5 dB. PROB-03."""
-    eps = np.finfo(np.float32).eps
-    channel_results: list[tuple[float, float]] = []
+    # Reuse the per-file true-peak computation memoized by channel_true_peaks
+    # (shared with analyze_loudness) instead of running the x4-oversampled FIR
+    # a second time (P-02, P-06).
+    from phantom._truepeak import channel_true_peaks
 
-    for ch in range(audio.num_channels):
-        channel_signal = audio.samples[:, ch]
-        sample_peak = float(np.max(np.abs(channel_signal)))
-        if sample_peak < eps:
-            continue
-        tp = es.TruePeakDetector(
-            sampleRate=audio.sample_rate, oversamplingFactor=4, version=4
-        )
-        _, tp_output = tp(channel_signal)
-        true_peak = float(np.max(np.abs(tp_output)))
-        channel_results.append((sample_peak, true_peak))
+    eps = np.finfo(np.float32).eps
+    channel_results = [(sp, tp) for (sp, tp) in channel_true_peaks(audio) if sp >= eps]
 
     if not channel_results:
         return []

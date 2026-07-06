@@ -245,6 +245,40 @@ class TestInterSamplePeaks:
         assert "sample_peak_dbfs" in details
         assert "overshoot_db" in details
 
+    def test_isp_shares_true_peak_and_matches(self):
+        """ISP true_peak_dbtp equals the value derived from shared channel_true_peaks.
+
+        Parity, not a new number: the detail's true_peak_dbtp must match the
+        dBTP computed from the worst channel's shared true peak. Confirms the
+        ISP detector is fed from the same memoized computation loudness uses.
+        """
+        sr = 44100
+        t = np.linspace(0, 1.0, sr, endpoint=False, dtype=np.float32)
+        # 14700Hz near full scale — reliably triggers ISP overshoot.
+        samples = (1.0 * np.sin(2 * np.pi * 14700 * t)).astype(np.float32)
+        audio = _make_audio(samples, sr)
+
+        from phantom._truepeak import channel_true_peaks
+
+        pairs = channel_true_peaks(audio)
+        eps = np.finfo(np.float32).eps
+        # Worst channel by overshoot (matches _detect_inter_sample_peaks logic).
+        worst_tp = 0.0
+        worst_overshoot = 0.0
+        for sp, tp in pairs:
+            overshoot = float(20 * np.log10((tp + eps) / (sp + eps)))
+            if overshoot > worst_overshoot:
+                worst_overshoot = overshoot
+                worst_tp = tp
+        expected_dbtp = round(float(20 * np.log10(worst_tp + eps)), 2)
+
+        result = detect_problems(audio)
+        isp = [p for p in result.problems if p.type == "inter_sample_peak"]
+        assert len(isp) > 0
+        assert isp[0].details["true_peak_dbtp"] == pytest.approx(
+            expected_dbtp, abs=1e-9
+        )
+
 
 # ---------------------------------------------------------------------------
 # PROB-04: Noise Floor Detection

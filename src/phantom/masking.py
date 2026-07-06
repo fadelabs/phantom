@@ -12,7 +12,6 @@ from __future__ import annotations
 import itertools
 
 import numpy as np
-import essentia.standard as es
 from pydantic import BaseModel, field_validator
 
 from phantom.audio import AudioData
@@ -20,7 +19,7 @@ from phantom.exceptions import AnalysisError
 from phantom._resample import resample_to_match
 from phantom._rounding import round_ratio
 from phantom._utils import is_near_silent, wrap_errors
-from phantom.spectral import OCTAVE_EDGES, _BAND_LABELS
+from phantom.spectral import _BAND_LABELS, _octave_band_energies
 
 # Severity thresholds for per-band overlap classification.
 _SEVERITY_HIGH = 0.6
@@ -140,6 +139,10 @@ def _no_masking_result() -> MaskingResult:
 def _compute_band_energies(mono: np.ndarray, sample_rate: int) -> np.ndarray:
     """Compute average energy per octave band using Essentia FrequencyBands.
 
+    Delegates to the shared ``spectral._octave_band_energies`` helper so the
+    4096/2048 Hann + ``FrequencyBands(OCTAVE_EDGES)`` loop lives in one place
+    (P-09). Numerically identical to the former inline implementation.
+
     Args:
         mono: 1D float32 numpy array of audio samples.
         sample_rate: Sample rate in Hz.
@@ -147,30 +150,7 @@ def _compute_band_energies(mono: np.ndarray, sample_rate: int) -> np.ndarray:
     Returns:
         1D numpy array of shape (10,) with average energy per octave band.
     """
-    frame_size = 4096
-    hop_size = 2048
-
-    # Audio shorter than one FFT frame cannot produce meaningful band energies.
-    # Zero energy is the acoustically correct answer — the signal contains
-    # insufficient data to resolve any frequency band.
-    if len(mono) < frame_size:
-        return np.zeros(len(_BAND_LABELS))
-
-    windowing = es.Windowing(type="hann", size=frame_size)
-    spectrum = es.Spectrum(size=frame_size)
-    freq_bands = es.FrequencyBands(frequencyBands=OCTAVE_EDGES, sampleRate=sample_rate)
-
-    band_energies_list = []
-    for frame in es.FrameGenerator(mono, frameSize=frame_size, hopSize=hop_size):
-        win = windowing(frame)
-        spec = spectrum(win)
-        bands = freq_bands(spec)
-        band_energies_list.append(bands)
-
-    if not band_energies_list:
-        return np.zeros(len(_BAND_LABELS))
-
-    return np.mean(band_energies_list, axis=0)
+    return _octave_band_energies(mono, sample_rate)
 
 
 def _compute_pairwise_result(

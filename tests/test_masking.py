@@ -82,6 +82,55 @@ def identical_stems():
 
 
 # ---------------------------------------------------------------------------
+# P-09: Shared octave-band-energy helper (pure dedup, no numeric change)
+# ---------------------------------------------------------------------------
+
+
+class TestBandEnergyHelperParity:
+    """Verify _compute_band_energies is numerically unchanged after dedup (P-09)."""
+
+    # Golden values captured from the pre-refactor _compute_band_energies on
+    # seeded broadband noise (rng=42, amplitude 0.3, sr=44100). Extracting the
+    # 4096/2048 Hann + FrequencyBands loop into spectral._octave_band_energies
+    # must not alter these numbers.
+    _GOLDEN = np.array(
+        [
+            0.0002778951311483979,
+            0.0005883493577130139,
+            0.0010133546311408281,
+            0.001955181360244751,
+            0.003989834804087877,
+            0.007407692261040211,
+            0.016881804913282394,
+            0.03203596919775009,
+            0.06603545695543289,
+            0.12378077954053879,
+        ],
+        dtype=np.float32,
+    )
+
+    def test_band_energies_match_golden(self):
+        """Band energies for seeded noise must match pre-refactor golden values."""
+        sr = 44100
+        rng = np.random.default_rng(42)
+        noise = rng.standard_normal(sr).astype(np.float32) * 0.3
+        energies = _compute_band_energies(noise, sr)
+        assert energies.shape == self._GOLDEN.shape
+        assert np.allclose(energies, self._GOLDEN, rtol=0, atol=0)
+
+    def test_delegates_to_spectral_helper(self):
+        """_compute_band_energies delegates to spectral._octave_band_energies."""
+        from phantom import spectral
+
+        sr = 44100
+        rng = np.random.default_rng(7)
+        noise = rng.standard_normal(sr).astype(np.float32) * 0.3
+        via_masking = _compute_band_energies(noise, sr)
+        via_spectral = spectral._octave_band_energies(noise, sr)
+        assert np.allclose(via_masking, via_spectral, rtol=0, atol=0)
+
+
+# ---------------------------------------------------------------------------
 # MASK-01: Pairwise Masking Analysis
 # ---------------------------------------------------------------------------
 
