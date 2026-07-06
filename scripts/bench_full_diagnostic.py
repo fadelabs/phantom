@@ -25,7 +25,9 @@ import numpy as np
 import soundfile as sf
 
 from phantom._cache import analysis_cache
+from phantom.audio import load_audio
 from phantom.server import full_diagnostic
+from phantom.spectral import _octave_band_energies, analyze_spectrum
 
 
 def _time_cold(p: str) -> float:
@@ -41,6 +43,43 @@ def _time_warm(p: str) -> float:
     s = time.perf_counter()
     full_diagnostic(p)
     return time.perf_counter() - s
+
+
+def _timed(fn) -> float:
+    """Return the wall-clock seconds to run ``fn`` once."""
+    s = time.perf_counter()
+    fn()
+    return time.perf_counter() - s
+
+
+def _probe_spectral(p: str) -> None:
+    """P-05 gate probe: time analyze_spectrum vs its octave-band pass alone.
+
+    ``analyze_spectrum`` makes two framed FFT passes over the same mono signal:
+    the main 2048/1024 spectral pass and the octave-band 4096/2048 pass (now in
+    ``_octave_band_energies``, shared with masking). The audit (P-05) proposed
+    fusing these into a single pass, but only if the band pass is a material
+    share of spectral time. This probe measures that share so the gate can be
+    decided from data.
+
+    Loads the fixture once, then times both on the same in-memory mono signal
+    (best of 3 each, after a warmup) so import/JIT costs don't skew the split.
+    """
+    audio = load_audio(p)
+    mono = audio.mono
+    sr = audio.sample_rate
+
+    # Warmup both paths so Essentia/JIT costs don't land in the timed runs.
+    analyze_spectrum(audio)
+    _octave_band_energies(mono, sr)
+
+    spectral_s = min(_timed(lambda: analyze_spectrum(audio)) for _ in range(3))
+    band_s = min(_timed(lambda: _octave_band_energies(mono, sr)) for _ in range(3))
+
+    share = (band_s / spectral_s * 100.0) if spectral_s > 0 else 0.0
+    print(f"P-05 probe -- analyze_spectrum 60s: {spectral_s * 1000:.1f} ms (best of 3)")
+    print(f"P-05 probe -- octave-band pass only: {band_s * 1000:.1f} ms (best of 3)")
+    print(f"P-05 probe -- band pass share of spectral: {share:.1f}%")
 
 
 def main() -> None:
@@ -69,8 +108,15 @@ def main() -> None:
         full_diagnostic(p)
         warm = min(_time_warm(p) for _ in range(3))
 
-    print(f"full_diagnostic 60s stereo COLD (cache cleared): {cold * 1000:.1f} ms (best of 3)")
-    print(f"full_diagnostic 60s stereo WARM (cache-hit path): {warm * 1000:.1f} ms (best of 3)")
+        print(
+            f"full_diagnostic 60s stereo COLD (cache cleared): {cold * 1000:.1f} ms (best of 3)"
+        )
+        print(
+            f"full_diagnostic 60s stereo WARM (cache-hit path): {warm * 1000:.1f} ms (best of 3)"
+        )
+
+        # P-05 gate probe: split analyze_spectrum time into its two FFT passes.
+        _probe_spectral(p)
 
 
 if __name__ == "__main__":
