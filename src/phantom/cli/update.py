@@ -174,7 +174,13 @@ def check_for_update(force: bool = False) -> tuple[str, str] | None:
 
         _write_cache(latest, current)
         return (latest, current)
-    except Exception:
+    except (URLError, OSError, json.JSONDecodeError, ValueError, KeyError):
+        # Expected transient/data failures: network down (URLError/OSError;
+        # TimeoutError and socket errors are OSError subclasses), malformed JSON
+        # or timestamp (JSONDecodeError/ValueError), or a missing cache key
+        # (KeyError). Return None so callers degrade gracefully. Genuine
+        # programming errors (e.g. the P-11 parse bug) are intentionally NOT
+        # swallowed here and will surface.
         return None
 
 
@@ -303,6 +309,13 @@ def update(yes: bool) -> None:
             timeout=120,
         )
 
+        # NOTE (brittle, intentionally deferred): the extras-preserving reinstall
+        # fallback is gated on the exact substring "no such command" in uv's
+        # stderr (older uv builds lack `tool upgrade`). If uv reworded that
+        # message the fallback would silently stop firing. An exit-code-based
+        # rewrite was deferred by decision -- switching detection risks the
+        # upgrade path -- so the current string match is pinned by test
+        # `test_no_such_command_triggers_extras_preserving_reinstall`.
         if proc.returncode != 0 and "no such command" in proc.stderr.lower():
             # Detect current extras so reinstall preserves them (allowlisted only)
             installed_pkg = UV_INSTALL_PACKAGE
