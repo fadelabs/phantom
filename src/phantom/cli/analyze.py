@@ -47,11 +47,19 @@ _ANALYSIS_TYPES: dict[str, tuple] = {
 
 
 def _run_selected_analyses(audio, enabled: list[str]) -> dict:
-    """Run only the enabled analysis types and return results dict."""
+    """Run only the enabled analysis types and return results dict.
+
+    Each analyzer is routed through the shared ``analysis_cache`` via
+    ``_cached_analysis`` (P-01). The cache key is the analyzer's ``__name__``
+    (e.g. ``analyze_spectrum``), which matches the keys used by the MCP
+    composite tools and ``compare_*`` tools, so CLI and server share entries.
+    """
+    from phantom._cache import _cached_analysis
+
     results: dict = {}
     for name in enabled:
         fn, _title = _ANALYSIS_TYPES[name]
-        results[name] = fn(audio)
+        results[name] = _cached_analysis(audio, fn.__name__, fn)
     return results
 
 

@@ -14,7 +14,7 @@ import hashlib
 import logging
 import threading
 from collections import OrderedDict
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable
 
 if TYPE_CHECKING:
     from phantom.audio import AudioData
@@ -102,3 +102,22 @@ class AnalysisCache:
 
 # Module-level singleton for use by analysis/comparison modules.
 analysis_cache = AnalysisCache()
+
+
+def _cached_analysis(
+    audio: AudioData, func_name: str, func: Callable[[AudioData], Any]
+) -> Any:
+    """Run an analysis function with cache lookup/store.
+
+    Checks the shared ``analysis_cache`` first. On miss, runs ``func(audio)``
+    and stores the result under ``func_name`` for subsequent calls with the
+    same audio content. Composite tools (``full_diagnostic``,
+    ``batch_diagnostic``), the ``analyze`` CLI, and the ``compare_*`` tools all
+    route through this helper so they share per-analyzer results (P-01).
+    """
+    result = analysis_cache.get(audio, func_name)
+    if result is not _MISSING:
+        return result
+    result = func(audio)
+    analysis_cache.put(audio, func_name, result)
+    return result

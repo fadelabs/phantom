@@ -16,7 +16,11 @@ from phantom._utils import (
     wrap_errors,
 )
 from phantom.audio import AudioData, load_audio
-from phantom._cache import _MISSING, analysis_cache
+
+# Re-exported for backward compatibility: existing callers/tests import
+# ``_cached_analysis`` from this module (see tests/test_comparison.py). The
+# canonical definition now lives in phantom._cache (P-01).
+from phantom._cache import _cached_analysis
 from phantom.dynamics import analyze_dynamics
 from phantom.exceptions import AnalysisError, AudioLoadError, DependencyMissingError
 from phantom.loudness import analyze_loudness
@@ -166,20 +170,6 @@ class MatchResult(BaseModel):
 # ---------------------------------------------------------------------------
 # Private Helpers
 # ---------------------------------------------------------------------------
-
-
-def _cached_analysis(audio: AudioData, func_name: str, func) -> object:
-    """Run an analysis function with cache lookup/store.
-
-    Checks the analysis cache first. On miss, runs the function and
-    stores the result for subsequent calls with the same audio.
-    """
-    result = analysis_cache.get(audio, func_name)
-    if result is not _MISSING:
-        return result
-    result = func(audio)
-    analysis_cache.put(audio, func_name, result)
-    return result
 
 
 def _classify_deviation(
