@@ -17,11 +17,11 @@ from rich.status import Status
 
 from phantom._utils import atomic_write_text
 from phantom.cli._formatting import get_console
+from phantom.cli.setup_reaper import _remove_startup_block
 
 _PHANTOM_DIR = Path("~/.phantom").expanduser()
 
 _STARTUP_MARKER = "-- [phantom] auto-start MCP bridge"
-_STARTUP_END = "-- [/phantom]"
 
 
 def _get_reaper_scripts_dir() -> Path:
@@ -111,29 +111,22 @@ def _remove_mcp_entries(
 def _remove_startup_hook(startup_path: str) -> bool:
     """Remove the Phantom auto-start block from __startup.lua.
 
-    Returns True iff the hook was successfully rewritten or removed.
+    Delegates the actual stripping to the single canonical implementation in
+    ``setup_reaper._remove_startup_block`` so both call sites handle every edge
+    (missing end marker, block-only file, no block) identically. This function
+    keeps the path I/O and the bool contract: True iff the hook was
+    successfully rewritten or removed (including the no-op "no phantom block"
+    case), False on any OS error.
     """
     path = Path(startup_path)
     try:
-        content = path.read_text()
-        lines = content.split("\n")
-        new_lines = []
-        skip = False
-        for line in lines:
-            if _STARTUP_MARKER in line:
-                skip = True
-                continue
-            if skip and _STARTUP_END in line:
-                skip = False
-                continue
-            if not skip:
-                new_lines.append(line)
-
-        new_content = "\n".join(new_lines).strip()
-        if new_content:
-            atomic_write_text(startup_path, new_content + "\n")
+        new_content = _remove_startup_block(path.read_text())
+        if new_content is None:
+            return True  # no phantom block present -- nothing to do
+        if new_content == "":
+            path.unlink()  # file held only the phantom block
         else:
-            path.unlink()
+            atomic_write_text(startup_path, new_content)
         return True
     except OSError:
         return False

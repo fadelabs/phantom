@@ -274,21 +274,36 @@ def _render_mcp_diff(target: Path, old_text: str, new_text: str, console) -> Non
 def _remove_startup_block(content: str) -> str | None:
     """Strip the phantom auto-start block from __startup.lua content.
 
-    Returns the new content, or None if no phantom block is present.
+    Returns the new content, or None if no phantom block is present, or ""
+    when the file held only the phantom block.
+
+    The phantom block is delimited by ``_STARTUP_MARKER`` and the
+    ``-- [/phantom]`` end marker. If the opening marker has no matching end
+    marker (a hand-edited or corrupted file), the trailing lines are the
+    user's own content, not part of the phantom block — they are preserved
+    rather than deleted to EOF. Only the marker line itself is dropped.
     """
     if _STARTUP_MARKER not in content:
         return None
     lines = content.splitlines(keepends=True)
-    out, skipping = [], False
+    out: list[str] = []
+    buffered: list[str] = []  # lines seen after the marker, pending an end marker
+    skipping = False
     for line in lines:
         if _STARTUP_MARKER in line:
             skipping = True
+            buffered = []
             continue
         if skipping:
             if "-- [/phantom]" in line:
-                skipping = False
+                skipping = False  # well-formed block: discard buffered lines
+                buffered = []
+            else:
+                buffered.append(line)
             continue
         out.append(line)
+    # Opening marker never closed: the buffered lines are real user content.
+    out.extend(buffered)
     return "".join(out).rstrip() + "\n" if "".join(out).strip() else ""
 
 

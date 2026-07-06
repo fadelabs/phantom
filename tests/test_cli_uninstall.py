@@ -185,6 +185,31 @@ class TestRemoveStartupHook:
         ok = uninstall._remove_startup_hook(str(startup))
         assert ok is False
 
+    def test_missing_end_marker_preserves_trailing_lines(self, tmp_path):
+        """A phantom block missing its ``-- [/phantom]`` end marker must not
+        swallow the user's trailing content (the old uninstall bug deleted to
+        EOF once the skip flag latched).
+        """
+        from phantom.cli import uninstall
+
+        startup = tmp_path / "__startup.lua"
+        startup.write_text(
+            "-- user header line\n"
+            "-- [phantom] auto-start MCP bridge\n"
+            "dofile(reaper.GetResourcePath())\n"
+            "-- (end marker was manually deleted)\n"
+            "dofile('user_own_script.lua')\n"
+            "-- user trailing line\n"
+        )
+        ok = uninstall._remove_startup_hook(str(startup))
+        assert ok is True
+        content = startup.read_text()
+        # The marker line itself is stripped, but real user content survives.
+        assert "auto-start MCP bridge" not in content
+        assert "user header line" in content
+        assert "user_own_script.lua" in content
+        assert "user trailing line" in content
+
 
 # ---------------------------------------------------------------------------
 # phantom uninstall command
@@ -206,7 +231,13 @@ class TestUninstallCommand:
     def test_uninstall_with_yes(self, runner, phantom_dir):
         mock_proc = MagicMock()
         mock_proc.returncode = 0
-        with patch("phantom.cli.uninstall.subprocess.run", return_value=mock_proc):
+        # Run in an isolated cwd so the --yes uninstall can't rewrite the
+        # developer's real ./.mcp.json (which would strip the phantom entry and
+        # trip the CLI group's first-run auto-setup in later tests).
+        with (
+            runner.isolated_filesystem(),
+            patch("phantom.cli.uninstall.subprocess.run", return_value=mock_proc),
+        ):
             result = runner.invoke(cli, ["uninstall", "--yes"])
             assert result.exit_code == 0
             assert "Uninstalled" in result.output or "removed" in result.output.lower()
