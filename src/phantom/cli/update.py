@@ -53,8 +53,34 @@ REQUEST_TIMEOUT = 5
 
 
 def _parse_version(tag: str) -> tuple[int, ...]:
-    """Parse 'v1.2.3' or '1.2.3' into (1, 2, 3)."""
-    return tuple(int(x) for x in tag.lstrip("v").split("."))
+    """Parse a release tag into a comparable numeric tuple.
+
+    Handles plain releases ('v1.2.3', '1.2.3', '1.2') and pre-release /
+    build-metadata suffixes ('1.2.3-rc1', '1.2.0b1', '2.0.0-beta',
+    'v1.2.3+build.5') without raising. The release segment is taken up to
+    the first '-' or '+'; numeric dot-components are converted until the
+    first non-numeric component, which is dropped along with anything after
+    it. Pre-release tags therefore sort as their release tuple — acceptable
+    because the only callers compare 'is latest strictly newer than current'
+    with identical normalization on both sides.
+    """
+    core = tag.lstrip("v")
+    # Cut any pre-release / build metadata suffix.
+    for sep in ("-", "+"):
+        core = core.split(sep, 1)[0]
+    parts: list[int] = []
+    for component in core.split("."):
+        # PEP 440-style inline suffixes like '0b1' -> take leading digits only.
+        digits = ""
+        for chdigit in component:
+            if chdigit.isdigit():
+                digits += chdigit
+            else:
+                break
+        if not digits:
+            break
+        parts.append(int(digits))
+    return tuple(parts)
 
 
 def _fetch_json(url: str) -> dict | None:

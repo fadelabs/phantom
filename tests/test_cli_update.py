@@ -68,6 +68,24 @@ class TestParseVersion:
     def test_comparison_older(self):
         assert _parse_version("1.0.0") < _parse_version("1.1.0")
 
+    def test_parse_version_prerelease_rc(self):
+        # Regression: pre-release suffixes must not raise (P-11).
+        assert _parse_version("1.2.3-rc1") == (1, 2, 3)
+
+    def test_parse_version_prerelease_beta_pep440(self):
+        assert _parse_version("1.2.0b1") == (1, 2, 0)
+
+    def test_parse_version_prerelease_dashed_beta(self):
+        assert _parse_version("2.0.0-beta") == (2, 0, 0)
+
+    def test_parse_version_build_metadata(self):
+        assert _parse_version("v1.2.3+build.5") == (1, 2, 3)
+
+    def test_parse_version_prerelease_orders_below_next_release(self):
+        # A suffixed latest tag must still compare cleanly against current.
+        assert _parse_version("1.3.1") < _parse_version("1.4.0-rc1")
+        assert _parse_version("1.3.1-rc1") <= _parse_version("1.3.1")
+
 
 # ---------------------------------------------------------------------------
 # is_editable_install
