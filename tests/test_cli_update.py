@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.metadata
 import json
+import subprocess
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
@@ -364,6 +365,55 @@ class TestUpdateCommand:
             ),
             patch("phantom.cli.update.is_editable_install", return_value=False),
             patch("phantom.cli.update.subprocess.run", return_value=mock_proc),
+        ):
+            result = runner.invoke(cli, ["update", "--yes"])
+            assert result.exit_code != 0
+            assert "Failed" in result.output
+
+    def test_all_subprocess_calls_have_timeout(self, runner, cache_dir):
+        """Every uv subprocess call in `update` must pass a timeout (P-16)."""
+        recorded_kwargs = []
+
+        def fake_run(cmd, **kwargs):
+            recorded_kwargs.append(kwargs)
+            proc = MagicMock()
+            # First call (upgrade) triggers the list + install fallback path so
+            # all three subprocess calls are exercised.
+            if cmd[:3] == ["uv", "tool", "upgrade"]:
+                proc.returncode = 1
+                proc.stderr = "error: no such command 'upgrade'"
+            else:
+                proc.returncode = 0
+                proc.stdout = "phantom-audio v1.1.0 (/path)\n"
+                proc.stderr = ""
+            return proc
+
+        with (
+            patch(
+                "phantom.cli.update.check_for_update",
+                return_value=("2.0.0", "1.1.0"),
+            ),
+            patch("phantom.cli.update.is_editable_install", return_value=False),
+            patch("phantom.cli.update.subprocess.run", side_effect=fake_run),
+        ):
+            runner.invoke(cli, ["update", "--yes"])
+
+        assert recorded_kwargs, "expected subprocess.run to be called"
+        for kwargs in recorded_kwargs:
+            assert "timeout" in kwargs, f"missing timeout in call kwargs: {kwargs}"
+
+    def test_timeout_renders_update_failed(self, runner, cache_dir):
+        """A subprocess timeout surfaces the Update Failed panel, not a hang (P-16)."""
+        with (
+            patch(
+                "phantom.cli.update.check_for_update",
+                return_value=("2.0.0", "1.1.0"),
+            ),
+            patch("phantom.cli.update.is_editable_install", return_value=False),
+            patch(
+                "phantom.cli.update.subprocess.run",
+                side_effect=subprocess.TimeoutExpired(cmd="uv", timeout=120),
+            ),
         ):
             result = runner.invoke(cli, ["update", "--yes"])
             assert result.exit_code != 0

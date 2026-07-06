@@ -295,29 +295,44 @@ def update(yes: bool) -> None:
 
     console.print(f"[dim]Installing phantom-audio {latest}...[/dim]")
 
-    proc = subprocess.run(
-        ["uv", "tool", "upgrade", UV_INSTALL_PACKAGE],
-        capture_output=True,
-        text=True,
-    )
-
-    if proc.returncode != 0 and "no such command" in proc.stderr.lower():
-        # Detect current extras so reinstall preserves them (allowlisted only)
-        installed_pkg = UV_INSTALL_PACKAGE
-        try:
-            list_proc = subprocess.run(
-                ["uv", "tool", "list", "--show-paths"],
-                capture_output=True,
-                text=True,
-            )
-            installed_pkg = _installed_package_spec(list_proc.stdout)
-        except Exception:
-            pass
+    try:
         proc = subprocess.run(
-            ["uv", "tool", "install", "--force", installed_pkg],
+            ["uv", "tool", "upgrade", UV_INSTALL_PACKAGE],
             capture_output=True,
             text=True,
+            timeout=120,
         )
+
+        if proc.returncode != 0 and "no such command" in proc.stderr.lower():
+            # Detect current extras so reinstall preserves them (allowlisted only)
+            installed_pkg = UV_INSTALL_PACKAGE
+            try:
+                list_proc = subprocess.run(
+                    ["uv", "tool", "list", "--show-paths"],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                installed_pkg = _installed_package_spec(list_proc.stdout)
+            except Exception:
+                pass
+            proc = subprocess.run(
+                ["uv", "tool", "install", "--force", installed_pkg],
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+    except subprocess.TimeoutExpired:
+        console.print(
+            Panel(
+                "uv timed out while updating.\n\n"
+                "Check your network connection and try again, or update "
+                f"manually: [link={RELEASES_PAGE}]{RELEASES_PAGE}[/link]",
+                title="Update Failed",
+                border_style="red",
+            )
+        )
+        raise SystemExit(1) from None
 
     if proc.returncode == 0:
         _clear_cache()
