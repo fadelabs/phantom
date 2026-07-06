@@ -318,7 +318,7 @@ def _map_width_to_range(descriptor: str) -> tuple[float, float]:
     return _WIDTH_RANGES.get(descriptor, (0.0, 2.0))
 
 
-def _unmeasurable_deviation(key_name: str = "target") -> DeviationResult:
+def _unmeasurable_deviation() -> DeviationResult:
     return DeviationResult(rating="unmeasurable")
 
 
@@ -474,7 +474,7 @@ def compare_to_reference(
         if val_a is not None and val_b is not None:
             loudness_devs[key] = _rate_deviation_ref(val_a, val_b)
         else:
-            loudness_devs[key] = _unmeasurable_deviation("reference")
+            loudness_devs[key] = _unmeasurable_deviation()
 
     loudness_section = LoudnessReferenceComparisonSection(
         integrated_lufs=loudness_devs["integrated_lufs"],
@@ -497,11 +497,11 @@ def compare_to_reference(
                     norm_a[band_key], norm_b[band_key]
                 )
             else:
-                freq_result[band_key] = _unmeasurable_deviation("reference")
+                freq_result[band_key] = _unmeasurable_deviation()
     else:
         band_keys = (bands_a or bands_b or {}).keys()
         for band_key in band_keys:
-            freq_result[band_key] = _unmeasurable_deviation("reference")
+            freq_result[band_key] = _unmeasurable_deviation()
 
     # Dynamics
     dynamics_devs = {}
@@ -511,7 +511,7 @@ def compare_to_reference(
         if val_a is not None and val_b is not None:
             dynamics_devs[key] = _rate_deviation_ref(val_a, val_b)
         else:
-            dynamics_devs[key] = _unmeasurable_deviation("reference")
+            dynamics_devs[key] = _unmeasurable_deviation()
 
     dynamics_section = DynamicsReferenceComparisonSection(
         rms_dbfs=dynamics_devs["rms_dbfs"],
@@ -527,7 +527,7 @@ def compare_to_reference(
         if val_a is not None and val_b is not None:
             stereo_devs[key] = _rate_deviation_ref(val_a, val_b, round_fn=round_ratio)
         else:
-            stereo_devs[key] = _unmeasurable_deviation("reference")
+            stereo_devs[key] = _unmeasurable_deviation()
 
     stereo_section = StereoReferenceComparisonSection(
         correlation=stereo_devs["correlation"],
