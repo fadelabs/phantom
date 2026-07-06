@@ -184,7 +184,7 @@ def detect_problems(audio: AudioData) -> ProblemsResult:
 
     problems: list[ProblemItem] = []
     problems.extend(_detect_clipping(mono))
-    problems.extend(_detect_dc_offset(mono))
+    problems.extend(_detect_dc_offset(audio))
     problems.extend(_detect_inter_sample_peaks(audio))
     problems.extend(_detect_noise_floor(mono, audio.sample_rate))
     problems.extend(_detect_snr(mono, audio.sample_rate))
@@ -280,17 +280,47 @@ def _detect_clipping(mono: np.ndarray) -> list[ProblemItem]:
     ]
 
 
-def _detect_dc_offset(mono: np.ndarray) -> list[ProblemItem]:
-    """Detect non-zero DC offset. PROB-02."""
-    dc = float(np.mean(mono))
-    if abs(dc) < _DC_OFFSET_THRESHOLD:  # 0.05% of full scale — above 24-bit noise floor
+def _detect_dc_offset(audio: AudioData) -> list[ProblemItem]:
+    """Detect non-zero DC offset. PROB-02.
+
+    Checks DC per channel so antiphase DC (L=+x, R=-x), which cancels in the
+    mono mixdown, is still caught (P-13). Mono files are checked exactly as
+    before — the flagged item's shape is byte-identical to the pre-P-13 output.
+    Stereo files additionally emit a "channel" key naming the worst channel;
+    this is an additive detail field (existing keys preserved with the same
+    semantics).
+    """
+    if audio.num_channels == 1:
+        dc = float(np.mean(audio.mono))
+        if abs(dc) < _DC_OFFSET_THRESHOLD:  # 0.05% FS — above 24-bit noise floor
+            return []
+        return [
+            ProblemItem(
+                type="dc_offset",
+                severity="minor",
+                message=f"DC offset detected: {dc:.6f} (mean sample value).",
+                details={"dc_offset": round(dc, 8)},
+            )
+        ]
+
+    # Stereo: flag if EITHER channel exceeds the threshold. Report the channel
+    # with the largest magnitude DC (the worst offender).
+    left_dc = float(np.mean(audio.left))
+    right_dc = float(np.mean(audio.right))
+    if abs(left_dc) < _DC_OFFSET_THRESHOLD and abs(right_dc) < _DC_OFFSET_THRESHOLD:
         return []
+    if abs(left_dc) >= abs(right_dc):
+        dc, channel = left_dc, "left"
+    else:
+        dc, channel = right_dc, "right"
     return [
         ProblemItem(
             type="dc_offset",
             severity="minor",
-            message=f"DC offset detected: {dc:.6f} (mean sample value).",
-            details={"dc_offset": round(dc, 8)},
+            message=(
+                f"DC offset detected: {dc:.6f} (mean sample value, {channel} channel)."
+            ),
+            details={"dc_offset": round(dc, 8), "channel": channel},
         )
     ]
 

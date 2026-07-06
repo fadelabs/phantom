@@ -22,6 +22,7 @@ from phantom.problems import (
     _detect_lossy_codec,
     _spectral_flatness,
     _average_power_spectrum,
+    _DC_OFFSET_THRESHOLD,
 )
 
 
@@ -211,6 +212,39 @@ class TestDCOffset:
         samples, sr = mono_sine_440hz
         samples = samples * 0.5
         audio = _make_audio(samples.astype(np.float32), sr)
+        result = detect_problems(audio)
+        dc_problems = [p for p in result.problems if p.type == "dc_offset"]
+        assert len(dc_problems) == 0
+
+    def test_antiphase_stereo_dc_detected(self):
+        """Antiphase DC (L=+0.1, R=-0.1) cancels in mono but must still flag (P-13).
+
+        The mono mixdown of a +x/-x DC pair is zero, so a mono-only check
+        misses it. Per-channel detection flags it because either channel
+        exceeds the threshold.
+        """
+        sr = 44100
+        t = np.linspace(0, 1.0, sr, endpoint=False, dtype=np.float32)
+        sine = 0.5 * np.sin(2 * np.pi * 440 * t)
+        left = (sine + 0.1).astype(np.float32)
+        right = (sine - 0.1).astype(np.float32)
+        samples = np.column_stack([left, right])
+        audio = _make_stereo_audio(samples, sr)
+
+        # Sanity: mono mixdown cancels the DC, so a mono-only check sees nothing.
+        assert abs(float(np.mean(audio.mono))) < _DC_OFFSET_THRESHOLD
+
+        result = detect_problems(audio)
+        dc_problems = [p for p in result.problems if p.type == "dc_offset"]
+        assert len(dc_problems) == 1
+
+    def test_clean_stereo_no_dc_offset(self):
+        """Clean stereo sine (no DC on either channel) -> no dc_offset problem."""
+        sr = 44100
+        t = np.linspace(0, 1.0, sr, endpoint=False, dtype=np.float32)
+        sine = (0.5 * np.sin(2 * np.pi * 440 * t)).astype(np.float32)
+        samples = np.column_stack([sine, sine])
+        audio = _make_stereo_audio(samples, sr)
         result = detect_problems(audio)
         dc_problems = [p for p in result.problems if p.type == "dc_offset"]
         assert len(dc_problems) == 0

@@ -256,6 +256,43 @@ class TestSeparateStems:
                     output_dir=str(tmp_path / "out"),
                 )
 
+    def test_silent_input_raises_analysis_error(self, tmp_path, wav_file_factory):
+        """Fully-silent input (ref.std() == 0) raises a clean AnalysisError, not NaN (P-14).
+
+        Without the zero-std guard, ``(wav - ref.mean()) / ref.std()`` divides by
+        zero and feeds NaNs into demucs. The guard must intercept it first with a
+        musician-friendly message.
+        """
+        sr = 44100
+        # A genuinely silent file: all zeros. (The mock's ref.std() is forced to
+        # 0.0 below so the guard fires regardless of demucs internals.)
+        samples = np.zeros((sr, 2), dtype=np.float32)
+        input_path = wav_file_factory(samples, sr)
+        output_dir = str(tmp_path / "stems")
+
+        mocks = _make_demucs_mocks()
+        # Force the demucs reference channel to report zero standard deviation,
+        # simulating a fully-silent input reaching the normalization step.
+        mocks[
+            "demucs.audio"
+        ].AudioFile.return_value.read.return_value.mean.return_value = MagicMock(
+            mean=MagicMock(return_value=0.0),
+            std=MagicMock(return_value=0.0),
+        )
+
+        with patch.dict(
+            "sys.modules",
+            {
+                "demucs.pretrained": mocks["demucs.pretrained"],
+                "demucs.apply": mocks["demucs.apply"],
+                "demucs.audio": mocks["demucs.audio"],
+                "demucs": mocks["demucs"],
+                "torch": mocks["torch"],
+            },
+        ):
+            with pytest.raises(AnalysisError, match="silent"):
+                separate_stems(input_path, output_dir)
+
     def test_import_without_demucs(self, monkeypatch):
         """Importing phantom.separation without demucs installed does not raise (SEP-02)."""
         import builtins
