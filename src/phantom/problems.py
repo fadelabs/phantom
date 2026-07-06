@@ -115,6 +115,41 @@ def build_summary(problems: list[ProblemItem]) -> ProblemSummary:
     return ProblemSummary(**summary)
 
 
+def inject_sample_rate_mismatch(
+    problems_result: ProblemsResult,
+    sample_rates: dict,
+) -> ProblemsResult:
+    """Prepend a sample-rate-mismatch dealbreaker to a ProblemsResult (P-10).
+
+    Shared between the batch_diagnostic MCP tool (server.py) and the CLI batch
+    path (cli/analyze.py). Callers detect the mismatch (len(unique_rates) > 1)
+    and iterate over stems; this helper builds the dealbreaker ProblemItem from
+    ``sample_rates``, prepends it to ``problems_result.problems``, and returns a
+    freshly-built ProblemsResult with clean=False and an updated summary.
+
+    Args:
+        problems_result: The stem's existing ProblemsResult to augment.
+        sample_rates: Mapping of stem name -> sample rate (Hz) across the batch.
+
+    Returns:
+        A new ProblemsResult with the mismatch item first, clean=False, and a
+        summary rebuilt via build_summary. The input is not mutated.
+    """
+    mismatch_detail = {name: int(rate) for name, rate in sample_rates.items()}
+    mismatch = ProblemItem(
+        type="sample_rate_mismatch",
+        severity="dealbreaker",
+        message=f"Sample rate mismatch across stems: {mismatch_detail}",
+        details={"sample_rates": mismatch_detail},
+    )
+    all_problems = [mismatch] + list(problems_result.problems)
+    return ProblemsResult(
+        problems=all_problems,
+        clean=False,
+        summary=build_summary(all_problems),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------

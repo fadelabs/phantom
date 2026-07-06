@@ -12,6 +12,9 @@ from unittest.mock import patch
 from phantom.audio import AudioData
 from phantom.problems import (
     detect_problems,
+    inject_sample_rate_mismatch,
+    build_summary,
+    ProblemItem,
     ProblemsResult,
     _detect_hum,
     _detect_band_excess,
@@ -1023,3 +1026,69 @@ class TestFFTSpectrumSharing:
             detect_problems(audio)
             # Should be called exactly once (pre-compute), not 2 times
             assert mock_aps.call_count == 1
+
+
+# ---------------------------------------------------------------------------
+# Shared sample-rate-mismatch injection (P-10)
+# ---------------------------------------------------------------------------
+
+
+class TestInjectSampleRateMismatch:
+    """Tests for inject_sample_rate_mismatch shared helper (P-10)."""
+
+    def test_prepends_dealbreaker_and_rebuilds(self):
+        """Given a clean ProblemsResult and a 2-rate dict, the returned result
+        has the mismatch item first, clean=False, and summary counts updated."""
+        clean = ProblemsResult()  # empty problems, clean=True
+        assert clean.clean is True
+        assert clean.summary.total == 0
+
+        sample_rates = {"kick.wav": 44100, "vox.wav": 48000}
+        result = inject_sample_rate_mismatch(clean, sample_rates)
+
+        # New result -- a fresh ProblemsResult, not the same object mutated
+        assert isinstance(result, ProblemsResult)
+        assert result is not clean
+
+        # Mismatch item is FIRST
+        assert result.problems[0].type == "sample_rate_mismatch"
+        assert result.problems[0].severity == "dealbreaker"
+
+        # clean flipped to False
+        assert result.clean is False
+
+        # Summary counts updated
+        assert result.summary.dealbreaker == 1
+        assert result.summary.total == 1
+
+    def test_injected_item_message_and_details(self):
+        """The injected item's message and details match the byte-identical
+        structure produced at both former call sites."""
+        sample_rates = {"a.wav": 44100, "b.wav": 96000}
+        result = inject_sample_rate_mismatch(ProblemsResult(), sample_rates)
+
+        expected_detail = {"a.wav": 44100, "b.wav": 96000}
+        item = result.problems[0]
+        assert item.message == f"Sample rate mismatch across stems: {expected_detail}"
+        assert item.details == {"sample_rates": expected_detail}
+
+    def test_preserves_existing_problems_after_mismatch(self):
+        """Existing problems are preserved and follow the prepended mismatch item."""
+        existing = ProblemItem(
+            type="clipping",
+            severity="dealbreaker",
+            message="Clipping detected.",
+            details={"clipped_samples": 5},
+        )
+        original = ProblemsResult(
+            problems=[existing],
+            clean=False,
+            summary=build_summary([existing]),
+        )
+
+        result = inject_sample_rate_mismatch(original, {"a.wav": 44100, "b.wav": 48000})
+
+        assert result.problems[0].type == "sample_rate_mismatch"
+        assert result.problems[1] is existing
+        assert result.summary.dealbreaker == 2
+        assert result.summary.total == 2

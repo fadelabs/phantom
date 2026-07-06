@@ -26,8 +26,7 @@ from phantom.phase import analyze_phase as _analyze_phase, PhaseResult
 from phantom.phase import compare_phase as _compare_phase
 from phantom.problems import (
     detect_problems as _detect_problems,
-    ProblemItem,
-    build_summary,
+    inject_sample_rate_mismatch,
     ProblemsResult,
 )
 from phantom.masking import analyze_masking as _analyze_masking
@@ -443,20 +442,10 @@ def batch_diagnostic(file_paths: list[str]) -> dict:
     # SRV-04: Flag sample rate mismatches as dealbreaker
     unique_rates = set(sample_rates.values())
     if len(unique_rates) > 1:
-        mismatch_detail = {name: int(rate) for name, rate in sample_rates.items()}
         for stem_name, stem_result in results.items():
             if isinstance(stem_result, StemDiagnosticResult):
-                mismatch = ProblemItem(
-                    type="sample_rate_mismatch",
-                    severity="dealbreaker",
-                    message=f"Sample rate mismatch across stems: {mismatch_detail}",
-                    details={"sample_rates": mismatch_detail},
-                )
-                all_problems = [mismatch] + list(stem_result.problems.problems)
-                rebuilt = ProblemsResult(
-                    problems=all_problems,
-                    clean=False,
-                    summary=build_summary(all_problems),
+                rebuilt = inject_sample_rate_mismatch(
+                    stem_result.problems, sample_rates
                 )
                 results[stem_name] = stem_result.model_copy(
                     update={"problems": rebuilt}
