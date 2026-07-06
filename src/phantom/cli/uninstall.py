@@ -81,8 +81,11 @@ def _find_artifacts() -> dict:
 
 def _remove_mcp_entries(
     config_path: str, remove_phantom: bool, remove_reaper: bool
-) -> None:
-    """Remove phantom and/or reaper entries from an MCP config file."""
+) -> bool:
+    """Remove phantom and/or reaper entries from an MCP config file.
+
+    Returns True iff the config was successfully rewritten or removed.
+    """
     path = Path(config_path)
     try:
         data = json.loads(path.read_text())
@@ -100,12 +103,16 @@ def _remove_mcp_entries(
             atomic_write_text(config_path, json.dumps(data, indent=2) + "\n")
         else:
             path.unlink()
+        return True
     except (json.JSONDecodeError, OSError):
-        pass
+        return False
 
 
-def _remove_startup_hook(startup_path: str) -> None:
-    """Remove the Phantom auto-start block from __startup.lua."""
+def _remove_startup_hook(startup_path: str) -> bool:
+    """Remove the Phantom auto-start block from __startup.lua.
+
+    Returns True iff the hook was successfully rewritten or removed.
+    """
     path = Path(startup_path)
     try:
         content = path.read_text()
@@ -127,8 +134,38 @@ def _remove_startup_hook(startup_path: str) -> None:
             atomic_write_text(startup_path, new_content + "\n")
         else:
             path.unlink()
+        return True
     except OSError:
-        pass
+        return False
+
+
+def _uninstall_uv_package(console, removed: list[str]) -> None:
+    """Uninstall the phantom-audio uv tool package, recording the outcome."""
+    try:
+        proc = subprocess.run(
+            ["uv", "tool", "uninstall", "phantom-audio"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except subprocess.TimeoutExpired:
+        console.print(
+            "[yellow]Could not uninstall package automatically (timed out). "
+            "Run: uv tool uninstall phantom-audio[/yellow]"
+        )
+        return
+
+    uv_output = (proc.stdout + proc.stderr).lower()
+
+    if proc.returncode == 0 or "uninstalled" in uv_output:
+        removed.append("phantom-audio package")
+    elif "not installed" in uv_output:
+        removed.append("phantom-audio package (already removed)")
+    else:
+        console.print(
+            "[yellow]Could not uninstall package automatically. "
+            "Run: uv tool uninstall phantom-audio[/yellow]"
+        )
 
 
 @click.command()
@@ -189,8 +226,13 @@ def uninstall(yes: bool, keep_config: bool) -> None:
 
     if not keep_config:
         for cfg in artifacts.get("mcp_configs", []):
-            _remove_mcp_entries(cfg["path"], cfg["has_phantom"], cfg["has_reaper"])
-            removed.append(f"MCP entries in {cfg['path']}")
+            if _remove_mcp_entries(cfg["path"], cfg["has_phantom"], cfg["has_reaper"]):
+                removed.append(f"MCP entries in {cfg['path']}")
+            else:
+                console.print(
+                    f"[yellow]Could not update {cfg['path']} -- remove the "
+                    "phantom/reaper entries manually.[/yellow]"
+                )
 
     if "reaper_bridge_data" in artifacts:
         shutil.rmtree(artifacts["reaper_bridge_data"], ignore_errors=True)
@@ -204,25 +246,15 @@ def uninstall(yes: bool, keep_config: bool) -> None:
             pass
 
     if "reaper_startup_hook" in artifacts:
-        _remove_startup_hook(artifacts["reaper_startup_hook"])
-        removed.append("Reaper auto-start hook")
+        if _remove_startup_hook(artifacts["reaper_startup_hook"]):
+            removed.append("Reaper auto-start hook")
+        else:
+            console.print(
+                f"[yellow]Could not update {artifacts['reaper_startup_hook']} -- "
+                "remove the phantom auto-start block manually.[/yellow]"
+            )
 
-    proc = subprocess.run(
-        ["uv", "tool", "uninstall", "phantom-audio"],
-        capture_output=True,
-        text=True,
-    )
-    uv_output = (proc.stdout + proc.stderr).lower()
-
-    if proc.returncode == 0 or "uninstalled" in uv_output:
-        removed.append("phantom-audio package")
-    elif "not installed" in uv_output:
-        removed.append("phantom-audio package (already removed)")
-    else:
-        console.print(
-            "[yellow]Could not uninstall package automatically. "
-            "Run: uv tool uninstall phantom-audio[/yellow]"
-        )
+    _uninstall_uv_package(console, removed)
 
     console.print(
         Panel(
