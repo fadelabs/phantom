@@ -405,8 +405,8 @@ class TestSharedTruePeak:
         (two independent per-channel loops) it is 4 for stereo.
         """
         import essentia.standard as es
-        import phantom.loudness as loudness_mod
         import phantom.problems as problems_mod
+        from phantom.loudness import es as loudness_es
 
         calls = {"n": 0}
         real_ctor = es.TruePeakDetector
@@ -416,14 +416,12 @@ class TestSharedTruePeak:
             return real_ctor(*args, **kwargs)
 
         # Patch the name where each module looks it up (both import es).
-        monkeypatch.setattr(loudness_mod.es, "TruePeakDetector", _counting_ctor)
+        monkeypatch.setattr(loudness_es, "TruePeakDetector", _counting_ctor)
         monkeypatch.setattr(problems_mod.es, "TruePeakDetector", _counting_ctor)
 
         audio = _asymmetric_stereo()
         analyze_loudness(audio)
-        from phantom.problems import detect_problems
-
-        detect_problems(audio)
+        problems_mod.detect_problems(audio)
 
         assert calls["n"] == 1, (
             f"Expected TruePeakDetector constructed exactly once across "

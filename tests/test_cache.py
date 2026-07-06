@@ -7,7 +7,6 @@ import threading
 
 import numpy as np
 
-import phantom._cache as cache_mod
 from phantom._cache import _MISSING, AnalysisCache
 from phantom.audio import AudioData
 
@@ -77,8 +76,8 @@ class TestContentHashMemoization:
             calls["n"] += 1
             return real_sha256(*args, **kwargs)
 
-        # Patch the name where _cache looks it up.
-        monkeypatch.setattr(cache_mod.hashlib, "sha256", _counting_sha256)
+        # Patch the shared hashlib module object — the same one _cache looks up.
+        monkeypatch.setattr(hashlib, "sha256", _counting_sha256)
 
         # Two independent cache operations on the same instance: a put and a get.
         cache.put(audio, "spectrum", {"centroid": 1200.0})
