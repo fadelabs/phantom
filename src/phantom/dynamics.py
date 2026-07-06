@@ -91,7 +91,7 @@ def analyze_dynamics(audio: AudioData) -> DynamicsResult:
         return _silent_dynamics_result()
 
     # -- RMS level (DYN-01) --
-    rms = float(np.sqrt(np.mean(mono**2)))
+    rms = audio.mono_rms
     rms_dbfs = float(20 * np.log10(rms + 1e-10))
 
     # -- Peak level (DYN-02) --
