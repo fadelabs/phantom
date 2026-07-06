@@ -176,8 +176,14 @@ def render(
     # Self-overwrite guard (P-22). ffmpeg runs with `-y`, so if the output path
     # resolves to the same file as the source (e.g. rendering x.wav to `wav`
     # with no --output), the source would be clobbered in place. Refuse before
-    # any ffmpeg run. Compare realpaths so symlinks/relative paths can't slip by.
-    if os.path.realpath(output_path) == os.path.realpath(file):
+    # any ffmpeg run. Compare realpaths so symlinks/relative paths can't slip by;
+    # also test os.path.samefile so same-inode collisions realpath does NOT
+    # normalize are caught -- hardlinks, and case-variant names on
+    # case-insensitive filesystems (macOS APFS), e.g. SONG.WAV -> SONG.wav.
+    same_target = os.path.realpath(output_path) == os.path.realpath(file) or (
+        os.path.exists(output_path) and os.path.samefile(output_path, file)
+    )
+    if same_target:
         console.print(
             Panel(
                 "Output would overwrite the source file. Pass [bold]--output[/bold] "

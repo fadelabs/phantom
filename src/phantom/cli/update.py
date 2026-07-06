@@ -328,6 +328,9 @@ def update(yes: bool) -> None:
                 )
                 installed_pkg = _installed_package_spec(list_proc.stdout)
             except Exception:
+                # Intentional best-effort: if `uv tool list` fails or times out
+                # we can't detect extras, so we fall back to the bare package
+                # spec and let the reinstall proceed without preserving extras.
                 pass
             proc = subprocess.run(
                 ["uv", "tool", "install", "--force", installed_pkg],

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -342,6 +343,56 @@ class TestRenderSelfOverwrite:
                     "wav",
                     "--output",
                     str(wav_path),
+                ],
+            )
+
+        assert result.exit_code != 0
+        assert "overwrite" in result.output.lower()
+        assert wav_path.read_bytes() == original_bytes
+
+    def test_render_hardlink_to_source_blocked(
+        self, runner, tmp_path, mono_sine_440hz, monkeypatch
+    ):
+        """An --output that is a hardlink of the source is blocked (same inode).
+
+        realpath does NOT collapse a hardlink to its source path (both names are
+        real, distinct paths), so the realpath-string guard alone misses this
+        case. On case-insensitive filesystems (macOS APFS) the equivalent trap is
+        a case-variant of the source name -- also a same-inode collision that
+        realpath won't normalize. A hardlink reproduces the same-inode condition
+        deterministically on every filesystem, so we assert the os.samefile arm
+        of the guard catches it and leaves the source bytes untouched.
+        """
+        monkeypatch.delenv("PHANTOM_AUDIO_DIR", raising=False)
+        monkeypatch.setenv("PHANTOM_OUTPUT_DIR", str(tmp_path))
+
+        wav_path = tmp_path / "source.wav"
+        samples, sr = mono_sine_440hz
+        sf.write(str(wav_path), samples, sr)
+        original_bytes = wav_path.read_bytes()
+
+        # A second name for the exact same inode; realpath(link) != realpath(src)
+        # as strings, but os.path.samefile(link, src) is True.
+        link_path = tmp_path / "alias.wav"
+        os.link(str(wav_path), str(link_path))
+
+        mock_ff_cls = MagicMock(
+            side_effect=AssertionError("ffmpeg must not run on self-overwrite")
+        )
+
+        with (
+            patch("phantom.cli.render.shutil.which", return_value="/usr/bin/ffmpeg"),
+            patch("ffmpeg_progress_yield.FfmpegProgress", mock_ff_cls),
+        ):
+            result = runner.invoke(
+                cli,
+                [
+                    "render",
+                    str(wav_path),
+                    "--format",
+                    "wav",
+                    "--output",
+                    str(link_path),
                 ],
             )
 

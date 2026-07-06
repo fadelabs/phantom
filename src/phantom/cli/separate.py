@@ -28,7 +28,7 @@ from phantom.exceptions import PathSecurityError
     "--output-dir",
     "-o",
     default=None,
-    help="Output directory for stems (default: ./stems)",
+    help="Output directory for stems (default: stems/ in the Phantom output directory)",
 )
 @click.option(
     "--json",

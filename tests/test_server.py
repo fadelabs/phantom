@@ -517,8 +517,7 @@ def test_full_diagnostic_populates_cache(mono_sine_440hz, make_wav):
     from phantom.server import full_diagnostic
 
     # Start from a clean cache so the assertions reflect this call only.
-    with analysis_cache._lock:
-        analysis_cache._store.clear()
+    analysis_cache.clear()
 
     samples, sr = mono_sine_440hz
     path = make_wav(samples, sr)
@@ -534,8 +533,7 @@ def test_full_diagnostic_populates_cache(mono_sine_440hz, make_wav):
     assert analysis_cache.get(audio, "detect_problems") is not _MISSING
 
     # Clean up so we don't leak entries into other tests sharing the cache.
-    with analysis_cache._lock:
-        analysis_cache._store.clear()
+    analysis_cache.clear()
 
 
 async def test_batch_diagnostic_rebuild_problems(client, mono_sine_440hz, make_wav):
