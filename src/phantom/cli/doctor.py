@@ -45,7 +45,7 @@ def _check_mcp_config(path: Path) -> bool | None:
 
 def _collect_results() -> dict:
     """Collect all diagnostic results into a dict."""
-    from phantom.cli.setup_reaper import _get_reaper_scripts_dir
+    from phantom.cli.setup_reaper import EXPECTED_LUA_FILES, _get_reaper_scripts_dir
 
     results: dict = {"ok": True}
 
@@ -95,7 +95,13 @@ def _collect_results() -> dict:
     # 7. Reaper integration
     install_dir = Path("~/.phantom/reaper-mcp").expanduser()
     scripts_dir = _get_reaper_scripts_dir()
-    lua_files = list(scripts_dir.glob("*.lua")) if scripts_dir.exists() else []
+    # Count only Phantom's own bridge script(s), not every unrelated .lua in the
+    # user's Reaper Scripts dir (P-21). Mirrors uninstall.py's filter.
+    lua_files = (
+        [f for f in scripts_dir.glob("*.lua") if f.name in EXPECTED_LUA_FILES]
+        if scripts_dir.exists()
+        else []
+    )
     results["reaper"] = {
         "bridge_installed": install_dir.exists(),
         "scripts_dir": str(scripts_dir),

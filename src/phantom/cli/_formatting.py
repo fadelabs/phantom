@@ -7,6 +7,7 @@ and error panel rendering used across all CLI subcommands.
 from __future__ import annotations
 
 import json
+import re
 import sys
 
 import plotext as plt
@@ -15,6 +16,12 @@ from rich.panel import Panel
 from rich.table import Table
 
 from phantom.exceptions import RECOMMENDED_PYTHON, DependencyMissingError, PhantomError
+
+# Local copy of server.py's _PATH_REGEX — strips Unix/Windows absolute paths from
+# error messages so CLI output never leaks internal filesystem layout. Kept as a
+# local copy (rather than importing from phantom.server) to avoid a CLI->server
+# import edge.
+_PATH_REGEX = re.compile(r"([A-Za-z]:\\[^\s:,)]+\\|/[^\s:,)]+/)+")
 
 # ---------------------------------------------------------------------------
 # Severity styling (D-06)
@@ -214,8 +221,9 @@ def render_error(exc: Exception, console: Console) -> None:
     """Render an exception as a styled Rich Panel.
 
     - ``DependencyMissingError``: yellow panel with install instructions
-    - ``PhantomError``: red panel with error message
-    - Other: red panel titled "Unexpected Error"
+    - ``PhantomError``: red panel with error message (absolute paths redacted)
+    - Other: red panel titled "Unexpected Error" with a generic message so
+      internal paths / details never leak (mirrors ``server.py``).
     """
     if isinstance(exc, DependencyMissingError):
         console.print(
@@ -229,7 +237,7 @@ def render_error(exc: Exception, console: Console) -> None:
     elif isinstance(exc, PhantomError):
         console.print(
             Panel(
-                str(exc),
+                _PATH_REGEX.sub("", str(exc)),
                 title="Error",
                 border_style="red",
             )
@@ -237,7 +245,7 @@ def render_error(exc: Exception, console: Console) -> None:
     else:
         console.print(
             Panel(
-                str(exc),
+                "Internal error — check the logs for details.",
                 title="Unexpected Error",
                 border_style="red",
             )

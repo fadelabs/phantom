@@ -115,6 +115,41 @@ def build_summary(problems: list[ProblemItem]) -> ProblemSummary:
     return ProblemSummary(**summary)
 
 
+def inject_sample_rate_mismatch(
+    problems_result: ProblemsResult,
+    sample_rates: dict,
+) -> ProblemsResult:
+    """Prepend a sample-rate-mismatch dealbreaker to a ProblemsResult (P-10).
+
+    Shared between the batch_diagnostic MCP tool (server.py) and the CLI batch
+    path (cli/analyze.py). Callers detect the mismatch (len(unique_rates) > 1)
+    and iterate over stems; this helper builds the dealbreaker ProblemItem from
+    ``sample_rates``, prepends it to ``problems_result.problems``, and returns a
+    freshly-built ProblemsResult with clean=False and an updated summary.
+
+    Args:
+        problems_result: The stem's existing ProblemsResult to augment.
+        sample_rates: Mapping of stem name -> sample rate (Hz) across the batch.
+
+    Returns:
+        A new ProblemsResult with the mismatch item first, clean=False, and a
+        summary rebuilt via build_summary. The input is not mutated.
+    """
+    mismatch_detail = {name: int(rate) for name, rate in sample_rates.items()}
+    mismatch = ProblemItem(
+        type="sample_rate_mismatch",
+        severity="dealbreaker",
+        message=f"Sample rate mismatch across stems: {mismatch_detail}",
+        details={"sample_rates": mismatch_detail},
+    )
+    all_problems = [mismatch] + list(problems_result.problems)
+    return ProblemsResult(
+        problems=all_problems,
+        clean=False,
+        summary=build_summary(all_problems),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -149,7 +184,7 @@ def detect_problems(audio: AudioData) -> ProblemsResult:
 
     problems: list[ProblemItem] = []
     problems.extend(_detect_clipping(mono))
-    problems.extend(_detect_dc_offset(mono))
+    problems.extend(_detect_dc_offset(audio))
     problems.extend(_detect_inter_sample_peaks(audio))
     problems.extend(_detect_noise_floor(mono, audio.sample_rate))
     problems.extend(_detect_snr(mono, audio.sample_rate))
@@ -245,37 +280,60 @@ def _detect_clipping(mono: np.ndarray) -> list[ProblemItem]:
     ]
 
 
-def _detect_dc_offset(mono: np.ndarray) -> list[ProblemItem]:
-    """Detect non-zero DC offset. PROB-02."""
-    dc = float(np.mean(mono))
-    if abs(dc) < _DC_OFFSET_THRESHOLD:  # 0.05% of full scale — above 24-bit noise floor
+def _detect_dc_offset(audio: AudioData) -> list[ProblemItem]:
+    """Detect non-zero DC offset. PROB-02.
+
+    Checks DC per channel so antiphase DC (L=+x, R=-x), which cancels in the
+    mono mixdown, is still caught (P-13). Mono files are checked exactly as
+    before — the flagged item's shape is byte-identical to the pre-P-13 output.
+    Stereo files additionally emit a "channel" key naming the worst channel;
+    this is an additive detail field (existing keys preserved with the same
+    semantics).
+    """
+    if audio.num_channels == 1:
+        dc = float(np.mean(audio.mono))
+        if abs(dc) < _DC_OFFSET_THRESHOLD:  # 0.05% FS — above 24-bit noise floor
+            return []
+        return [
+            ProblemItem(
+                type="dc_offset",
+                severity="minor",
+                message=f"DC offset detected: {dc:.6f} (mean sample value).",
+                details={"dc_offset": round(dc, 8)},
+            )
+        ]
+
+    # Stereo: flag if EITHER channel exceeds the threshold. Report the channel
+    # with the largest magnitude DC (the worst offender).
+    left_dc = float(np.mean(audio.left))
+    right_dc = float(np.mean(audio.right))
+    if abs(left_dc) < _DC_OFFSET_THRESHOLD and abs(right_dc) < _DC_OFFSET_THRESHOLD:
         return []
+    if abs(left_dc) >= abs(right_dc):
+        dc, channel = left_dc, "left"
+    else:
+        dc, channel = right_dc, "right"
     return [
         ProblemItem(
             type="dc_offset",
             severity="minor",
-            message=f"DC offset detected: {dc:.6f} (mean sample value).",
-            details={"dc_offset": round(dc, 8)},
+            message=(
+                f"DC offset detected: {dc:.6f} (mean sample value, {channel} channel)."
+            ),
+            details={"dc_offset": round(dc, 8), "channel": channel},
         )
     ]
 
 
 def _detect_inter_sample_peaks(audio: AudioData) -> list[ProblemItem]:
     """Detect inter-sample peaks exceeding sample peak by >0.5 dB. PROB-03."""
-    eps = np.finfo(np.float32).eps
-    channel_results: list[tuple[float, float]] = []
+    # Reuse the per-file true-peak computation memoized by channel_true_peaks
+    # (shared with analyze_loudness) instead of running the x4-oversampled FIR
+    # a second time (P-02, P-06).
+    from phantom._truepeak import channel_true_peaks
 
-    for ch in range(audio.num_channels):
-        channel_signal = audio.samples[:, ch]
-        sample_peak = float(np.max(np.abs(channel_signal)))
-        if sample_peak < eps:
-            continue
-        tp = es.TruePeakDetector(
-            sampleRate=audio.sample_rate, oversamplingFactor=4, version=4
-        )
-        _, tp_output = tp(channel_signal)
-        true_peak = float(np.max(np.abs(tp_output)))
-        channel_results.append((sample_peak, true_peak))
+    eps = np.finfo(np.float32).eps
+    channel_results = [(sp, tp) for (sp, tp) in channel_true_peaks(audio) if sp >= eps]
 
     if not channel_results:
         return []

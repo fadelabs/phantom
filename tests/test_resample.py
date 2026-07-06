@@ -14,7 +14,7 @@ import numpy as np
 import pytest
 
 from phantom.audio import AudioData
-from phantom._resample import resample_to_match
+from phantom._resample import align_sample_rates, resample_to_match
 
 
 def _make_audio(
@@ -208,3 +208,29 @@ class TestInfoLogging:
         msgs = " ".join(r.message for r in caplog.records)
         assert "44100" in msgs
         assert "48000" in msgs
+
+
+# --- align_sample_rates helper ---
+
+
+class TestAlignSampleRates:
+    """Upsample all inputs to the highest sample rate; identity when equal."""
+
+    def test_mismatched_rates_upsampled_in_order(self) -> None:
+        audio_a = _make_audio(_sine(440.0, 44100), 44100)
+        audio_b = _make_audio(_sine(440.0, 48000), 48000)
+        out_a, out_b = align_sample_rates(audio_a, audio_b)
+        # Both aligned to the higher rate.
+        assert out_a.sample_rate == 48000
+        assert out_b.sample_rate == 48000
+        # Input order preserved: the already-48000 input is returned unchanged.
+        assert out_b is audio_b
+        # The lower-rate input was resampled to a new object.
+        assert out_a is not audio_a
+
+    def test_equal_rates_return_identical_objects(self) -> None:
+        audio_a = _make_audio(_sine(440.0, 44100), 44100)
+        audio_b = _make_audio(_sine(220.0, 44100), 44100)
+        out_a, out_b = align_sample_rates(audio_a, audio_b)
+        assert out_a is audio_a
+        assert out_b is audio_b

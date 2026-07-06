@@ -90,14 +90,23 @@ def _setup_plugin(console, json_mode: bool) -> dict:
     _PLUGIN_NAME = "phantom"
 
     try:
-        # Add marketplace if not already added
+        # Add marketplace. A nonzero exit here is usually benign (the marketplace
+        # is already registered), so we do NOT fail setup. But we no longer
+        # discard the result silently (P-18): a genuine failure (bad URL, network,
+        # git error) gets surfaced as a warning so the user knows why the plugin
+        # install below may not find anything.
         proc = subprocess.run(
             ["claude", "plugin", "marketplace", "add", _MARKETPLACE_URL],
             capture_output=True,
             text=True,
             timeout=60,
         )
-        # Ignore errors if already added
+        if proc.returncode != 0:
+            combined = (proc.stderr or "") + (proc.stdout or "")
+            already_added = "already" in combined.lower()
+            if not already_added and not json_mode:
+                excerpt = (proc.stderr or proc.stdout or "").strip()[:300]
+                console.print(f"  {WARN} Marketplace add failed: {excerpt}")
 
         # Install plugin
         proc = subprocess.run(

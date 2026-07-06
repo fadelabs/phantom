@@ -599,3 +599,46 @@ class TestUnsupportedFormats:
             AudioLoadError, match=r"phantom render track\.mp3 --format wav"
         ):
             load_audio(path)
+
+
+# ── Memoization guard tests (P-03, P-04) ───────────────────────────────
+
+
+class TestMonoMemoization:
+    """Guard tests for cached mono mixdown and full-signal RMS."""
+
+    def test_mono_is_memoized_same_object(self, stereo_sine_440hz):
+        """cached_property returns the identical array object on repeat access (P-03)."""
+        samples, sr = stereo_sine_440hz
+        audio = AudioData(
+            samples=samples,
+            sample_rate=sr,
+            num_channels=2,
+            duration=len(samples) / sr,
+            num_samples=len(samples),
+        )
+        m1 = audio.mono
+        m2 = audio.mono
+        assert m1 is m2  # cached_property returns the identical array object
+
+    def test_mono_rms_matches_manual(self, mono_sine_440hz):
+        """mono_rms equals the manual full-signal RMS of the mono mixdown (P-04).
+
+        mono_rms must reproduce the *exact* value the old ``dynamics.py``
+        computed (``float(np.sqrt(np.mean(mono**2)))`` on the float32 mono
+        signal) so the P-04 memoization is numerically transparent. We
+        therefore compute ``expected`` the same way — in the mono dtype,
+        without upcasting to float64. Upcasting first would introduce a
+        ~1e-8 float32/float64 accumulation gap and *change* the dynamics
+        RMS output, which this refactor must not do.
+        """
+        samples, sr = mono_sine_440hz
+        audio = AudioData(
+            samples=samples.reshape(-1, 1),
+            sample_rate=sr,
+            num_channels=1,
+            duration=len(samples) / sr,
+            num_samples=len(samples),
+        )
+        expected = float(np.sqrt(np.mean(audio.mono**2)))
+        assert audio.mono_rms == expected

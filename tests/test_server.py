@@ -503,6 +503,39 @@ async def test_full_diagnostic_typed_sections(client, mono_sine_440hz, make_wav)
     assert isinstance(data["duration_seconds"], float)
 
 
+def test_full_diagnostic_populates_cache(mono_sine_440hz, make_wav):
+    """full_diagnostic routes its analyzers through the shared analysis cache (P-01).
+
+    After running full_diagnostic, the per-analyzer results for that audio
+    content must be present in the cross-call analysis_cache, so a subsequent
+    compare_to_profile/compare_to_reference on the same bytes reuses the work.
+    The cache key is content-based (SHA-256 of sample bytes + sr + channels +
+    func name), so re-loading the same file hits the same entries.
+    """
+    from phantom._cache import _MISSING, analysis_cache
+    from phantom.audio import load_audio
+    from phantom.server import full_diagnostic
+
+    # Start from a clean cache so the assertions reflect this call only.
+    analysis_cache.clear()
+
+    samples, sr = mono_sine_440hz
+    path = make_wav(samples, sr)
+    full_diagnostic(path)
+
+    # Re-load the same file; the content hash must match the cached entries.
+    audio = load_audio(path)
+    assert analysis_cache.get(audio, "analyze_spectrum") is not _MISSING
+    assert analysis_cache.get(audio, "analyze_loudness") is not _MISSING
+    assert analysis_cache.get(audio, "analyze_dynamics") is not _MISSING
+    assert analysis_cache.get(audio, "analyze_stereo") is not _MISSING
+    assert analysis_cache.get(audio, "analyze_phase") is not _MISSING
+    assert analysis_cache.get(audio, "detect_problems") is not _MISSING
+
+    # Clean up so we don't leak entries into other tests sharing the cache.
+    analysis_cache.clear()
+
+
 async def test_batch_diagnostic_rebuild_problems(client, mono_sine_440hz, make_wav):
     """batch_diagnostic with SR mismatch rebuilds ProblemsResult via _build_summary (SC-5)."""
     samples_44k, _ = mono_sine_440hz

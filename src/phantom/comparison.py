@@ -16,7 +16,11 @@ from phantom._utils import (
     wrap_errors,
 )
 from phantom.audio import AudioData, load_audio
-from phantom._cache import _MISSING, analysis_cache
+
+# Re-exported for backward compatibility: existing callers/tests import
+# ``_cached_analysis`` from this module (see tests/test_comparison.py). The
+# canonical definition now lives in phantom._cache (P-01).
+from phantom._cache import _cached_analysis
 from phantom.dynamics import analyze_dynamics
 from phantom.exceptions import AnalysisError, AudioLoadError, DependencyMissingError
 from phantom.loudness import analyze_loudness
@@ -168,20 +172,6 @@ class MatchResult(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-def _cached_analysis(audio: AudioData, func_name: str, func) -> object:
-    """Run an analysis function with cache lookup/store.
-
-    Checks the analysis cache first. On miss, runs the function and
-    stores the result for subsequent calls with the same audio.
-    """
-    result = analysis_cache.get(audio, func_name)
-    if result is not _MISSING:
-        return result
-    result = func(audio)
-    analysis_cache.put(audio, func_name, result)
-    return result
-
-
 def _classify_deviation(
     abs_dev: float,
     deviation: float,
@@ -328,7 +318,7 @@ def _map_width_to_range(descriptor: str) -> tuple[float, float]:
     return _WIDTH_RANGES.get(descriptor, (0.0, 2.0))
 
 
-def _unmeasurable_deviation(key_name: str = "target") -> DeviationResult:
+def _unmeasurable_deviation() -> DeviationResult:
     return DeviationResult(rating="unmeasurable")
 
 
@@ -484,7 +474,7 @@ def compare_to_reference(
         if val_a is not None and val_b is not None:
             loudness_devs[key] = _rate_deviation_ref(val_a, val_b)
         else:
-            loudness_devs[key] = _unmeasurable_deviation("reference")
+            loudness_devs[key] = _unmeasurable_deviation()
 
     loudness_section = LoudnessReferenceComparisonSection(
         integrated_lufs=loudness_devs["integrated_lufs"],
@@ -507,11 +497,11 @@ def compare_to_reference(
                     norm_a[band_key], norm_b[band_key]
                 )
             else:
-                freq_result[band_key] = _unmeasurable_deviation("reference")
+                freq_result[band_key] = _unmeasurable_deviation()
     else:
         band_keys = (bands_a or bands_b or {}).keys()
         for band_key in band_keys:
-            freq_result[band_key] = _unmeasurable_deviation("reference")
+            freq_result[band_key] = _unmeasurable_deviation()
 
     # Dynamics
     dynamics_devs = {}
@@ -521,7 +511,7 @@ def compare_to_reference(
         if val_a is not None and val_b is not None:
             dynamics_devs[key] = _rate_deviation_ref(val_a, val_b)
         else:
-            dynamics_devs[key] = _unmeasurable_deviation("reference")
+            dynamics_devs[key] = _unmeasurable_deviation()
 
     dynamics_section = DynamicsReferenceComparisonSection(
         rms_dbfs=dynamics_devs["rms_dbfs"],
@@ -537,7 +527,7 @@ def compare_to_reference(
         if val_a is not None and val_b is not None:
             stereo_devs[key] = _rate_deviation_ref(val_a, val_b, round_fn=round_ratio)
         else:
-            stereo_devs[key] = _unmeasurable_deviation("reference")
+            stereo_devs[key] = _unmeasurable_deviation()
 
     stereo_section = StereoReferenceComparisonSection(
         correlation=stereo_devs["correlation"],

@@ -15,6 +15,7 @@ from phantom.comparison import (
     _normalize_band_energies,
     _rate_deviation,
     _rate_range_deviation,
+    _unmeasurable_deviation,
     compare_to_profile,
     compare_to_reference,
     match_to_reference,
@@ -204,6 +205,12 @@ class TestDeviationRating:
         result = _rate_range_deviation(value=12.0, target_range=(6.0, 12.0))
         assert result.rating == "on_target"
         assert result.deviation == 0.0
+
+    def test_unmeasurable_deviation(self):
+        """_unmeasurable_deviation() returns a DeviationResult rated 'unmeasurable'."""
+        result = _unmeasurable_deviation()
+        assert isinstance(result, DeviationResult)
+        assert result.rating == "unmeasurable"
 
 
 # ---------------------------------------------------------------------------

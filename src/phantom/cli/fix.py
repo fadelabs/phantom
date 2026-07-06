@@ -60,6 +60,11 @@ def fix(
 
     try:
         problems_filter: list[str] | None = None
+        # In interactive mode we decode the input once here for problem
+        # detection and thread it into fix_audio(audio=...) to avoid a second
+        # decode (P-08). Stays None in non-interactive mode, where fix_audio
+        # loads the file itself.
+        preloaded_audio = None
 
         if interactive:
             # Interactive mode: detect problems first, let user select
@@ -67,8 +72,8 @@ def fix(
                 "[bold blue]Analyzing audio problems...",
                 spinner="dots",
             ):
-                audio = load_audio(file)
-                problems_result = detect_problems(audio)
+                preloaded_audio = load_audio(file)
+                problems_result = detect_problems(preloaded_audio)
 
             if not problems_result.problems:
                 console.print("[bold green]No problems detected -- nothing to fix.")
@@ -145,6 +150,7 @@ def fix(
                 file,
                 problems=problems_filter,
                 output_path=output_path,
+                audio=preloaded_audio,
             )
 
         if json_output:
