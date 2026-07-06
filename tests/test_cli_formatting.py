@@ -157,10 +157,10 @@ def test_render_error_generic_for_unexpected(capsys):
     from phantom.cli._formatting import render_error
 
     console = Console()
-    exc = RuntimeError("boom at /Users/secret/private/track.wav internal detail")
+    exc = RuntimeError("boom at /private/studio-sessions/track.wav internal detail")
     render_error(exc, console)
     out = capsys.readouterr().out
-    assert "/Users/secret/private" not in out
+    assert "/private/studio-sessions" not in out
     assert "internal detail" not in out
     assert "check server logs" in out.lower() or "unexpected error" in out.lower()
 
@@ -171,9 +171,11 @@ def test_render_error_phantom_redacts_paths(capsys):
     from phantom.cli._formatting import render_error
 
     console = Console()
-    render_error(AudioLoadError("Cannot read /Users/x/secret/a.wav here"), console)
+    render_error(
+        AudioLoadError("Cannot read /private/secret-sessions/a.wav here"), console
+    )
     out = capsys.readouterr().out
-    assert "/Users/x/secret" not in out
+    assert "/private/secret-sessions" not in out
 
 
 # ---------------------------------------------------------------------------

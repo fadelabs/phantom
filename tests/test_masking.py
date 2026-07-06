@@ -116,7 +116,8 @@ class TestBandEnergyHelperParity:
         noise = rng.standard_normal(sr).astype(np.float32) * 0.3
         energies = _compute_band_energies(noise, sr)
         assert energies.shape == self._GOLDEN.shape
-        assert np.allclose(energies, self._GOLDEN, rtol=0, atol=0)
+        # Tight tolerance for cross-platform float32 ULP wobble (Linux vs macOS Essentia)
+        assert np.allclose(energies, self._GOLDEN, rtol=1e-5, atol=1e-9)
 
     def test_delegates_to_spectral_helper(self):
         """_compute_band_energies delegates to spectral._octave_band_energies."""
