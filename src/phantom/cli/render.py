@@ -173,6 +173,28 @@ def render(
         render_error(e, console)
         sys.exit(1)
 
+    # Self-overwrite guard (P-22). ffmpeg runs with `-y`, so if the output path
+    # resolves to the same file as the source (e.g. rendering x.wav to `wav`
+    # with no --output), the source would be clobbered in place. Refuse before
+    # any ffmpeg run. Compare realpaths so symlinks/relative paths can't slip by;
+    # also test os.path.samefile so same-inode collisions realpath does NOT
+    # normalize are caught -- hardlinks, and case-variant names on
+    # case-insensitive filesystems (macOS APFS), e.g. SONG.WAV -> SONG.wav.
+    same_target = os.path.realpath(output_path) == os.path.realpath(file) or (
+        os.path.exists(output_path) and os.path.samefile(output_path, file)
+    )
+    if same_target:
+        console.print(
+            Panel(
+                "Output would overwrite the source file. Pass [bold]--output[/bold] "
+                "with a different path (or choose a different [bold]--format[/bold]) "
+                "so your original is preserved.",
+                title="Would Overwrite Source",
+                border_style="red",
+            )
+        )
+        sys.exit(1)
+
     # Build ffmpeg command as list (NEVER shell=True -- T-12-11).
     # Resource guards (Advisory 2): -max_alloc caps a single allocation;
     # -t (input option) bounds how much audio is decoded; -fs caps output size.

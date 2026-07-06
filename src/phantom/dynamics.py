@@ -91,7 +91,7 @@ def analyze_dynamics(audio: AudioData) -> DynamicsResult:
         return _silent_dynamics_result()
 
     # -- RMS level (DYN-01) --
-    rms = float(np.sqrt(np.mean(mono**2)))
+    rms = audio.mono_rms
     rms_dbfs = float(20 * np.log10(rms + 1e-10))
 
     # -- Peak level (DYN-02) --
@@ -109,7 +109,7 @@ def analyze_dynamics(audio: AudioData) -> DynamicsResult:
             np.percentile(block_rms_db, 95) - np.percentile(block_rms_db, 5)
         )
     else:
-        dynamic_range_db = 0.0
+        dynamic_range_db = None  # Unmeasurable — too short to estimate (P-12)
 
     # -- Dynamic complexity (DYN-05) --
     dc = es.DynamicComplexity(sampleRate=audio.sample_rate, frameSize=0.2)

@@ -13,11 +13,13 @@ from phantom import (
     PhantomError,
     DependencyMissingError,
 )
+from phantom._utils import validate_output_path
 from phantom.cli._formatting import (
     get_console,
     output_json,
     render_error,
 )
+from phantom.exceptions import PathSecurityError
 
 
 @click.command()
@@ -26,7 +28,7 @@ from phantom.cli._formatting import (
     "--output-dir",
     "-o",
     default=None,
-    help="Output directory for stems (default: ./stems)",
+    help="Output directory for stems (default: stems/ in the Phantom output directory)",
 )
 @click.option(
     "--json",
@@ -42,8 +44,17 @@ def separate(file: str, output_dir: str | None, json_output: bool) -> None:
     """
     console = get_console(json_mode=json_output)
 
+    # Confine the default output dir (P-19). A bare "./stems" reads as
+    # CWD-relative; route the default through validate_output_path so it
+    # resolves to an explicit "stems/" under the confined output directory,
+    # matching how render resolves its default. Explicit --output-dir values
+    # are passed through unchanged (separate_stems validates them internally).
     if output_dir is None:
-        output_dir = "./stems"
+        try:
+            output_dir = validate_output_path("stems")
+        except PathSecurityError as exc:
+            render_error(exc, console)
+            sys.exit(1)
 
     try:
         with console.status(

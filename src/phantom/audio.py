@@ -13,6 +13,7 @@ Mono and stereo only (>2 channels rejected per AIO-03).
 from __future__ import annotations
 
 import os
+from functools import cached_property
 from typing import Optional
 
 import numpy as np
@@ -92,16 +93,24 @@ class AudioData(BaseModel):
             )
         return self.samples[:, 1]
 
-    @property
+    @cached_property
     def mono(self) -> np.ndarray:
-        """Return a mono mixdown of the audio.
+        """Return a (memoized) mono mixdown of the audio.
 
-        For mono input, returns samples[:, 0] directly.
-        For stereo input, returns the mean of left and right channels.
+        For mono input, returns samples[:, 0]. For stereo, the mean of the
+        first two channels. Computed once per instance (P-03).
         """
         if self.num_channels == 1:
             return self.samples[:, 0]
         return np.mean(self.samples[:, :2], axis=1)
+
+    @cached_property
+    def mono_rms(self) -> float:
+        """Full-signal RMS of the mono mixdown, computed once (P-04)."""
+        m = self.mono
+        if not np.issubdtype(m.dtype, np.floating):
+            m = m.astype(np.float64)
+        return float(np.sqrt(np.mean(m**2)))
 
 
 def load_audio(

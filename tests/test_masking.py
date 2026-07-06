@@ -82,6 +82,56 @@ def identical_stems():
 
 
 # ---------------------------------------------------------------------------
+# P-09: Shared octave-band-energy helper (pure dedup, no numeric change)
+# ---------------------------------------------------------------------------
+
+
+class TestBandEnergyHelperParity:
+    """Verify _compute_band_energies is numerically unchanged after dedup (P-09)."""
+
+    # Golden values captured from the pre-refactor _compute_band_energies on
+    # seeded broadband noise (rng=42, amplitude 0.3, sr=44100). Extracting the
+    # 4096/2048 Hann + FrequencyBands loop into spectral._octave_band_energies
+    # must not alter these numbers.
+    _GOLDEN = np.array(
+        [
+            0.0002778951311483979,
+            0.0005883493577130139,
+            0.0010133546311408281,
+            0.001955181360244751,
+            0.003989834804087877,
+            0.007407692261040211,
+            0.016881804913282394,
+            0.03203596919775009,
+            0.06603545695543289,
+            0.12378077954053879,
+        ],
+        dtype=np.float32,
+    )
+
+    def test_band_energies_match_golden(self):
+        """Band energies for seeded noise must match pre-refactor golden values."""
+        sr = 44100
+        rng = np.random.default_rng(42)
+        noise = rng.standard_normal(sr).astype(np.float32) * 0.3
+        energies = _compute_band_energies(noise, sr)
+        assert energies.shape == self._GOLDEN.shape
+        # Tight tolerance for cross-platform float32 ULP wobble (Linux vs macOS Essentia)
+        assert np.allclose(energies, self._GOLDEN, rtol=1e-5, atol=1e-9)
+
+    def test_delegates_to_spectral_helper(self):
+        """_compute_band_energies delegates to spectral._octave_band_energies."""
+        from phantom import spectral
+
+        sr = 44100
+        rng = np.random.default_rng(7)
+        noise = rng.standard_normal(sr).astype(np.float32) * 0.3
+        via_masking = _compute_band_energies(noise, sr)
+        via_spectral = spectral._octave_band_energies(noise, sr)
+        assert np.allclose(via_masking, via_spectral, rtol=0, atol=0)
+
+
+# ---------------------------------------------------------------------------
 # MASK-01: Pairwise Masking Analysis
 # ---------------------------------------------------------------------------
 
@@ -455,6 +505,123 @@ class TestMatrixRanking:
                     "severity",
                     "overlap_score",
                 }
+
+
+# ---------------------------------------------------------------------------
+# P-07: Streaming matrix energies (resample -> energies -> drop) parity
+# ---------------------------------------------------------------------------
+
+
+class TestMatrixStreamingParity:
+    """Streaming per-stem resample must yield results identical to batch-align.
+
+    P-07 replaces the up-front ``align_sample_rates(*stems)`` (which holds N
+    resampled copies) with a per-stem ``resample_to_match`` inside the energy
+    loop, dropping each resampled array immediately. Because
+    ``align_sample_rates`` resamples every below-target stem via that same
+    ``resample_to_match(a, target)`` call, the two paths must be numerically
+    identical. These tests reconstruct the batch-align reference independently
+    and assert the matrix output matches it exactly.
+    """
+
+    def _reference_matrix_scores(self, stems):
+        """Compute expected matrix scores via explicit batch-align reference.
+
+        Mirrors the pre-P-07 flow: align every stem to the max rate up front,
+        compute band energies per stem, then run the (unchanged)
+        ``_compute_pairwise_result`` over each combination -- independent of the
+        streaming implementation under test.
+        """
+        import itertools
+
+        from phantom._resample import align_sample_rates
+        from phantom.masking import (
+            _compute_band_energies,
+            _compute_pairwise_result,
+            _no_masking_result,
+        )
+        from phantom._utils import is_near_silent
+
+        aligned = list(align_sample_rates(*stems))
+        energies: list = []
+        for stem in aligned:
+            mono = stem.mono
+            if is_near_silent(mono):
+                energies.append(None)
+            else:
+                energies.append(_compute_band_energies(mono, stem.sample_rate))
+
+        expected = {}
+        for i, j in itertools.combinations(range(len(aligned)), 2):
+            if energies[i] is None or energies[j] is None:
+                res = _no_masking_result()
+            else:
+                res = _compute_pairwise_result(energies[i], energies[j])
+            expected[("stem_%d" % i, "stem_%d" % j)] = res
+        return expected
+
+    def test_mixed_rate_three_stems_parity(self):
+        """3-stem mixed-rate [44100, 48000, 44100] matrix matches batch-align."""
+        sr1, sr2 = 44100, 48000
+        t1 = np.linspace(0, 1.0, sr1, endpoint=False, dtype=np.float32)
+        t2 = np.linspace(0, 1.0, sr2, endpoint=False, dtype=np.float32)
+        stems = [
+            _make_audio((0.5 * np.sin(2 * np.pi * 300 * t1)).astype(np.float32), sr1),
+            _make_audio((0.5 * np.sin(2 * np.pi * 350 * t2)).astype(np.float32), sr2),
+            _make_audio((0.5 * np.sin(2 * np.pi * 4000 * t1)).astype(np.float32), sr1),
+        ]
+        expected = self._reference_matrix_scores(stems)
+
+        result = analyze_masking_matrix(stems)
+        assert result.pair_count == 3
+        for pair in result.pairs:
+            ref = expected[(pair.stem_a, pair.stem_b)]
+            assert pair.overall_score == ref.overall_score
+            assert pair.overall_severity == ref.overall_severity
+            assert len(pair.bands) == len(ref.bands)
+            for got_band, exp_band in zip(pair.bands, ref.bands):
+                assert got_band.band == exp_band.band
+                assert got_band.overlap_score == exp_band.overlap_score
+                assert got_band.severity == exp_band.severity
+
+    def test_matched_rate_three_stems_parity(self):
+        """Same-rate 3-stem matrix (no resample) matches batch-align reference."""
+        sr = 44100
+        t = np.linspace(0, 1.0, sr, endpoint=False, dtype=np.float32)
+        stems = [
+            _make_audio((0.5 * np.sin(2 * np.pi * 300 * t)).astype(np.float32), sr),
+            _make_audio((0.5 * np.sin(2 * np.pi * 350 * t)).astype(np.float32), sr),
+            _make_audio((0.5 * np.sin(2 * np.pi * 4000 * t)).astype(np.float32), sr),
+        ]
+        expected = self._reference_matrix_scores(stems)
+
+        result = analyze_masking_matrix(stems)
+        for pair in result.pairs:
+            ref = expected[(pair.stem_a, pair.stem_b)]
+            assert pair.overall_score == ref.overall_score
+            for got_band, exp_band in zip(pair.bands, ref.bands):
+                assert got_band.overlap_score == exp_band.overlap_score
+
+    def test_mixed_rate_with_silent_stem_parity(self):
+        """Mixed-rate matrix with a near-silent stem matches batch-align reference."""
+        sr1, sr2 = 44100, 48000
+        t1 = np.linspace(0, 1.0, sr1, endpoint=False, dtype=np.float32)
+        t2 = np.linspace(0, 1.0, sr2, endpoint=False, dtype=np.float32)
+        stems = [
+            _make_audio((0.5 * np.sin(2 * np.pi * 300 * t1)).astype(np.float32), sr1),
+            _make_audio((1e-5 * np.sin(2 * np.pi * 350 * t2)).astype(np.float32), sr2),
+            _make_audio((0.5 * np.sin(2 * np.pi * 4000 * t1)).astype(np.float32), sr1),
+        ]
+        expected = self._reference_matrix_scores(stems)
+
+        result = analyze_masking_matrix(stems)
+        assert result.pair_count == 3
+        for pair in result.pairs:
+            ref = expected[(pair.stem_a, pair.stem_b)]
+            assert pair.overall_score == ref.overall_score
+            assert pair.overall_severity == ref.overall_severity
+            for got_band, exp_band in zip(pair.bands, ref.bands):
+                assert got_band.overlap_score == exp_band.overlap_score
 
 
 # ---------------------------------------------------------------------------

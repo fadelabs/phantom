@@ -292,3 +292,60 @@ def test_fix_interactive_hides_unfixable(runner, mono_sine_440hz, make_wav):
     # Should mention unfixable count
     assert "cannot be auto-fixed" in result.output.lower()
     assert "clipping" in result.output.lower()
+
+
+# ---------------------------------------------------------------------------
+# P-08: interactive mode threads the already-loaded audio into fix_audio
+# ---------------------------------------------------------------------------
+
+
+def test_fix_interactive_passes_preloaded_audio(runner, mono_sine_440hz, make_wav):
+    """--interactive threads the AudioData it loaded into fix_audio(audio=...).
+
+    Avoids a second decode of the input: the audio detect_problems ran on is
+    the same object passed to fix_audio.
+    """
+    from phantom.audio import AudioData
+
+    samples, sr = mono_sine_440hz
+    path = make_wav(samples, sr)
+
+    mock_problems = ProblemsResult(
+        problems=[
+            ProblemItem(
+                type="mud", severity="moderate", message="Mud detected", details={}
+            ),
+        ],
+        clean=False,
+    )
+    mock_result = _make_mock_fix_result(path.replace(".wav", "_fixed.wav"))
+
+    with (
+        patch("phantom.cli.fix.detect_problems", return_value=mock_problems),
+        patch("phantom.cli.fix.fix_audio", return_value=mock_result) as mock_fix,
+        patch("phantom.cli.fix.Prompt.ask", return_value="all"),
+    ):
+        result = runner.invoke(cli, ["fix", "--interactive", path])
+
+    assert result.exit_code == 0, f"Exit {result.exit_code}: {result.output}"
+    mock_fix.assert_called_once()
+    passed_audio = mock_fix.call_args[1].get("audio")
+    assert isinstance(passed_audio, AudioData), (
+        "Expected interactive mode to pass the loaded AudioData as audio="
+    )
+
+
+def test_fix_non_interactive_passes_no_preloaded_audio(
+    runner, mono_sine_440hz, make_wav
+):
+    """Non-interactive mode passes audio=None; fix_audio loads the file itself."""
+    samples, sr = mono_sine_440hz
+    path = make_wav(samples, sr)
+    mock_result = _make_mock_fix_result(path.replace(".wav", "_fixed.wav"))
+
+    with patch("phantom.cli.fix.fix_audio", return_value=mock_result) as mock_fix:
+        result = runner.invoke(cli, ["fix", path])
+
+    assert result.exit_code == 0, f"Exit {result.exit_code}: {result.output}"
+    mock_fix.assert_called_once()
+    assert mock_fix.call_args[1].get("audio") is None

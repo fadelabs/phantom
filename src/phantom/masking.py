@@ -12,15 +12,14 @@ from __future__ import annotations
 import itertools
 
 import numpy as np
-import essentia.standard as es
 from pydantic import BaseModel, field_validator
 
 from phantom.audio import AudioData
 from phantom.exceptions import AnalysisError
-from phantom._resample import resample_to_match
+from phantom._resample import align_sample_rates, resample_to_match
 from phantom._rounding import round_ratio
 from phantom._utils import is_near_silent, wrap_errors
-from phantom.spectral import OCTAVE_EDGES, _BAND_LABELS
+from phantom.spectral import _BAND_LABELS, _octave_band_energies
 
 # Severity thresholds for per-band overlap classification.
 _SEVERITY_HIGH = 0.6
@@ -140,6 +139,10 @@ def _no_masking_result() -> MaskingResult:
 def _compute_band_energies(mono: np.ndarray, sample_rate: int) -> np.ndarray:
     """Compute average energy per octave band using Essentia FrequencyBands.
 
+    Delegates to the shared ``spectral._octave_band_energies`` helper so the
+    4096/2048 Hann + ``FrequencyBands(OCTAVE_EDGES)`` loop lives in one place
+    (P-09). Numerically identical to the former inline implementation.
+
     Args:
         mono: 1D float32 numpy array of audio samples.
         sample_rate: Sample rate in Hz.
@@ -147,30 +150,7 @@ def _compute_band_energies(mono: np.ndarray, sample_rate: int) -> np.ndarray:
     Returns:
         1D numpy array of shape (10,) with average energy per octave band.
     """
-    frame_size = 4096
-    hop_size = 2048
-
-    # Audio shorter than one FFT frame cannot produce meaningful band energies.
-    # Zero energy is the acoustically correct answer — the signal contains
-    # insufficient data to resolve any frequency band.
-    if len(mono) < frame_size:
-        return np.zeros(len(_BAND_LABELS))
-
-    windowing = es.Windowing(type="hann", size=frame_size)
-    spectrum = es.Spectrum(size=frame_size)
-    freq_bands = es.FrequencyBands(frequencyBands=OCTAVE_EDGES, sampleRate=sample_rate)
-
-    band_energies_list = []
-    for frame in es.FrameGenerator(mono, frameSize=frame_size, hopSize=hop_size):
-        win = windowing(frame)
-        spec = spectrum(win)
-        bands = freq_bands(spec)
-        band_energies_list.append(bands)
-
-    if not band_energies_list:
-        return np.zeros(len(_BAND_LABELS))
-
-    return np.mean(band_energies_list, axis=0)
+    return _octave_band_energies(mono, sample_rate)
 
 
 def _compute_pairwise_result(
@@ -245,12 +225,7 @@ def analyze_masking(audio_a: AudioData, audio_b: AudioData) -> MaskingResult:
         AnalysisError: If audio is empty or analysis fails.
     """
     # Auto-resample on sample rate mismatch
-    if audio_a.sample_rate != audio_b.sample_rate:
-        target_sr = max(audio_a.sample_rate, audio_b.sample_rate)
-        if audio_a.sample_rate < target_sr:
-            audio_a = resample_to_match(audio_a, target_sr)
-        else:
-            audio_b = resample_to_match(audio_b, target_sr)
+    audio_a, audio_b = align_sample_rates(audio_a, audio_b)
 
     # Mono mixdown
     mono_a = audio_a.mono
@@ -280,8 +255,13 @@ def analyze_masking_matrix(stems: list[AudioData]) -> MaskingMatrixResult:
     Pre-computes band energies per stem to avoid redundant Essentia calls
     (per RESEARCH.md Pitfall 4).
 
-    If stems have different sample rates, all are automatically
-    upsampled to the highest rate.
+    If stems have different sample rates, all are automatically upsampled to the
+    highest rate. To bound peak memory (P-07), each stem is resampled to the
+    target rate one at a time via :func:`resample_to_match` -- the same per-stem
+    call :func:`align_sample_rates` makes internally -- and the resampled array
+    is dropped as soon as its band energies are computed, so at most one
+    resampled copy is held at a time rather than N. Results are identical to
+    aligning all stems up front.
 
     Args:
         stems: List of AudioData objects.
@@ -298,25 +278,25 @@ def analyze_masking_matrix(stems: list[AudioData]) -> MaskingMatrixResult:
     if n < 2:
         return MaskingMatrixResult(pairs=[], stem_count=n, pair_count=0)
 
-    # Auto-resample all stems to highest sample rate
-    rates = {s.sample_rate for s in stems}
-    if len(rates) > 1:
-        target_sr = max(rates)
-        stems = [
-            resample_to_match(s, target_sr) if s.sample_rate != target_sr else s
-            for s in stems
-        ]
+    # Target rate: upsample everything to the highest rate (upsample-only, per
+    # resample_to_match). Identity when all stems already share a rate.
+    target_sr = max(stem.sample_rate for stem in stems)
 
-    # Pre-compute band energies for all stems (optimization)
+    # Compute band energies per stem, streaming the resample: each stem is
+    # aligned to target_sr just-in-time and the resampled AudioData falls out of
+    # scope after its energies are read, so peak memory holds one resampled copy
+    # rather than N (P-07). Numerically identical to pre-aligning all stems.
     energies: list[np.ndarray | None] = []
     for stem in stems:
-        mono = stem.mono
+        aligned = resample_to_match(stem, target_sr)  # identity if already at target
+        mono = aligned.mono
         if len(mono) == 0:
             raise AnalysisError("Masking analysis failed: audio has 0 samples")
         if is_near_silent(mono):
             energies.append(None)  # marker for silent stems
         else:
-            energies.append(_compute_band_energies(mono, stem.sample_rate))
+            energies.append(_compute_band_energies(mono, aligned.sample_rate))
+        del aligned  # drop the resampled copy before the next iteration
 
     # Iterate all unique pairs
     pairs: list[MaskingPair] = []

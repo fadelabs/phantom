@@ -26,8 +26,7 @@ from phantom.phase import analyze_phase as _analyze_phase, PhaseResult
 from phantom.phase import compare_phase as _compare_phase
 from phantom.problems import (
     detect_problems as _detect_problems,
-    ProblemItem,
-    build_summary,
+    inject_sample_rate_mismatch,
     ProblemsResult,
 )
 from phantom.masking import analyze_masking as _analyze_masking
@@ -343,14 +342,21 @@ def _run_full_analysis(audio) -> dict:
     Returns a dict with keys: spectral, loudness, dynamics, stereo,
     phase, problems. Values are Pydantic model instances (not dumped dicts).
     Caller adds file-level metadata (file, duration, sample_rate, channels).
+
+    Each analyzer is routed through the shared ``analysis_cache`` via
+    ``_cached_analysis`` (P-01), so a subsequent ``compare_to_profile`` /
+    ``compare_to_reference`` on the same audio content reuses these results.
+    The cache keys match those used by the ``compare_*`` tools exactly.
     """
+    from phantom._cache import _cached_analysis
+
     return {
-        "spectral": _analyze_spectrum(audio),
-        "loudness": _analyze_loudness(audio),
-        "dynamics": _analyze_dynamics(audio),
-        "stereo": _analyze_stereo(audio),
-        "phase": _analyze_phase(audio),
-        "problems": _detect_problems(audio),
+        "spectral": _cached_analysis(audio, "analyze_spectrum", _analyze_spectrum),
+        "loudness": _cached_analysis(audio, "analyze_loudness", _analyze_loudness),
+        "dynamics": _cached_analysis(audio, "analyze_dynamics", _analyze_dynamics),
+        "stereo": _cached_analysis(audio, "analyze_stereo", _analyze_stereo),
+        "phase": _cached_analysis(audio, "analyze_phase", _analyze_phase),
+        "problems": _cached_analysis(audio, "detect_problems", _detect_problems),
     }
 
 
@@ -436,20 +442,10 @@ def batch_diagnostic(file_paths: list[str]) -> dict:
     # SRV-04: Flag sample rate mismatches as dealbreaker
     unique_rates = set(sample_rates.values())
     if len(unique_rates) > 1:
-        mismatch_detail = {name: int(rate) for name, rate in sample_rates.items()}
         for stem_name, stem_result in results.items():
             if isinstance(stem_result, StemDiagnosticResult):
-                mismatch = ProblemItem(
-                    type="sample_rate_mismatch",
-                    severity="dealbreaker",
-                    message=f"Sample rate mismatch across stems: {mismatch_detail}",
-                    details={"sample_rates": mismatch_detail},
-                )
-                all_problems = [mismatch] + list(stem_result.problems.problems)
-                rebuilt = ProblemsResult(
-                    problems=all_problems,
-                    clean=False,
-                    summary=build_summary(all_problems),
+                rebuilt = inject_sample_rate_mismatch(
+                    stem_result.problems, sample_rates
                 )
                 results[stem_name] = stem_result.model_copy(
                     update={"problems": rebuilt}
