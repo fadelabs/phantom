@@ -103,7 +103,12 @@ def separate_stems(input_path: str, output_dir: str) -> SeparationResult:
         channels=model.audio_channels,
     )
     ref = wav.mean(0)
-    wav = (wav - ref.mean()) / ref.std()
+    ref_std = float(ref.std())
+    if ref_std < 1e-12:
+        raise AnalysisError(
+            "Cannot separate a silent file — the input has no audible signal."
+        )
+    wav = (wav - ref.mean()) / ref_std
 
     # Step 5: Run separation (with timeout to prevent indefinite hangs)
     _SEPARATION_TIMEOUT = 600  # 10 minutes max for any file

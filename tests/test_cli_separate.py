@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from unittest.mock import patch
 
 import pytest
@@ -149,3 +150,45 @@ def test_separate_custom_output_dir(runner, mono_sine_440hz, make_wav, tmp_path)
 
     assert result.exit_code == 0, f"Exit {result.exit_code}: {result.output}"
     mock_fn.assert_called_once_with(path, custom_dir)
+
+
+# ---------------------------------------------------------------------------
+# Default output dir confinement (P-19)
+# ---------------------------------------------------------------------------
+
+
+def test_separate_default_output_dir_confined(
+    runner, mono_sine_440hz, make_wav, tmp_path, monkeypatch
+):
+    """The default output dir resolves under the confined output directory.
+
+    With no --output-dir, the CLI must route the default through
+    validate_output_path (matching render's default handling) so the dir passed
+    to separate_stems sits under PHANTOM_OUTPUT_DIR rather than being a bare
+    CWD-relative './stems'.
+    """
+    from phantom._utils import validate_output_path
+
+    monkeypatch.delenv("PHANTOM_AUDIO_DIR", raising=False)
+    out_dir = tmp_path / "confined_out"
+    out_dir.mkdir()
+    monkeypatch.setenv("PHANTOM_OUTPUT_DIR", str(out_dir))
+
+    samples, sr = mono_sine_440hz
+    path = make_wav(samples, sr)
+    mock_result = _make_mock_result(tmp_path)
+
+    with patch(
+        "phantom.cli.separate.separate_stems", return_value=mock_result
+    ) as mock_fn:
+        result = runner.invoke(cli, ["separate", path])
+
+    assert result.exit_code == 0, f"Exit {result.exit_code}: {result.output}"
+    mock_fn.assert_called_once()
+    passed_dir = mock_fn.call_args.args[1]
+    # The resolved default must be an absolute path confined under the output dir
+    # (i.e. validate_output_path accepts it and returns it unchanged).
+    assert os.path.isabs(passed_dir), f"default dir not absolute: {passed_dir}"
+    assert validate_output_path(passed_dir) == os.path.realpath(passed_dir)
+    real_base = os.path.realpath(str(out_dir))
+    assert os.path.realpath(passed_dir).startswith(real_base + os.sep)

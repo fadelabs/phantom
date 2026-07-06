@@ -142,13 +142,40 @@ def test_render_error_dependency_missing():
 
 
 def test_render_error_generic_exception():
-    """Generic exceptions render as Unexpected Error panel."""
+    """Generic exceptions render as Unexpected Error panel with a safe message."""
     buf = io.StringIO()
     console = Console(file=buf, force_terminal=True)
     render_error(ValueError("something went wrong"), console)
     output = buf.getvalue()
-    assert "something went wrong" in output
+    # The raw exception text must not leak; a generic message is shown instead.
+    assert "something went wrong" not in output
     assert "Unexpected Error" in output
+
+
+def test_render_error_generic_for_unexpected(capsys):
+    from rich.console import Console
+    from phantom.cli._formatting import render_error
+
+    console = Console()
+    exc = RuntimeError("boom at /private/studio-sessions/track.wav internal detail")
+    render_error(exc, console)
+    out = capsys.readouterr().out
+    assert "/private/studio-sessions" not in out
+    assert "internal detail" not in out
+    assert "check server logs" in out.lower() or "unexpected error" in out.lower()
+
+
+def test_render_error_phantom_redacts_paths(capsys):
+    from rich.console import Console
+    from phantom.exceptions import AudioLoadError
+    from phantom.cli._formatting import render_error
+
+    console = Console()
+    render_error(
+        AudioLoadError("Cannot read /private/secret-sessions/a.wav here"), console
+    )
+    out = capsys.readouterr().out
+    assert "/private/secret-sessions" not in out
 
 
 # ---------------------------------------------------------------------------

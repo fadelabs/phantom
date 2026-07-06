@@ -288,3 +288,39 @@ def test_analyze_batch_json_mismatch(runner, make_wav):
                     found_mismatch = True
                     break
     assert found_mismatch, "Expected sample_rate_mismatch problem in batch JSON output"
+
+
+# ---------------------------------------------------------------------------
+# Shared analysis cache population (P-01)
+# ---------------------------------------------------------------------------
+
+
+def test_analyze_cli_populates_cache(mono_sine_440hz, make_wav):
+    """The analyze CLI routes analyzers through the shared analysis cache (P-01).
+
+    _run_selected_analyses keys the cache via each analyzer's __name__, matching
+    the keys used by the MCP composite/compare tools (see the server-side
+    test_full_diagnostic_populates_cache twin). Running it must populate
+    analysis_cache under those shared key names so a later compare_* / server
+    call on the same bytes reuses the work.
+    """
+    from phantom._cache import _MISSING, analysis_cache
+    from phantom.audio import load_audio
+    from phantom.cli.analyze import _run_selected_analyses
+
+    # Start from a clean cache so the assertions reflect this call only.
+    analysis_cache.clear()
+
+    samples, sr = mono_sine_440hz
+    path = make_wav(samples, sr)
+    audio = load_audio(path)
+
+    _run_selected_analyses(audio, ["spectral", "loudness", "problems"])
+
+    # Entries stored under the analyzer __name__ keys shared with the server.
+    assert analysis_cache.get(audio, "analyze_spectrum") is not _MISSING
+    assert analysis_cache.get(audio, "analyze_loudness") is not _MISSING
+    assert analysis_cache.get(audio, "detect_problems") is not _MISSING
+
+    # Clean up so we don't leak entries into other tests sharing the cache.
+    analysis_cache.clear()

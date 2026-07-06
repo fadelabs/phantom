@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import threading
 
 import numpy as np
@@ -47,6 +48,65 @@ class TestCacheGetPut:
         audio = _make_audio(np.zeros(100, dtype=np.float32), sr=44100)
         cache.put(audio, "spectrum", {"centroid": 1200.0})
         assert cache.get(audio, "loudness") is _MISSING
+
+    def test_clear_empties_the_cache(self) -> None:
+        cache = AnalysisCache(max_entries=4)
+        audio = _make_audio(np.zeros(100, dtype=np.float32), sr=44100)
+        cache.put(audio, "spectrum", {"centroid": 1200.0})
+        cache.clear()
+        assert cache.get(audio, "spectrum") is _MISSING
+
+
+class TestContentHashMemoization:
+    """The expensive per-instance content digest is computed only once (P-01 follow-up).
+
+    Two cache operations on the SAME AudioData instance must hash the sample
+    bytes exactly once — the content digest is memoized on the instance, mirroring
+    the ``AudioData.mono`` / ``_true_peaks`` memoization from Tasks 5–6.
+    """
+
+    def test_content_digest_computed_once_across_two_ops(self, monkeypatch) -> None:
+        cache = AnalysisCache(max_entries=4)
+        audio = _make_audio(np.full(100, 0.25, dtype=np.float32), sr=44100)
+
+        calls = {"n": 0}
+        real_sha256 = hashlib.sha256
+
+        def _counting_sha256(*args, **kwargs):
+            calls["n"] += 1
+            return real_sha256(*args, **kwargs)
+
+        # Patch the shared hashlib module object — the same one _cache looks up.
+        monkeypatch.setattr(hashlib, "sha256", _counting_sha256)
+
+        # Two independent cache operations on the same instance: a put and a get.
+        cache.put(audio, "spectrum", {"centroid": 1200.0})
+        cache.get(audio, "spectrum")
+
+        assert calls["n"] == 1, (
+            "Expected the sample-bytes SHA-256 base to be constructed exactly once "
+            "across two cache operations on the same AudioData instance (memoized "
+            f"content digest), got {calls['n']}"
+        )
+
+    def test_memoized_key_matches_unmemoized_digest(self) -> None:
+        """The memoized key must be byte-identical to a fresh full-content SHA-256.
+
+        Guards against a key-format change: a cold instance (no memo) and the
+        canonical one-pass computation must agree.
+        """
+        cache = AnalysisCache(max_entries=4)
+        audio = _make_audio(np.full(100, 0.25, dtype=np.float32), sr=44100)
+
+        # Canonical one-pass digest (the pre-optimization formula).
+        h = hashlib.sha256()
+        h.update(audio.samples.tobytes())
+        h.update(str(audio.sample_rate).encode())
+        h.update(str(audio.num_channels).encode())
+        h.update("spectrum".encode())
+        expected = h.hexdigest()
+
+        assert cache._hash_audio(audio, "spectrum") == expected
 
 
 class TestCacheKeyDifferentiation:

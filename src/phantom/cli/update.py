@@ -53,8 +53,34 @@ REQUEST_TIMEOUT = 5
 
 
 def _parse_version(tag: str) -> tuple[int, ...]:
-    """Parse 'v1.2.3' or '1.2.3' into (1, 2, 3)."""
-    return tuple(int(x) for x in tag.lstrip("v").split("."))
+    """Parse a release tag into a comparable numeric tuple.
+
+    Handles plain releases ('v1.2.3', '1.2.3', '1.2') and pre-release /
+    build-metadata suffixes ('1.2.3-rc1', '1.2.0b1', '2.0.0-beta',
+    'v1.2.3+build.5') without raising. The release segment is taken up to
+    the first '-' or '+'; numeric dot-components are converted until the
+    first non-numeric component, which is dropped along with anything after
+    it. Pre-release tags therefore sort as their release tuple — acceptable
+    because the only callers compare 'is latest strictly newer than current'
+    with identical normalization on both sides.
+    """
+    core = tag.lstrip("v")
+    # Cut any pre-release / build metadata suffix.
+    for sep in ("-", "+"):
+        core = core.split(sep, 1)[0]
+    parts: list[int] = []
+    for component in core.split("."):
+        # PEP 440-style inline suffixes like '0b1' -> take leading digits only.
+        digits = ""
+        for chdigit in component:
+            if chdigit.isdigit():
+                digits += chdigit
+            else:
+                break
+        if not digits:
+            break
+        parts.append(int(digits))
+    return tuple(parts)
 
 
 def _fetch_json(url: str) -> dict | None:
@@ -148,7 +174,13 @@ def check_for_update(force: bool = False) -> tuple[str, str] | None:
 
         _write_cache(latest, current)
         return (latest, current)
-    except Exception:
+    except (URLError, OSError, json.JSONDecodeError, ValueError, KeyError):
+        # Expected transient/data failures: network down (URLError/OSError;
+        # TimeoutError and socket errors are OSError subclasses), malformed JSON
+        # or timestamp (JSONDecodeError/ValueError), or a missing cache key
+        # (KeyError). Return None so callers degrade gracefully. Genuine
+        # programming errors (e.g. the P-11 parse bug) are intentionally NOT
+        # swallowed here and will surface.
         return None
 
 
@@ -269,29 +301,54 @@ def update(yes: bool) -> None:
 
     console.print(f"[dim]Installing phantom-audio {latest}...[/dim]")
 
-    proc = subprocess.run(
-        ["uv", "tool", "upgrade", UV_INSTALL_PACKAGE],
-        capture_output=True,
-        text=True,
-    )
-
-    if proc.returncode != 0 and "no such command" in proc.stderr.lower():
-        # Detect current extras so reinstall preserves them (allowlisted only)
-        installed_pkg = UV_INSTALL_PACKAGE
-        try:
-            list_proc = subprocess.run(
-                ["uv", "tool", "list", "--show-paths"],
-                capture_output=True,
-                text=True,
-            )
-            installed_pkg = _installed_package_spec(list_proc.stdout)
-        except Exception:
-            pass
+    try:
         proc = subprocess.run(
-            ["uv", "tool", "install", "--force", installed_pkg],
+            ["uv", "tool", "upgrade", UV_INSTALL_PACKAGE],
             capture_output=True,
             text=True,
+            timeout=120,
         )
+
+        # NOTE (brittle, intentionally deferred): the extras-preserving reinstall
+        # fallback is gated on the exact substring "no such command" in uv's
+        # stderr (older uv builds lack `tool upgrade`). If uv reworded that
+        # message the fallback would silently stop firing. An exit-code-based
+        # rewrite was deferred by decision -- switching detection risks the
+        # upgrade path -- so the current string match is pinned by test
+        # `test_no_such_command_triggers_extras_preserving_reinstall`.
+        if proc.returncode != 0 and "no such command" in proc.stderr.lower():
+            # Detect current extras so reinstall preserves them (allowlisted only)
+            installed_pkg = UV_INSTALL_PACKAGE
+            try:
+                list_proc = subprocess.run(
+                    ["uv", "tool", "list", "--show-paths"],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                installed_pkg = _installed_package_spec(list_proc.stdout)
+            except Exception:
+                # Intentional best-effort: if `uv tool list` fails or times out
+                # we can't detect extras, so we fall back to the bare package
+                # spec and let the reinstall proceed without preserving extras.
+                pass
+            proc = subprocess.run(
+                ["uv", "tool", "install", "--force", installed_pkg],
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+    except subprocess.TimeoutExpired:
+        console.print(
+            Panel(
+                "uv timed out while updating.\n\n"
+                "Check your network connection and try again, or update "
+                f"manually: [link={RELEASES_PAGE}]{RELEASES_PAGE}[/link]",
+                title="Update Failed",
+                border_style="red",
+            )
+        )
+        raise SystemExit(1) from None
 
     if proc.returncode == 0:
         _clear_cache()

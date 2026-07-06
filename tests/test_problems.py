@@ -12,6 +12,9 @@ from unittest.mock import patch
 from phantom.audio import AudioData
 from phantom.problems import (
     detect_problems,
+    inject_sample_rate_mismatch,
+    build_summary,
+    ProblemItem,
     ProblemsResult,
     _detect_hum,
     _detect_band_excess,
@@ -19,6 +22,7 @@ from phantom.problems import (
     _detect_lossy_codec,
     _spectral_flatness,
     _average_power_spectrum,
+    _DC_OFFSET_THRESHOLD,
 )
 
 
@@ -212,6 +216,39 @@ class TestDCOffset:
         dc_problems = [p for p in result.problems if p.type == "dc_offset"]
         assert len(dc_problems) == 0
 
+    def test_antiphase_stereo_dc_detected(self):
+        """Antiphase DC (L=+0.1, R=-0.1) cancels in mono but must still flag (P-13).
+
+        The mono mixdown of a +x/-x DC pair is zero, so a mono-only check
+        misses it. Per-channel detection flags it because either channel
+        exceeds the threshold.
+        """
+        sr = 44100
+        t = np.linspace(0, 1.0, sr, endpoint=False, dtype=np.float32)
+        sine = 0.5 * np.sin(2 * np.pi * 440 * t)
+        left = (sine + 0.1).astype(np.float32)
+        right = (sine - 0.1).astype(np.float32)
+        samples = np.column_stack([left, right])
+        audio = _make_stereo_audio(samples, sr)
+
+        # Sanity: mono mixdown cancels the DC, so a mono-only check sees nothing.
+        assert abs(float(np.mean(audio.mono))) < _DC_OFFSET_THRESHOLD
+
+        result = detect_problems(audio)
+        dc_problems = [p for p in result.problems if p.type == "dc_offset"]
+        assert len(dc_problems) == 1
+
+    def test_clean_stereo_no_dc_offset(self):
+        """Clean stereo sine (no DC on either channel) -> no dc_offset problem."""
+        sr = 44100
+        t = np.linspace(0, 1.0, sr, endpoint=False, dtype=np.float32)
+        sine = (0.5 * np.sin(2 * np.pi * 440 * t)).astype(np.float32)
+        samples = np.column_stack([sine, sine])
+        audio = _make_stereo_audio(samples, sr)
+        result = detect_problems(audio)
+        dc_problems = [p for p in result.problems if p.type == "dc_offset"]
+        assert len(dc_problems) == 0
+
 
 # ---------------------------------------------------------------------------
 # PROB-03: Inter-Sample Peak Detection
@@ -244,6 +281,40 @@ class TestInterSamplePeaks:
         assert "true_peak_dbtp" in details
         assert "sample_peak_dbfs" in details
         assert "overshoot_db" in details
+
+    def test_isp_shares_true_peak_and_matches(self):
+        """ISP true_peak_dbtp equals the value derived from shared channel_true_peaks.
+
+        Parity, not a new number: the detail's true_peak_dbtp must match the
+        dBTP computed from the worst channel's shared true peak. Confirms the
+        ISP detector is fed from the same memoized computation loudness uses.
+        """
+        sr = 44100
+        t = np.linspace(0, 1.0, sr, endpoint=False, dtype=np.float32)
+        # 14700Hz near full scale — reliably triggers ISP overshoot.
+        samples = (1.0 * np.sin(2 * np.pi * 14700 * t)).astype(np.float32)
+        audio = _make_audio(samples, sr)
+
+        from phantom._truepeak import channel_true_peaks
+
+        pairs = channel_true_peaks(audio)
+        eps = np.finfo(np.float32).eps
+        # Worst channel by overshoot (matches _detect_inter_sample_peaks logic).
+        worst_tp = 0.0
+        worst_overshoot = 0.0
+        for sp, tp in pairs:
+            overshoot = float(20 * np.log10((tp + eps) / (sp + eps)))
+            if overshoot > worst_overshoot:
+                worst_overshoot = overshoot
+                worst_tp = tp
+        expected_dbtp = round(float(20 * np.log10(worst_tp + eps)), 2)
+
+        result = detect_problems(audio)
+        isp = [p for p in result.problems if p.type == "inter_sample_peak"]
+        assert len(isp) > 0
+        assert isp[0].details["true_peak_dbtp"] == pytest.approx(
+            expected_dbtp, abs=1e-9
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -989,3 +1060,69 @@ class TestFFTSpectrumSharing:
             detect_problems(audio)
             # Should be called exactly once (pre-compute), not 2 times
             assert mock_aps.call_count == 1
+
+
+# ---------------------------------------------------------------------------
+# Shared sample-rate-mismatch injection (P-10)
+# ---------------------------------------------------------------------------
+
+
+class TestInjectSampleRateMismatch:
+    """Tests for inject_sample_rate_mismatch shared helper (P-10)."""
+
+    def test_prepends_dealbreaker_and_rebuilds(self):
+        """Given a clean ProblemsResult and a 2-rate dict, the returned result
+        has the mismatch item first, clean=False, and summary counts updated."""
+        clean = ProblemsResult()  # empty problems, clean=True
+        assert clean.clean is True
+        assert clean.summary.total == 0
+
+        sample_rates = {"kick.wav": 44100, "vox.wav": 48000}
+        result = inject_sample_rate_mismatch(clean, sample_rates)
+
+        # New result -- a fresh ProblemsResult, not the same object mutated
+        assert isinstance(result, ProblemsResult)
+        assert result is not clean
+
+        # Mismatch item is FIRST
+        assert result.problems[0].type == "sample_rate_mismatch"
+        assert result.problems[0].severity == "dealbreaker"
+
+        # clean flipped to False
+        assert result.clean is False
+
+        # Summary counts updated
+        assert result.summary.dealbreaker == 1
+        assert result.summary.total == 1
+
+    def test_injected_item_message_and_details(self):
+        """The injected item's message and details match the byte-identical
+        structure produced at both former call sites."""
+        sample_rates = {"a.wav": 44100, "b.wav": 96000}
+        result = inject_sample_rate_mismatch(ProblemsResult(), sample_rates)
+
+        expected_detail = {"a.wav": 44100, "b.wav": 96000}
+        item = result.problems[0]
+        assert item.message == f"Sample rate mismatch across stems: {expected_detail}"
+        assert item.details == {"sample_rates": expected_detail}
+
+    def test_preserves_existing_problems_after_mismatch(self):
+        """Existing problems are preserved and follow the prepended mismatch item."""
+        existing = ProblemItem(
+            type="clipping",
+            severity="dealbreaker",
+            message="Clipping detected.",
+            details={"clipped_samples": 5},
+        )
+        original = ProblemsResult(
+            problems=[existing],
+            clean=False,
+            summary=build_summary([existing]),
+        )
+
+        result = inject_sample_rate_mismatch(original, {"a.wav": 44100, "b.wav": 48000})
+
+        assert result.problems[0].type == "sample_rate_mismatch"
+        assert result.problems[1] is existing
+        assert result.summary.dealbreaker == 2
+        assert result.summary.total == 2

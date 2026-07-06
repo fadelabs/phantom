@@ -1008,3 +1008,141 @@ class TestFixAudio:
 
         with pytest.raises(DependencyMissingError):
             fix_audio(stereo_wav)
+
+
+# ---------------------------------------------------------------------------
+# TestFixAudioPreloaded -- P-08: additive `audio=` param skips input re-decode
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.skipif(not _has_pedalboard, reason="pedalboard not installed")
+class TestFixAudioPreloaded:
+    """fix_audio(audio=...) reuses an already-loaded AudioData for the input.
+
+    P-08: the interactive CLI path decodes the input once for detect_problems,
+    then fix_audio decodes it again. The additive keyword-only `audio` param lets
+    the caller thread the already-loaded AudioData so the input is decoded once.
+    Behavior with audio=None must be byte-identical to the pre-P-08 function.
+    """
+
+    @pytest.fixture()
+    def stereo_wav(self, tmp_path):
+        """Create a stereo WAV file with a 440Hz sine (matches TestFixAudio)."""
+        sr = 44100
+        duration = 0.5
+        n = int(sr * duration)
+        t = np.linspace(0, duration, n, endpoint=False, dtype=np.float32)
+        samples = (0.5 * np.sin(2 * np.pi * 440 * t)).astype(np.float32)
+        samples_2d = np.column_stack([samples, samples])
+        path = str(tmp_path / "input.wav")
+        sf.write(path, samples_2d, sr)
+        return path
+
+    def test_preloaded_audio_matches_default(self, stereo_wav, tmp_path, monkeypatch):
+        """Result is identical whether `audio` is passed or loaded internally."""
+        from phantom.processing import fix_audio
+        from phantom.audio import load_audio
+        from phantom.problems import ProblemsResult, ProblemItem
+
+        before_result = ProblemsResult(
+            problems=[
+                ProblemItem(type="mud", severity="moderate", message="Mud", details={})
+            ],
+            clean=False,
+        )
+        after_result = ProblemsResult(problems=[], clean=True)
+
+        # Deterministic detect keyed on call order: first call is "before" (on
+        # the input), second is "after" (on the freshly written output).
+        calls = {"n": 0}
+
+        def ordered_detect(audio):
+            calls["n"] += 1
+            return before_result if calls["n"] == 1 else after_result
+
+        # Path A: default (audio=None) -- fix_audio loads internally.
+        monkeypatch.setattr("phantom.processing.detect_problems", ordered_detect)
+        out_a = str(tmp_path / "out_a.wav")
+        result_default = fix_audio(stereo_wav, output_path=out_a)
+
+        # Path B: pre-load and pass audio=...
+        calls["n"] = 0
+        preloaded = load_audio(stereo_wav)
+        out_b = str(tmp_path / "out_b.wav")
+        result_preloaded = fix_audio(stereo_wav, output_path=out_b, audio=preloaded)
+
+        # Results must be identical except for the (intentionally different)
+        # output_path. Compare the rest of the model.
+        dump_a = result_default.model_dump()
+        dump_b = result_preloaded.model_dump()
+        dump_a.pop("output_path")
+        dump_b.pop("output_path")
+        assert dump_a == dump_b
+
+        # And the written audio bytes must match.
+        import soundfile as sf_
+
+        samples_a, sr_a = sf_.read(out_a)
+        samples_b, sr_b = sf_.read(out_b)
+        assert sr_a == sr_b
+        assert np.array_equal(samples_a, samples_b)
+
+    def test_preloaded_audio_skips_input_load(self, stereo_wav, tmp_path, monkeypatch):
+        """When audio= is provided, the input file is not re-decoded.
+
+        fix_audio still loads the *output* for after-detection, so exactly one
+        load_audio call happens (output only) instead of two (input + output).
+        """
+        from phantom.processing import fix_audio
+        from phantom.audio import load_audio
+        from phantom.problems import ProblemsResult
+
+        monkeypatch.setattr(
+            "phantom.processing.detect_problems",
+            lambda audio: ProblemsResult(problems=[], clean=True),
+        )
+
+        preloaded = load_audio(stereo_wav)
+
+        loaded_paths: list[str] = []
+        real_load = load_audio
+
+        def tracking_load(path):
+            loaded_paths.append(path)
+            return real_load(path)
+
+        monkeypatch.setattr("phantom.processing.load_audio", tracking_load)
+
+        output = str(tmp_path / "output.wav")
+        result = fix_audio(stereo_wav, output_path=output, audio=preloaded)
+
+        # Only the output was loaded (for after-detection); the input was reused.
+        assert result.output_path == output
+        assert len(loaded_paths) == 1
+        assert os.path.realpath(loaded_paths[0]) == os.path.realpath(output)
+
+    def test_default_still_loads_input(self, stereo_wav, tmp_path, monkeypatch):
+        """With audio=None, both input and output are loaded (unchanged behavior)."""
+        from phantom.processing import fix_audio
+        from phantom.audio import load_audio
+        from phantom.problems import ProblemsResult
+
+        monkeypatch.setattr(
+            "phantom.processing.detect_problems",
+            lambda audio: ProblemsResult(problems=[], clean=True),
+        )
+
+        loaded_paths: list[str] = []
+        real_load = load_audio
+
+        def tracking_load(path):
+            loaded_paths.append(path)
+            return real_load(path)
+
+        monkeypatch.setattr("phantom.processing.load_audio", tracking_load)
+
+        output = str(tmp_path / "output.wav")
+        fix_audio(stereo_wav, output_path=output)
+
+        # Input + output both loaded: two calls, unchanged from pre-P-08.
+        assert len(loaded_paths) == 2

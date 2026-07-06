@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from click.testing import CliRunner
@@ -68,6 +68,56 @@ class TestPluginSetup:
         result = runner.invoke(cli, ["setup", "--skip-plugin", "--skip-reaper"])
         assert result.exit_code == 0
         assert "skipped" in result.output.lower()
+
+
+class TestMarketplaceFailure:
+    """The discarded `marketplace add` result is now surfaced (P-18)."""
+
+    def _fake_run_factory(self, add_returncode, add_stderr):
+        """Build a subprocess.run stub: fail marketplace add, succeed install."""
+
+        def fake_run(cmd, **kwargs):
+            proc = MagicMock()
+            if cmd[:4] == ["claude", "plugin", "marketplace", "add"]:
+                proc.returncode = add_returncode
+                proc.stderr = add_stderr
+                proc.stdout = ""
+            else:  # plugin install
+                proc.returncode = 0
+                proc.stdout = "installed"
+                proc.stderr = ""
+            return proc
+
+        return fake_run
+
+    def test_genuine_marketplace_failure_warns(self, runner, clean_env):
+        """A real marketplace add failure prints a yellow warning with stderr."""
+        fake_run = self._fake_run_factory(
+            add_returncode=1, add_stderr="fatal: could not read from remote repository"
+        )
+        with (
+            patch("phantom.cli.setup.shutil.which", return_value="/usr/bin/claude"),
+            patch("phantom.cli.setup.subprocess.run", side_effect=fake_run),
+        ):
+            result = runner.invoke(cli, ["setup", "--skip-reaper"])
+        # Setup must NOT fail on a marketplace hiccup.
+        assert result.exit_code == 0
+        assert "arketplace" in result.output
+        assert "could not read from remote repository" in result.output
+
+    def test_already_added_marketplace_stays_quiet(self, runner, clean_env):
+        """An 'already exists' marketplace add does not print a warning."""
+        fake_run = self._fake_run_factory(
+            add_returncode=1, add_stderr="marketplace 'phantom' already exists"
+        )
+        with (
+            patch("phantom.cli.setup.shutil.which", return_value="/usr/bin/claude"),
+            patch("phantom.cli.setup.subprocess.run", side_effect=fake_run),
+        ):
+            result = runner.invoke(cli, ["setup", "--skip-reaper"])
+        assert result.exit_code == 0
+        # Plugin still installs; no marketplace warning line.
+        assert "Marketplace add failed" not in result.output
 
 
 class TestReaperSetup:

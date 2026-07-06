@@ -109,6 +109,34 @@ class TestRemoveMcpEntries:
         _remove_mcp_entries(str(cfg), remove_phantom=True, remove_reaper=False)
         assert not cfg.exists()
 
+    def test_remove_mcp_entries_returns_false_on_write_error(
+        self, tmp_path, monkeypatch
+    ):
+        # A write failure must be reported, not silently swallowed (P-15).
+        from phantom.cli import uninstall
+
+        cfg = tmp_path / "config.json"
+        cfg.write_text('{"mcpServers": {"phantom": {}, "other": {}}}')
+
+        def _boom(*a, **k):
+            raise OSError("disk full")
+
+        monkeypatch.setattr(uninstall, "atomic_write_text", _boom)
+        ok = uninstall._remove_mcp_entries(
+            str(cfg), remove_phantom=True, remove_reaper=False
+        )
+        assert ok is False
+
+    def test_remove_mcp_entries_returns_true_on_success(self, tmp_path):
+        from phantom.cli import uninstall
+
+        cfg = tmp_path / "config.json"
+        cfg.write_text('{"mcpServers": {"phantom": {}, "other": {}}}')
+        ok = uninstall._remove_mcp_entries(
+            str(cfg), remove_phantom=True, remove_reaper=False
+        )
+        assert ok is True
+
 
 # ---------------------------------------------------------------------------
 # _remove_startup_hook
@@ -142,6 +170,46 @@ class TestRemoveStartupHook:
         _remove_startup_hook(str(startup))
         assert not startup.exists()
 
+    def test_remove_startup_hook_returns_false_on_error(self, tmp_path, monkeypatch):
+        from phantom.cli import uninstall
+
+        startup = tmp_path / "__startup.lua"
+        startup.write_text(
+            "-- [phantom] auto-start MCP bridge\nfoo()\n-- [/phantom]\nkeep()\n"
+        )
+
+        def _boom(*a, **k):
+            raise OSError("read-only fs")
+
+        monkeypatch.setattr(uninstall, "atomic_write_text", _boom)
+        ok = uninstall._remove_startup_hook(str(startup))
+        assert ok is False
+
+    def test_missing_end_marker_preserves_trailing_lines(self, tmp_path):
+        """A phantom block missing its ``-- [/phantom]`` end marker must not
+        swallow the user's trailing content (the old uninstall bug deleted to
+        EOF once the skip flag latched).
+        """
+        from phantom.cli import uninstall
+
+        startup = tmp_path / "__startup.lua"
+        startup.write_text(
+            "-- user header line\n"
+            "-- [phantom] auto-start MCP bridge\n"
+            "dofile(reaper.GetResourcePath())\n"
+            "-- (end marker was manually deleted)\n"
+            "dofile('user_own_script.lua')\n"
+            "-- user trailing line\n"
+        )
+        ok = uninstall._remove_startup_hook(str(startup))
+        assert ok is True
+        content = startup.read_text()
+        # The marker line itself is stripped, but real user content survives.
+        assert "auto-start MCP bridge" not in content
+        assert "user header line" in content
+        assert "user_own_script.lua" in content
+        assert "user trailing line" in content
+
 
 # ---------------------------------------------------------------------------
 # phantom uninstall command
@@ -163,7 +231,13 @@ class TestUninstallCommand:
     def test_uninstall_with_yes(self, runner, phantom_dir):
         mock_proc = MagicMock()
         mock_proc.returncode = 0
-        with patch("phantom.cli.uninstall.subprocess.run", return_value=mock_proc):
+        # Run in an isolated cwd so the --yes uninstall can't rewrite the
+        # developer's real ./.mcp.json (which would strip the phantom entry and
+        # trip the CLI group's first-run auto-setup in later tests).
+        with (
+            runner.isolated_filesystem(),
+            patch("phantom.cli.uninstall.subprocess.run", return_value=mock_proc),
+        ):
             result = runner.invoke(cli, ["uninstall", "--yes"])
             assert result.exit_code == 0
             assert "Uninstalled" in result.output or "removed" in result.output.lower()
@@ -172,3 +246,22 @@ class TestUninstallCommand:
         result = runner.invoke(cli, ["uninstall"], input="n\n")
         assert "Phantom Artifacts Found" in result.output
         assert "phantom-audio" in result.output
+
+    def test_uv_uninstall_has_timeout(self, monkeypatch):
+        # The uv tool uninstall call must pass a timeout (P-16).
+        from phantom.cli import uninstall
+
+        captured = {}
+
+        class _Proc:
+            returncode = 0
+            stdout = "uninstalled phantom-audio"
+            stderr = ""
+
+        def _fake_run(cmd, **kwargs):
+            captured.update(kwargs)
+            return _Proc()
+
+        monkeypatch.setattr(uninstall.subprocess, "run", _fake_run)
+        uninstall._uninstall_uv_package(uninstall.get_console(), [])
+        assert "timeout" in captured and captured["timeout"] == 30

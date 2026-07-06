@@ -83,3 +83,22 @@ def test_doctor_json_broken_core_dep(runner):
     data = json.loads(result.output)
     assert data["ok"] is False
     assert data["core_deps"]["numpy"]["ok"] is False
+
+
+def test_doctor_counts_only_bridge_lua(runner, tmp_path):
+    """Only the known bridge lua counts, not unrelated .lua files (P-21)."""
+    import json
+
+    scripts_dir = tmp_path / "Scripts"
+    scripts_dir.mkdir()
+    (scripts_dir / "reaper_mcp_bridge.lua").write_text("-- bridge")
+    (scripts_dir / "other.lua").write_text("-- unrelated")
+
+    with patch(
+        "phantom.cli.setup_reaper._get_reaper_scripts_dir",
+        return_value=scripts_dir,
+    ):
+        result = runner.invoke(cli, ["doctor", "--json"])
+
+    data = json.loads(result.output)
+    assert data["reaper"]["lua_scripts_found"] == 1

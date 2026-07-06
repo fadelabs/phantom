@@ -151,19 +151,13 @@ def analyze_loudness(audio: AudioData) -> LoudnessResult:
     # Measure true peak per channel and take the maximum.
     # ITU-R BS.1770-4 specifies that true peak is the maximum
     # true peak level across all channels.
-    eps = np.finfo(np.float32).eps
-    channel_peaks = []
-    for ch in range(audio.num_channels):
-        tp_algo = es.TruePeakDetector(
-            version=4,
-            sampleRate=sample_rate,
-            oversamplingFactor=4,
-        )
-        channel_signal = audio.samples[:, ch]
-        _, tp_output = tp_algo(channel_signal)
-        channel_peaks.append(float(np.max(np.abs(tp_output))))
+    # Computed once per file and memoized on the AudioData instance so
+    # detect_problems' inter-sample-peak detector shares it (P-02, P-06).
+    from phantom._truepeak import channel_true_peaks
 
-    max_tp = max(channel_peaks)
+    eps = np.finfo(np.float32).eps
+    peaks = channel_true_peaks(audio)
+    max_tp = max((tp for _sp, tp in peaks), default=0.0)
     true_peak_dbtp = float(20 * np.log10(max_tp + eps))
 
     return LoudnessResult(

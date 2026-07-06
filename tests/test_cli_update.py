@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.metadata
 import json
+import subprocess
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
@@ -68,6 +69,24 @@ class TestParseVersion:
     def test_comparison_older(self):
         assert _parse_version("1.0.0") < _parse_version("1.1.0")
 
+    def test_parse_version_prerelease_rc(self):
+        # Regression: pre-release suffixes must not raise (P-11).
+        assert _parse_version("1.2.3-rc1") == (1, 2, 3)
+
+    def test_parse_version_prerelease_beta_pep440(self):
+        assert _parse_version("1.2.0b1") == (1, 2, 0)
+
+    def test_parse_version_prerelease_dashed_beta(self):
+        assert _parse_version("2.0.0-beta") == (2, 0, 0)
+
+    def test_parse_version_build_metadata(self):
+        assert _parse_version("v1.2.3+build.5") == (1, 2, 3)
+
+    def test_parse_version_prerelease_orders_below_next_release(self):
+        # A suffixed latest tag must still compare cleanly against current.
+        assert _parse_version("1.3.1") < _parse_version("1.4.0-rc1")
+        assert _parse_version("1.3.1-rc1") <= _parse_version("1.3.1")
+
 
 # ---------------------------------------------------------------------------
 # is_editable_install
@@ -114,6 +133,29 @@ class TestCheckForUpdate:
     def test_returns_none_on_network_failure(self, cache_dir):
         with patch("phantom.cli.update.urlopen", side_effect=OSError("no network")):
             assert check_for_update(force=True) is None
+
+    def test_returns_none_on_urlerror(self, cache_dir):
+        """A URLError network failure still degrades to None (P-21 narrowed catch)."""
+        from urllib.error import URLError
+
+        with patch(
+            "phantom.cli.update.urlopen", side_effect=URLError("connection refused")
+        ):
+            assert check_for_update(force=True) is None
+
+    def test_programming_error_is_not_swallowed(self, cache_dir):
+        """The narrowed catch must let genuine bugs surface, not mask them (P-21).
+
+        A TypeError (a stand-in for a programming error like the fixed P-11 parse
+        bug) is outside the caught tuple, so it propagates instead of being
+        silently turned into None.
+        """
+        with patch(
+            "phantom.cli.update._fetch_latest_version",
+            side_effect=TypeError("unexpected programming bug"),
+        ):
+            with pytest.raises(TypeError):
+                check_for_update(force=True)
 
     def test_returns_versions_when_release_exists(self, cache_dir):
         resp = _mock_urlopen({"tag_name": "v1.2.0"})
@@ -346,6 +388,124 @@ class TestUpdateCommand:
             ),
             patch("phantom.cli.update.is_editable_install", return_value=False),
             patch("phantom.cli.update.subprocess.run", return_value=mock_proc),
+        ):
+            result = runner.invoke(cli, ["update", "--yes"])
+            assert result.exit_code != 0
+            assert "Failed" in result.output
+
+    def test_all_subprocess_calls_have_timeout(self, runner, cache_dir):
+        """Every uv subprocess call in `update` must pass a timeout (P-16)."""
+        recorded_kwargs = []
+
+        def fake_run(cmd, **kwargs):
+            recorded_kwargs.append(kwargs)
+            proc = MagicMock()
+            # First call (upgrade) triggers the list + install fallback path so
+            # all three subprocess calls are exercised.
+            if cmd[:3] == ["uv", "tool", "upgrade"]:
+                proc.returncode = 1
+                proc.stderr = "error: no such command 'upgrade'"
+            else:
+                proc.returncode = 0
+                proc.stdout = "phantom-audio v1.1.0 (/path)\n"
+                proc.stderr = ""
+            return proc
+
+        with (
+            patch(
+                "phantom.cli.update.check_for_update",
+                return_value=("2.0.0", "1.1.0"),
+            ),
+            patch("phantom.cli.update.is_editable_install", return_value=False),
+            patch("phantom.cli.update.subprocess.run", side_effect=fake_run),
+        ):
+            runner.invoke(cli, ["update", "--yes"])
+
+        assert recorded_kwargs, "expected subprocess.run to be called"
+        for kwargs in recorded_kwargs:
+            assert "timeout" in kwargs, f"missing timeout in call kwargs: {kwargs}"
+
+    def test_no_such_command_triggers_extras_preserving_reinstall(
+        self, runner, cache_dir
+    ):
+        """Pin the string-match fallback: "no such command" -> list + install (P-18).
+
+        This locks the CURRENT (intentionally deferred) detection behavior. If uv
+        reworded its error, this test breaks -- which is the signal that the
+        fallback needs revisiting rather than silently disabling.
+        """
+        calls = []
+
+        def fake_run(cmd, **kwargs):
+            calls.append(cmd)
+            proc = MagicMock()
+            if cmd[:3] == ["uv", "tool", "upgrade"]:
+                proc.returncode = 1
+                proc.stderr = "error: no such command 'upgrade'"
+            else:
+                proc.returncode = 0
+                proc.stdout = "phantom-audio v1.1.0 (/path)\n"
+                proc.stderr = ""
+            return proc
+
+        with (
+            patch(
+                "phantom.cli.update.check_for_update",
+                return_value=("2.0.0", "1.1.0"),
+            ),
+            patch("phantom.cli.update.is_editable_install", return_value=False),
+            patch("phantom.cli.update.subprocess.run", side_effect=fake_run),
+        ):
+            result = runner.invoke(cli, ["update", "--yes"])
+
+        assert result.exit_code == 0
+        # Fallback fired: upgrade, then list, then force-install.
+        assert calls[0][:3] == ["uv", "tool", "upgrade"]
+        assert any(c[:3] == ["uv", "tool", "list"] for c in calls)
+        assert any(c[:3] == ["uv", "tool", "install"] for c in calls)
+
+    def test_other_uv_error_does_not_trigger_reinstall(self, runner, cache_dir):
+        """A nonzero exit WITHOUT "no such command" must NOT fire the fallback (P-18).
+
+        Pins the specificity of the string match: only the exact uv wording
+        triggers the extras-preserving reinstall.
+        """
+        calls = []
+
+        def fake_run(cmd, **kwargs):
+            calls.append(cmd)
+            proc = MagicMock()
+            proc.returncode = 1
+            proc.stderr = "error: some other failure"
+            proc.stdout = ""
+            return proc
+
+        with (
+            patch(
+                "phantom.cli.update.check_for_update",
+                return_value=("2.0.0", "1.1.0"),
+            ),
+            patch("phantom.cli.update.is_editable_install", return_value=False),
+            patch("phantom.cli.update.subprocess.run", side_effect=fake_run),
+        ):
+            result = runner.invoke(cli, ["update", "--yes"])
+
+        assert result.exit_code != 0
+        # Only the single upgrade call was made; no list/install fallback.
+        assert calls == [["uv", "tool", "upgrade", "phantom-audio"]]
+
+    def test_timeout_renders_update_failed(self, runner, cache_dir):
+        """A subprocess timeout surfaces the Update Failed panel, not a hang (P-16)."""
+        with (
+            patch(
+                "phantom.cli.update.check_for_update",
+                return_value=("2.0.0", "1.1.0"),
+            ),
+            patch("phantom.cli.update.is_editable_install", return_value=False),
+            patch(
+                "phantom.cli.update.subprocess.run",
+                side_effect=subprocess.TimeoutExpired(cmd="uv", timeout=120),
+            ),
         ):
             result = runner.invoke(cli, ["update", "--yes"])
             assert result.exit_code != 0

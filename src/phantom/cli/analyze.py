@@ -17,8 +17,6 @@ from phantom import (
     analyze_phase,
     detect_problems,
     PhantomError,
-    ProblemItem,
-    ProblemsResult,
 )
 from phantom.cli._formatting import (
     get_console,
@@ -28,7 +26,7 @@ from phantom.cli._formatting import (
     output_json,
     render_error,
 )
-from phantom.problems import build_summary
+from phantom.problems import inject_sample_rate_mismatch
 
 
 # ---------------------------------------------------------------------------
@@ -47,11 +45,19 @@ _ANALYSIS_TYPES: dict[str, tuple] = {
 
 
 def _run_selected_analyses(audio, enabled: list[str]) -> dict:
-    """Run only the enabled analysis types and return results dict."""
+    """Run only the enabled analysis types and return results dict.
+
+    Each analyzer is routed through the shared ``analysis_cache`` via
+    ``_cached_analysis`` (P-01). The cache key is the analyzer's ``__name__``
+    (e.g. ``analyze_spectrum``), which matches the keys used by the MCP
+    composite tools and ``compare_*`` tools, so CLI and server share entries.
+    """
+    from phantom._cache import _cached_analysis
+
     results: dict = {}
     for name in enabled:
         fn, _title = _ANALYSIS_TYPES[name]
-        results[name] = fn(audio)
+        results[name] = _cached_analysis(audio, fn.__name__, fn)
     return results
 
 
@@ -149,8 +155,6 @@ def _detect_sample_rate_mismatch(
     if len(unique_rates) <= 1:
         return
 
-    mismatch_detail = {name: rate for name, rate in sample_rates.items()}
-
     for stem_name, stem_data in all_results.items():
         if "error" in stem_data:
             continue
@@ -159,19 +163,7 @@ def _detect_sample_rate_mismatch(
         if problems_result is None:
             continue
 
-        mismatch = ProblemItem(
-            type="sample_rate_mismatch",
-            severity="dealbreaker",
-            message=f"Sample rate mismatch across stems: {mismatch_detail}",
-            details={"sample_rates": mismatch_detail},
-        )
-
-        all_problems = [mismatch] + list(problems_result.problems)
-        rebuilt = ProblemsResult(
-            problems=all_problems,
-            clean=False,
-            summary=build_summary(all_problems),
-        )
+        rebuilt = inject_sample_rate_mismatch(problems_result, sample_rates)
 
         # Update results dict
         stem_data["results"]["problems"] = rebuilt
