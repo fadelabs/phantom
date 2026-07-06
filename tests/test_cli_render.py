@@ -261,3 +261,90 @@ class TestRenderPathSecurity:
         output_lower = result.output.lower()
         assert "denied" not in output_lower and "outside" not in output_lower
         assert "ffmpeg" in output_lower
+
+
+# ---------------------------------------------------------------------------
+# Self-overwrite guard tests (P-22)
+# ---------------------------------------------------------------------------
+
+
+class TestRenderSelfOverwrite:
+    """Render must refuse to overwrite its own source file (P-22)."""
+
+    def test_render_wav_to_wav_default_output_blocked(
+        self, runner, tmp_path, mono_sine_440hz, monkeypatch
+    ):
+        """Rendering a .wav to `wav` with no --output would overwrite the source.
+
+        The default output path is the input name with the new extension; for a
+        .wav rendered to `wav` that equals the source. render must error out and
+        leave the source bytes untouched, before any ffmpeg run.
+        """
+        monkeypatch.delenv("PHANTOM_AUDIO_DIR", raising=False)
+        # Confine output to the source's directory so the default output path
+        # (source.wav) passes validate_output_path -- isolating the
+        # self-overwrite guard as the reason for the failure rather than
+        # path confinement.
+        monkeypatch.setenv("PHANTOM_OUTPUT_DIR", str(tmp_path))
+
+        wav_path = tmp_path / "source.wav"
+        samples, sr = mono_sine_440hz
+        sf.write(str(wav_path), samples, sr)
+        original_bytes = wav_path.read_bytes()
+
+        # If the guard fails and ffmpeg were reachable, -y would clobber the
+        # source. Patch FfmpegProgress to fail loudly if it is ever constructed.
+        mock_ff_cls = MagicMock(
+            side_effect=AssertionError("ffmpeg must not run on self-overwrite")
+        )
+
+        with (
+            patch("phantom.cli.render.shutil.which", return_value="/usr/bin/ffmpeg"),
+            patch("ffmpeg_progress_yield.FfmpegProgress", mock_ff_cls),
+        ):
+            result = runner.invoke(cli, ["render", str(wav_path), "--format", "wav"])
+
+        assert result.exit_code != 0
+        output_lower = result.output.lower()
+        assert "overwrite" in output_lower
+        assert "--output" in result.output
+        # Source bytes must be unchanged.
+        assert wav_path.read_bytes() == original_bytes
+
+    def test_render_explicit_output_equals_source_blocked(
+        self, runner, tmp_path, mono_sine_440hz, monkeypatch
+    ):
+        """An explicit --output pointing at the source is also blocked (realpath)."""
+        monkeypatch.delenv("PHANTOM_AUDIO_DIR", raising=False)
+        # Confine output to the source's directory so the explicit path validates,
+        # isolating the self-overwrite guard as the reason for the failure.
+        monkeypatch.setenv("PHANTOM_OUTPUT_DIR", str(tmp_path))
+
+        wav_path = tmp_path / "source.wav"
+        samples, sr = mono_sine_440hz
+        sf.write(str(wav_path), samples, sr)
+        original_bytes = wav_path.read_bytes()
+
+        mock_ff_cls = MagicMock(
+            side_effect=AssertionError("ffmpeg must not run on self-overwrite")
+        )
+
+        with (
+            patch("phantom.cli.render.shutil.which", return_value="/usr/bin/ffmpeg"),
+            patch("ffmpeg_progress_yield.FfmpegProgress", mock_ff_cls),
+        ):
+            result = runner.invoke(
+                cli,
+                [
+                    "render",
+                    str(wav_path),
+                    "--format",
+                    "wav",
+                    "--output",
+                    str(wav_path),
+                ],
+            )
+
+        assert result.exit_code != 0
+        assert "overwrite" in result.output.lower()
+        assert wav_path.read_bytes() == original_bytes
