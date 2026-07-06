@@ -16,7 +16,7 @@ from pydantic import BaseModel, field_validator
 
 from phantom.audio import AudioData
 from phantom.exceptions import AnalysisError
-from phantom._resample import align_sample_rates
+from phantom._resample import align_sample_rates, resample_to_match
 from phantom._rounding import round_ratio
 from phantom._utils import is_near_silent, wrap_errors
 from phantom.spectral import _BAND_LABELS, _octave_band_energies
@@ -255,8 +255,13 @@ def analyze_masking_matrix(stems: list[AudioData]) -> MaskingMatrixResult:
     Pre-computes band energies per stem to avoid redundant Essentia calls
     (per RESEARCH.md Pitfall 4).
 
-    If stems have different sample rates, all are automatically
-    upsampled to the highest rate.
+    If stems have different sample rates, all are automatically upsampled to the
+    highest rate. To bound peak memory (P-07), each stem is resampled to the
+    target rate one at a time via :func:`resample_to_match` -- the same per-stem
+    call :func:`align_sample_rates` makes internally -- and the resampled array
+    is dropped as soon as its band energies are computed, so at most one
+    resampled copy is held at a time rather than N. Results are identical to
+    aligning all stems up front.
 
     Args:
         stems: List of AudioData objects.
@@ -273,19 +278,25 @@ def analyze_masking_matrix(stems: list[AudioData]) -> MaskingMatrixResult:
     if n < 2:
         return MaskingMatrixResult(pairs=[], stem_count=n, pair_count=0)
 
-    # Auto-resample all stems to highest sample rate
-    stems = list(align_sample_rates(*stems))
+    # Target rate: upsample everything to the highest rate (upsample-only, per
+    # resample_to_match). Identity when all stems already share a rate.
+    target_sr = max(stem.sample_rate for stem in stems)
 
-    # Pre-compute band energies for all stems (optimization)
+    # Compute band energies per stem, streaming the resample: each stem is
+    # aligned to target_sr just-in-time and the resampled AudioData falls out of
+    # scope after its energies are read, so peak memory holds one resampled copy
+    # rather than N (P-07). Numerically identical to pre-aligning all stems.
     energies: list[np.ndarray | None] = []
     for stem in stems:
-        mono = stem.mono
+        aligned = resample_to_match(stem, target_sr)  # identity if already at target
+        mono = aligned.mono
         if len(mono) == 0:
             raise AnalysisError("Masking analysis failed: audio has 0 samples")
         if is_near_silent(mono):
             energies.append(None)  # marker for silent stems
         else:
-            energies.append(_compute_band_energies(mono, stem.sample_rate))
+            energies.append(_compute_band_energies(mono, aligned.sample_rate))
+        del aligned  # drop the resampled copy before the next iteration
 
     # Iterate all unique pairs
     pairs: list[MaskingPair] = []

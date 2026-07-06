@@ -26,7 +26,7 @@ from phantom._utils import (
     validate_output_path,
     wrap_errors,
 )
-from phantom.audio import load_audio
+from phantom.audio import AudioData, load_audio
 from phantom.problems import ProblemItem, ProblemsResult
 
 # ---------------------------------------------------------------------------
@@ -521,6 +521,8 @@ def fix_audio(
     file_path: str,
     problems: list[str] | None = None,
     output_path: str | None = None,
+    *,
+    audio: AudioData | None = None,
 ) -> FixResult:
     """Fix detected audio problems using recipe-based processing.
 
@@ -534,6 +536,13 @@ def fix_audio(
             fixes all detected fixable problems.
         output_path: Path for the processed output WAV file. If None,
             uses input stem + '_fixed.wav'.
+        audio: Optional already-loaded :class:`AudioData` for ``file_path``. When
+            provided (keyword-only), the internal ``load_audio(file_path)`` is
+            skipped and this data is reused, avoiding a redundant decode when the
+            caller already loaded the file (e.g. the interactive CLI path, P-08).
+            ``file_path`` is still validated and used for path checks and the
+            default output name. When ``None`` (the default), behavior is
+            byte-identical to loading the input internally.
 
     Returns:
         FixResult with output_path, fixes_applied, before/after
@@ -562,8 +571,11 @@ def fix_audio(
     file_path = validate_input_path(file_path)
     output_path = _resolve_output_path(file_path, output_path)
 
-    # Step 2: Load audio and detect problems (before)
-    audio = load_audio(file_path)
+    # Step 2: Load audio (unless the caller already did, P-08) and detect
+    # problems (before). validate_input_path above still guards the path; when
+    # `audio` is supplied it is reused verbatim so the input is decoded once.
+    if audio is None:
+        audio = load_audio(file_path)
     before = detect_problems(audio)
 
     # Step 3: Filter to fixable problems
