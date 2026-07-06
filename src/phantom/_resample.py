@@ -82,3 +82,28 @@ def resample_to_match(audio: AudioData, target_sr: int) -> AudioData:
         num_samples=num_samples,
         file_path=audio.file_path,
     )
+
+
+def align_sample_rates(*audios: AudioData) -> tuple[AudioData, ...]:
+    """Upsample all inputs to the highest sample rate; identity when equal.
+
+    Returns the inputs in their original order.  When every input already
+    shares the same sample rate, the same objects are returned unchanged
+    (identity fast-path).  Otherwise each lower-rate input is upsampled to
+    ``max`` via :func:`resample_to_match`; inputs already at the target rate
+    are returned unchanged.
+
+    Args:
+        *audios: One or more :class:`AudioData` objects to align.
+
+    Returns:
+        A tuple of :class:`AudioData` in input order, all sharing the highest
+        sample rate among the inputs.
+    """
+    rates = {a.sample_rate for a in audios}
+    if len(rates) <= 1:
+        return tuple(audios)
+    target = max(rates)
+    return tuple(
+        resample_to_match(a, target) if a.sample_rate != target else a for a in audios
+    )

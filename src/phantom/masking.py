@@ -16,7 +16,7 @@ from pydantic import BaseModel, field_validator
 
 from phantom.audio import AudioData
 from phantom.exceptions import AnalysisError
-from phantom._resample import resample_to_match
+from phantom._resample import align_sample_rates
 from phantom._rounding import round_ratio
 from phantom._utils import is_near_silent, wrap_errors
 from phantom.spectral import _BAND_LABELS, _octave_band_energies
@@ -225,12 +225,7 @@ def analyze_masking(audio_a: AudioData, audio_b: AudioData) -> MaskingResult:
         AnalysisError: If audio is empty or analysis fails.
     """
     # Auto-resample on sample rate mismatch
-    if audio_a.sample_rate != audio_b.sample_rate:
-        target_sr = max(audio_a.sample_rate, audio_b.sample_rate)
-        if audio_a.sample_rate < target_sr:
-            audio_a = resample_to_match(audio_a, target_sr)
-        else:
-            audio_b = resample_to_match(audio_b, target_sr)
+    audio_a, audio_b = align_sample_rates(audio_a, audio_b)
 
     # Mono mixdown
     mono_a = audio_a.mono
@@ -279,13 +274,7 @@ def analyze_masking_matrix(stems: list[AudioData]) -> MaskingMatrixResult:
         return MaskingMatrixResult(pairs=[], stem_count=n, pair_count=0)
 
     # Auto-resample all stems to highest sample rate
-    rates = {s.sample_rate for s in stems}
-    if len(rates) > 1:
-        target_sr = max(rates)
-        stems = [
-            resample_to_match(s, target_sr) if s.sample_rate != target_sr else s
-            for s in stems
-        ]
+    stems = list(align_sample_rates(*stems))
 
     # Pre-compute band energies for all stems (optimization)
     energies: list[np.ndarray | None] = []
