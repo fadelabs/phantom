@@ -166,6 +166,26 @@ class TestDynamicRange:
         assert result.dynamic_range_db > 10.0
 
 
+def test_dynamic_range_none_for_ultrashort_audio():
+    # < 2 RMS blocks => unmeasurable, not a misleading 0.0 (P-12).
+    import numpy as np
+    from phantom.audio import AudioData
+    from phantom.dynamics import analyze_dynamics
+
+    sr = 44100
+    # ~2048 samples (< 2 blocks at 4096/2048) but above the silence floor.
+    samples = (np.sin(2 * np.pi * 440 * np.arange(2048) / sr) * 0.5).astype("float32")
+    audio = AudioData(
+        samples=samples.reshape(-1, 1),
+        sample_rate=sr,
+        num_channels=1,
+        duration=2048 / sr,
+        num_samples=2048,
+    )
+    result = analyze_dynamics(audio)
+    assert result.dynamic_range_db is None
+
+
 # ---------------------------------------------------------------------------
 # DYN-05: Dynamic Complexity
 # ---------------------------------------------------------------------------

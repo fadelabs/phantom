@@ -109,7 +109,7 @@ def analyze_dynamics(audio: AudioData) -> DynamicsResult:
             np.percentile(block_rms_db, 95) - np.percentile(block_rms_db, 5)
         )
     else:
-        dynamic_range_db = 0.0
+        dynamic_range_db = None  # Unmeasurable — too short to estimate (P-12)
 
     # -- Dynamic complexity (DYN-05) --
     dc = es.DynamicComplexity(sampleRate=audio.sample_rate, frameSize=0.2)
