@@ -1,28 +1,27 @@
-"""Source separation via Demucs.
+"""Stem separation dispatch shim.
 
-Provides separate_stems() for splitting a stereo mix into individual stems
-(vocals, drums, bass, other) using Meta's Hybrid Transformer Demucs model.
-
-Demucs is an optional dependency. The function raises DependencyMissingError
-with install instructions if Demucs is not available.
+The Demucs implementation lives in the sibling distribution
+``phantom-audio-separation`` (see packages/phantom-audio-separation) so the
+core library carries no PyTorch dependency tree. This module keeps the
+public API stable: it discovers an installed separation backend through the
+``phantom.separation`` entry-point group and dispatches to it, or raises
+DependencyMissingError with the familiar install hint when no plugin is
+installed. The ``phantom-audio[separation]`` extra remains a meta-installer
+that pulls in phantom-audio-separation.
 """
 
 from __future__ import annotations
 
-import hashlib
-import os
-import re
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
+from importlib.metadata import entry_points
+from typing import Callable, Optional
 
 from pydantic import BaseModel
 
-from phantom.exceptions import AnalysisError, AudioLoadError, DependencyMissingError
-from phantom._utils import (
-    enforce_decode_limits,
-    validate_input_path,
-    validate_output_path,
-    wrap_errors,
-)
+from phantom.exceptions import DependencyMissingError
+from phantom._utils import wrap_errors
+
+#: Entry-point group that separation backend plugins register under.
+SEPARATION_EP_GROUP = "phantom.separation"
 
 
 class SeparationResult(BaseModel):
@@ -31,15 +30,28 @@ class SeparationResult(BaseModel):
     stems: dict[str, str]
 
 
+def _load_backend() -> Optional[Callable[[str, str], SeparationResult]]:
+    """Discover and load the first installed separation backend plugin.
+
+    Returns the backend callable, or None when no plugin is installed.
+    Load errors from a present-but-broken plugin propagate to the caller
+    (wrap_errors turns them into AnalysisError with context).
+    """
+    for ep in entry_points(group=SEPARATION_EP_GROUP):
+        return ep.load()
+    return None
+
+
 @wrap_errors("Source separation failed")
 def separate_stems(input_path: str, output_dir: str) -> SeparationResult:
-    """Separate a stereo mix into individual stems using Demucs.
+    """Separate a stereo mix into individual stems (vocals, drums, bass, other).
 
-    Uses the htdemucs model to split audio into vocals, drums, bass, and
-    other stems. Each stem is saved as a WAV file in the output directory.
+    Dispatches to the installed separation backend plugin (normally
+    phantom-audio-separation, which uses Meta's Hybrid Transformer Demucs
+    model). Each stem is saved as a WAV file in the output directory.
 
-    Demucs is an optional dependency. If not installed, a
-    DependencyMissingError is raised with install instructions.
+    Separation is an optional feature. If no backend plugin is installed,
+    a DependencyMissingError is raised with install instructions.
 
     Note: First use downloads the htdemucs model (~80 MB). Subsequent
     calls use the cached model.
@@ -56,95 +68,20 @@ def separate_stems(input_path: str, output_dir: str) -> SeparationResult:
          "bass": "/out/bass.wav", "other": "/out/other.wav"}
 
     Raises:
-        DependencyMissingError: If Demucs is not installed (per D-06).
+        DependencyMissingError: If no separation plugin is installed (per D-06).
         PathSecurityError: If output_dir is outside PHANTOM_OUTPUT_DIR (when set).
         FileNotFoundError: If input file does not exist.
         AnalysisError: If separation processing fails.
     """
-    # Step 0: Validate paths against security restrictions (D-09, D-10)
-    output_dir = validate_output_path(output_dir)
-    input_path = validate_input_path(input_path)
-
-    # Step 1: Guard -- import demucs inside function body (per D-06, SEP-02)
-    try:
-        from demucs.pretrained import get_model
-        from demucs.apply import apply_model
-        from demucs.audio import AudioFile
-        import torch
-        import soundfile as sf
-    except ImportError:
+    backend = _load_backend()
+    if backend is None:
         raise DependencyMissingError(
-            package="Demucs",
+            package="phantom-audio-separation",
             extra="separation",
             detail=(
-                "Demucs provides AI-powered source separation into "
-                "vocals, drums, bass, and other stems."
+                "Stem separation ships as the sibling package "
+                "phantom-audio-separation, which provides AI-powered source "
+                "separation into vocals, drums, bass, and other stems."
             ),
         )
-
-    # Step 2: Validate input file exists
-    if not os.path.isfile(input_path):
-        raise AudioLoadError(f"Input file not found: {os.path.basename(input_path)}")
-
-    # Step 2.5: Decode-bomb guard -- reject over-long/oversized input before
-    # demucs decodes it (Advisory 2). Mirrors load_audio's sf.info pre-check.
-    enforce_decode_limits(input_path)
-
-    # Step 3: Ensure output directory exists
-    os.makedirs(output_dir, exist_ok=True)
-
-    # Step 4: Load model and audio (per D-03: htdemucs only)
-    model = get_model("htdemucs")
-    model.cpu()
-
-    wav = AudioFile(input_path).read(
-        streams=0,
-        samplerate=model.samplerate,
-        channels=model.audio_channels,
-    )
-    ref = wav.mean(0)
-    ref_std = float(ref.std())
-    if ref_std < 1e-12:
-        raise AnalysisError(
-            "Cannot separate a silent file — the input has no audible signal."
-        )
-    wav = (wav - ref.mean()) / ref_std
-
-    # Step 5: Run separation (with timeout to prevent indefinite hangs)
-    _SEPARATION_TIMEOUT = 600  # 10 minutes max for any file
-
-    def _run_model():
-        with torch.no_grad():
-            return apply_model(model, wav[None], progress=False)
-
-    with ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(_run_model)
-        try:
-            sources = future.result(timeout=_SEPARATION_TIMEOUT)
-        except FuturesTimeout:
-            raise AnalysisError(
-                f"Source separation timed out after {_SEPARATION_TIMEOUT}s. "
-                "Try a shorter audio file."
-            )
-    sources = sources[0]
-    sources = sources * ref.std() + ref.mean()
-
-    # Step 6: Save each stem as WAV (per D-01, D-02)
-    _SAFE_NAME_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
-    result = {}
-    for i, stem_name in enumerate(model.sources):
-        safe_name = os.path.basename(stem_name)
-        if not _SAFE_NAME_RE.match(safe_name):
-            safe_name = f"stem_{int(hashlib.sha256(stem_name.encode()).hexdigest()[:8], 16) % 10000}"
-        stem_path = os.path.join(output_dir, f"{safe_name}.wav")
-        real_stem = os.path.realpath(stem_path)
-        real_outdir = os.path.realpath(output_dir)
-        if not real_stem.startswith(real_outdir + os.sep) and real_stem != real_outdir:
-            raise AnalysisError(
-                f"Stem name '{stem_name}' would write outside output directory"
-            )
-        stem_audio = sources[i].cpu().numpy().T
-        sf.write(stem_path, stem_audio, model.samplerate)
-        result[stem_name] = stem_path
-
-    return SeparationResult(stems=result)
+    return backend(input_path, output_dir)

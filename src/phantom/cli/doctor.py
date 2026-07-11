@@ -14,7 +14,13 @@ from rich.panel import Panel
 from rich.table import Table
 
 from phantom import __version__
-from phantom._diagnostics import CORE_DEPS, OPTIONAL_DEPS, try_import as _try_import
+from phantom._diagnostics import (
+    CORE_DEPS,
+    OPTIONAL_DEPS,
+    SEPARATION_PLUGIN_DIST,
+    separation_plugin_status,
+    try_import as _try_import,
+)
 from phantom.cli._formatting import get_console, output_json
 from phantom.exceptions import RECOMMENDED_PYTHON
 
@@ -67,7 +73,11 @@ def _collect_results() -> dict:
     results["core_deps"] = core
 
     # 3. Optional deps
+    # Separation is a sibling plugin distribution detected via entry points;
+    # OK only when the plugin actually loads (issue #7).
     optional = {}
+    sep_ok, sep_ver = separation_plugin_status()
+    optional[SEPARATION_PLUGIN_DIST] = {"ok": sep_ok, "version": sep_ver}
     for pkg in OPTIONAL_DEPS:
         ok, ver = _try_import(pkg)
         optional[pkg] = {"ok": ok, "version": ver}

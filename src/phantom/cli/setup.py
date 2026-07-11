@@ -241,14 +241,22 @@ def setup(json_output: bool, skip_reaper: bool, skip_plugin: bool) -> None:
     }
     missing_extras = []
     for extra, (label, note) in extras.items():
-        try:
-            if extra == "separation":
-                import demucs  # noqa: F401
-            elif extra == "matching":
-                import matchering  # noqa: F401
-            elif extra == "processing":
-                import pedalboard  # noqa: F401
-        except ImportError:
+        if extra == "separation":
+            # Separation is a sibling plugin distribution detected via
+            # entry points, not a direct import (issue #7).
+            from phantom._diagnostics import separation_plugin_status
+
+            installed, _ = separation_plugin_status()
+        else:
+            try:
+                if extra == "matching":
+                    import matchering  # noqa: F401
+                elif extra == "processing":
+                    import pedalboard  # noqa: F401
+                installed = True
+            except ImportError:
+                installed = False
+        if not installed:
             suffix = f" ({note})" if note else ""
             missing_extras.append((extra, f"{label}{suffix}"))
 
@@ -262,7 +270,7 @@ def setup(json_output: bool, skip_reaper: bool, skip_plugin: bool) -> None:
         ):
             # Map extras to their actual package names
             extra_packages = {
-                "separation": "demucs",
+                "separation": "phantom-audio-separation",
                 "matching": "matchering",
                 "processing": "pedalboard",
             }

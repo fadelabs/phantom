@@ -559,12 +559,18 @@ def read_live_metrics(instance_id: str | None = None) -> dict:
 def _startup_preflight() -> None:
     """Log version and optional extras status to stderr on startup."""
     from phantom import __version__
-    from phantom._diagnostics import OPTIONAL_DEPS, try_import
+    from phantom._diagnostics import (
+        OPTIONAL_DEPS,
+        separation_plugin_status,
+        try_import,
+    )
 
     if os.environ.get("PHANTOM_QUIET"):
         return
 
     extras = {}
+    sep_ok, _ = separation_plugin_status()
+    extras["separation"] = "OK" if sep_ok else "missing"
     for pkg, extra_name in OPTIONAL_DEPS.items():
         ok, _ = try_import(pkg)
         extras[extra_name] = "OK" if ok else "missing"
