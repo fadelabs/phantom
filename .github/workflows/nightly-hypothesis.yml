@@ -1,0 +1,32 @@
+name: Nightly Hypothesis
+
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  property-tests:
+    name: Property tests (randomized nightly profile)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Install Python 3.12
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --locked --python 3.12 --extra dev
+
+      - name: Run property-based tests (randomized, 200 examples)
+        env:
+          HYPOTHESIS_PROFILE: nightly
+        run: uv run pytest tests/test_invariants.py -q --tb=short

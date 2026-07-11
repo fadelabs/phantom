@@ -50,6 +50,7 @@ dev = [
     "pytest-asyncio>=1.0",
     "pytest-timeout>=2.4",
     "pyloudnorm>=0.1.0",
+    "hypothesis>=6.0",
     "ruff>=0.15",
     "pre-commit>=4.0",
 ]
