@@ -166,6 +166,8 @@ uv tool install "phantom-audio[all]" --python 3.13
 
 ```bash
 # Stem separation only (Demucs + PyTorch ~2.5GB)
+# Ships as the sibling package phantom-audio-separation; the [separation]
+# extra is a backward-compatible meta-installer that pulls it in.
 uv tool install "phantom-audio[separation]" --python 3.13
 
 # Reference matching only (GPLv3 -- see License section)
