@@ -4,12 +4,41 @@ All test audio is generated in-memory as numpy arrays.
 No WAV files are committed to the repository (D-11, D-12).
 """
 
+import os
 from pathlib import Path
 
 import numpy as np
 import pytest
 import scipy.signal as _sig
 import soundfile as sf
+from hypothesis import HealthCheck, settings
+
+# -- Hypothesis profiles (issue #17) ------------------------------------------
+#
+# "ci" (default): derandomized so every run replays the same examples --
+# deterministic in CI and locally, satisfying the reproducibility requirement.
+# "nightly": randomized with a larger example budget for broader coverage,
+# selected via HYPOTHESIS_PROFILE=nightly (see nightly-hypothesis.yml).
+#
+# function_scoped_fixture is suppressed because the audio fixtures used by
+# property tests return immutable (samples, sr) value tuples that are never
+# mutated, so reusing them across generated examples is safe.
+
+settings.register_profile(
+    "ci",
+    derandomize=True,
+    max_examples=20,
+    deadline=None,
+    suppress_health_check=[HealthCheck.function_scoped_fixture],
+)
+settings.register_profile(
+    "nightly",
+    derandomize=False,
+    max_examples=200,
+    deadline=None,
+    suppress_health_check=[HealthCheck.function_scoped_fixture],
+)
+settings.load_profile(os.environ.get("HYPOTHESIS_PROFILE", "ci"))
 
 
 @pytest.fixture(autouse=True)
