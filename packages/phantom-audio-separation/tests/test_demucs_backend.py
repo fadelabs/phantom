@@ -290,8 +290,14 @@ class TestEntryPoint:
         """The installed distribution exposes phantom.separation -> separate_stems."""
         from importlib.metadata import entry_points
 
+        import phantom_separation.demucs_backend as backend_mod
+
         eps = list(entry_points(group="phantom.separation"))
         if not eps:
             pytest.skip("plugin not installed as a distribution (source-tree run)")
         loaded = eps[0].load()
-        assert loaded is separate_stems
+        # Compare against the module attribute at assertion time (not the
+        # import captured at collection time): test_import_without_demucs
+        # reloads the backend module, which replaces its function objects.
+        assert loaded is backend_mod.separate_stems
+        assert loaded.__module__ == "phantom_separation.demucs_backend"
