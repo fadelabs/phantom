@@ -85,6 +85,39 @@ def test_doctor_json_broken_core_dep(runner):
     assert data["core_deps"]["numpy"]["ok"] is False
 
 
+def test_doctor_reports_separation_plugin_ok(runner):
+    """doctor reports separation OK only when the plugin actually loads (issue #7)."""
+    import json
+
+    with patch(
+        "phantom.cli.doctor.separation_plugin_status",
+        return_value=(True, "1.4.0"),
+    ):
+        result = runner.invoke(cli, ["doctor", "--json"])
+
+    data = json.loads(result.output)
+    row = data["optional_deps"]["phantom-audio-separation"]
+    assert row["ok"] is True
+    assert row["version"] == "1.4.0"
+
+
+def test_doctor_reports_separation_plugin_missing(runner):
+    """doctor reports the separation plugin as not-ok when absent or broken."""
+    import json
+
+    with patch(
+        "phantom.cli.doctor.separation_plugin_status",
+        return_value=(False, "not installed"),
+    ):
+        result = runner.invoke(cli, ["doctor", "--json"])
+
+    data = json.loads(result.output)
+    row = data["optional_deps"]["phantom-audio-separation"]
+    assert row["ok"] is False
+    # A missing plugin never fails overall doctor health (optional feature).
+    assert data["ok"] is True
+
+
 def test_doctor_counts_only_bridge_lua(runner, tmp_path):
     """Only the known bridge lua counts, not unrelated .lua files (P-21)."""
     import json
