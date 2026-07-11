@@ -59,6 +59,16 @@ uv build
 uv publish --token "$(security find-generic-password -a __token__ -s pypi -w)"
 ```
 
+**Sibling package:** the stem-separation plugin lives in
+`packages/phantom-audio-separation` (its own version in
+`packages/phantom-audio-separation/pyproject.toml`). When it has changes to
+release, build and publish it too:
+
+```bash
+uv build --package phantom-audio-separation
+uv publish --token "$(security find-generic-password -a __token__ -s pypi -w)" dist/phantom_audio_separation-*
+```
+
 Verify it works:
 ```bash
 uv tool install phantom-audio --python 3.13 --force

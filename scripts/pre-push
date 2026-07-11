@@ -25,11 +25,11 @@ echo "  No PII found in tracked files."
 
 echo ""
 echo "==> Linting (ruff check)..."
-uv tool run ruff check src/ tests/
+uv tool run ruff check src/ tests/ packages/
 
 echo ""
 echo "==> Format check (ruff format)..."
-uv tool run ruff format --check src/ tests/
+uv tool run ruff format --check src/ tests/ packages/
 
 echo ""
 echo "==> Running tests (pytest)..."
