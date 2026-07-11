@@ -51,16 +51,17 @@ dev = [
     "pytest-timeout>=2.4",
     "pyloudnorm>=0.1.0",
     "hypothesis>=6.0",
+    "tomli>=2.0; python_version < '3.11'",
     "ruff>=0.15",
     "pre-commit>=4.0",
 ]
 analysis = [
     "librosa>=0.11.0",
 ]
+# Backward-compatible meta-installer: the Demucs/PyTorch implementation now
+# lives in the sibling distribution phantom-audio-separation (issue #7).
 separation = [
-    "demucs>=4.0",
-    "torch>=2.0",
-    "torchaudio>=2.0",
+    "phantom-audio-separation",
 ]
 matching = [
     "matchering>=2.0",
@@ -103,3 +104,9 @@ filterwarnings = [
 dev = [
     "midiutil>=1.2.1",
 ]
+
+[tool.uv.workspace]
+members = ["packages/*"]
+
+[tool.uv.sources]
+phantom-audio-separation = { workspace = true }

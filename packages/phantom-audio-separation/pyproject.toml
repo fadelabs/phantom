@@ -1,0 +1,51 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "phantom-audio-separation"
+version = "1.4.0"
+description = "Demucs-based stem separation plugin for phantom-audio"
+readme = "README.md"
+license = "AGPL-3.0-or-later"
+requires-python = ">=3.10,<3.14"
+authors = [
+    { name = "Phantom Contributors" },
+]
+keywords = [
+    "audio", "stem-separation", "demucs", "source-separation",
+    "audio-engineering", "phantom",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Other Audience",
+    "Topic :: Multimedia :: Sound/Audio :: Analysis",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "phantom-audio>=1.3.1",
+    "demucs>=4.0",
+    "torch>=2.0",
+    "torchaudio>=2.0",
+]
+
+[project.entry-points."phantom.separation"]
+demucs = "phantom_separation.demucs_backend:separate_stems"
+
+[project.urls]
+Homepage = "https://github.com/fadelabs/phantom"
+Documentation = "https://github.com/fadelabs/phantom#readme"
+Repository = "https://github.com/fadelabs/phantom"
+Issues = "https://github.com/fadelabs/phantom/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/phantom_separation"]
+
+[tool.uv.sources]
+phantom-audio = { workspace = true }

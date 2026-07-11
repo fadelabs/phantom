@@ -11,6 +11,12 @@ resolution-markers = [
     "python_full_version < '3.11'",
 ]
 
+[manifest]
+members = [
+    "phantom-audio",
+    "phantom-audio-separation",
+]
+
 [[package]]
 name = "aiofile"
 version = "3.9.0"
@@ -1954,12 +1960,10 @@ dependencies = [
 
 [package.optional-dependencies]
 all = [
-    { name = "demucs" },
     { name = "librosa" },
     { name = "matchering" },
     { name = "pedalboard" },
-    { name = "torch" },
-    { name = "torchaudio" },
+    { name = "phantom-audio-separation" },
 ]
 analysis = [
     { name = "librosa" },
@@ -1972,6 +1976,7 @@ dev = [
     { name = "pytest-asyncio" },
     { name = "pytest-timeout" },
     { name = "ruff" },
+    { name = "tomli", marker = "python_full_version < '3.11'" },
 ]
 matching = [
     { name = "matchering" },
@@ -1980,9 +1985,7 @@ processing = [
     { name = "pedalboard" },
 ]
 separation = [
-    { name = "demucs" },
-    { name = "torch" },
-    { name = "torchaudio" },
+    { name = "phantom-audio-separation" },
 ]
 
 [package.dev-dependencies]
@@ -1993,7 +1996,6 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "click", specifier = ">=8.0" },
-    { name = "demucs", marker = "extra == 'separation'", specifier = ">=4.0" },
     { name = "essentia", specifier = "==2.1b6.dev1389" },
     { name = "fastmcp", specifier = ">=3.2" },
     { name = "ffmpeg-progress-yield", specifier = ">=0.7" },
@@ -2003,6 +2005,7 @@ requires-dist = [
     { name = "numpy", specifier = ">=2.0" },
     { name = "pedalboard", marker = "extra == 'processing'", specifier = ">=0.9" },
     { name = "phantom-audio", extras = ["analysis", "separation", "matching", "processing"], marker = "extra == 'all'" },
+    { name = "phantom-audio-separation", marker = "extra == 'separation'", editable = "packages/phantom-audio-separation" },
     { name = "plotext", specifier = ">=5.3" },
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=4.0" },
     { name = "pydantic", specifier = ">=2.0" },
@@ -2015,13 +2018,31 @@ requires-dist = [
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.15" },
     { name = "scipy", specifier = ">=1.12" },
     { name = "soundfile", specifier = ">=0.13.0" },
-    { name = "torch", marker = "extra == 'separation'", specifier = ">=2.0" },
-    { name = "torchaudio", marker = "extra == 'separation'", specifier = ">=2.0" },
+    { name = "tomli", marker = "python_full_version < '3.11' and extra == 'dev'", specifier = ">=2.0" },
 ]
 provides-extras = ["dev", "analysis", "separation", "matching", "processing", "all"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "midiutil", specifier = ">=1.2.1" }]
+
+[[package]]
+name = "phantom-audio-separation"
+version = "1.4.0"
+source = { editable = "packages/phantom-audio-separation" }
+dependencies = [
+    { name = "demucs" },
+    { name = "phantom-audio" },
+    { name = "torch" },
+    { name = "torchaudio" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "demucs", specifier = ">=4.0" },
+    { name = "phantom-audio", editable = "." },
+    { name = "torch", specifier = ">=2.0" },
+    { name = "torchaudio", specifier = ">=2.0" },
+]
 
 [[package]]
 name = "platformdirs"
