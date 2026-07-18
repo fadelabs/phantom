@@ -107,9 +107,11 @@ main() {
     ok "Detected ${PLATFORM} ${ARCH_LABEL}"
 
     # ── Telemetry (opt-out via PHANTOM_NO_TELEMETRY=1) ─────
+    # Stable per-run id so install_started/install_complete can be joined server-side.
+    INSTALL_ID="$(uuidgen 2>/dev/null || echo "cli-$(date +%s)-$$-${RANDOM}")"
     _ping() {
         if [ "${PHANTOM_NO_TELEMETRY:-0}" = "1" ]; then return; fi
-        curl -sfL "https://fadelab.net/api/ping?event=$1&os=${PLATFORM}&arch=${ARCH_LABEL}&version=${2:-unknown}&extras=${INSTALL_EXTRAS:-none}" > /dev/null 2>&1 &
+        curl -sfL "https://fadelab.net/api/ping?event=$1&os=${PLATFORM}&arch=${ARCH_LABEL}&version=${2:-unknown}&extras=${INSTALL_EXTRAS:-none}&iid=${INSTALL_ID}" > /dev/null 2>&1 &
     }
     _ping "install_started"
 
