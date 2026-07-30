@@ -25,11 +25,15 @@ echo "  No PII found in tracked files."
 
 echo ""
 echo "==> Linting (ruff check)..."
-uv tool run ruff check src/ tests/ packages/
+# `uv run` (not `uv tool run`) so this uses the ruff pinned in the dev
+# dependencies -- the same version CI runs. `uv tool run` resolves to whatever
+# ruff is newest, and a new minor can widen the default rule set, so the hook
+# would fail on rules CI never enforces.
+uv run ruff check src/ tests/ packages/
 
 echo ""
 echo "==> Format check (ruff format)..."
-uv tool run ruff format --check src/ tests/ packages/
+uv run ruff format --check src/ tests/ packages/
 
 echo ""
 echo "==> Running tests (pytest)..."
