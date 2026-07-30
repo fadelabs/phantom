@@ -29,12 +29,15 @@ def cli(ctx: click.Context) -> None:
     if ctx.invoked_subcommand not in (None, "setup", "uninstall", "version", "update"):
         try:
             import json
-            from pathlib import Path
 
-            mcp_home = Path.home() / ".mcp.json"
-            mcp_cwd = Path.cwd() / ".mcp.json"
+            # Resolve through setup's helper rather than re-deriving
+            # $HOME/cwd here: the two must agree, or setup writes the entry
+            # somewhere this check doesn't look and auto-setup fires on every
+            # invocation. It also gives tests one place to redirect.
+            from phantom.cli.setup import _mcp_candidates
+
             phantom_configured = False
-            for mcp_path in (mcp_home, mcp_cwd):
+            for mcp_path in _mcp_candidates():
                 if mcp_path.exists():
                     data = json.loads(mcp_path.read_text())
                     if "phantom" in data.get("mcpServers", {}):
