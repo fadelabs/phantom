@@ -53,6 +53,20 @@ def _confine_writes_to_tmp(tmp_path, monkeypatch):
     """
     monkeypatch.setenv("PHANTOM_OUTPUT_DIR", str(tmp_path))
 
+    # .mcp.json resolution bypasses PHANTOM_OUTPUT_DIR: every writer picks a
+    # target from $HOME/cwd directly. Under pytest, cwd is the repo root, so a
+    # test invoking `setup-reaper --yes` or `setup` would rewrite the developer's
+    # real .mcp.json with tmp_path values, and `uninstall` would strip entries
+    # out of it. Redirect all three resolvers into tmp_path so no test can reach
+    # the real file. Tests that patch these themselves still win (mock.patch
+    # applies on top and restores afterward).
+    mcp_target = tmp_path / ".mcp.json"
+    monkeypatch.setattr(
+        "phantom.cli.setup_reaper._resolve_mcp_target", lambda: mcp_target
+    )
+    monkeypatch.setattr("phantom.cli.setup._mcp_candidates", lambda: [mcp_target])
+    monkeypatch.setattr("phantom.cli.uninstall._mcp_candidates", lambda: [mcp_target])
+
 
 @pytest.fixture
 def mono_sine_440hz():
