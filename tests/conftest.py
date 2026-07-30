@@ -4,6 +4,7 @@ All test audio is generated in-memory as numpy arrays.
 No WAV files are committed to the repository (D-11, D-12).
 """
 
+import json
 import os
 from pathlib import Path
 
@@ -42,7 +43,7 @@ settings.load_profile(os.environ.get("HYPOTHESIS_PROFILE", "ci"))
 
 
 @pytest.fixture(autouse=True)
-def _confine_writes_to_tmp(tmp_path, monkeypatch):
+def _confine_writes_to_tmp(tmp_path, tmp_path_factory, monkeypatch):
     """Confine writes to each test's tmp_path by default (Finding 1).
 
     Phantom now confines all file writes to PHANTOM_OUTPUT_DIR (default
@@ -52,6 +53,38 @@ def _confine_writes_to_tmp(tmp_path, monkeypatch):
     via their own monkeypatch (later setenv/delenv wins).
     """
     monkeypatch.setenv("PHANTOM_OUTPUT_DIR", str(tmp_path))
+
+    # .mcp.json resolution bypasses PHANTOM_OUTPUT_DIR: every writer picks a
+    # target from $HOME/cwd directly. Under pytest, cwd is the repo root, so a
+    # test invoking `setup-reaper --yes` or `setup` would rewrite the developer's
+    # real .mcp.json with tmp_path values, and `uninstall` would strip entries
+    # out of it. Redirect all three resolvers into tmp_path so no test can reach
+    # the real file. Tests that patch these themselves still win (mock.patch
+    # applies on top and restores afterward).
+    # Deliberately OUTSIDE tmp_path, in its own directory. Two constraints
+    # rule out the obvious placements: several tests point the resolvers at
+    # tmp_path/".mcp.json" themselves and assert on what the command writes
+    # there (so seeding that path pre-creates the file under assertion), and
+    # at least one test asserts tmp_path's exact directory listing (so an extra
+    # entry anywhere inside tmp_path breaks it). A fresh factory dir per test
+    # avoids both, and keeps each test's sandbox isolated from its neighbours.
+    mcp_target = tmp_path_factory.mktemp("mcp_sandbox") / ".mcp.json"
+    monkeypatch.setattr(
+        "phantom.cli.setup_reaper._resolve_mcp_target", lambda: mcp_target
+    )
+    monkeypatch.setattr("phantom.cli.setup._mcp_candidates", lambda: [mcp_target])
+    monkeypatch.setattr("phantom.cli.uninstall._mcp_candidates", lambda: [mcp_target])
+
+    # Seed a phantom entry so the CLI group's first-run auto-setup
+    # (phantom/cli/__init__.py) treats this sandbox as already configured.
+    # Without it the sandbox is empty for every test, so every CLI invocation
+    # would run the full `phantom setup` and print it into the output under
+    # assertion -- which breaks any test parsing stdout as JSON. This is only
+    # visible where no real .mcp.json exists, i.e. CI, not a dev machine.
+    mcp_target.write_text(
+        json.dumps({"mcpServers": {"phantom": {"command": "phantom-mcp", "args": []}}})
+        + "\n"
+    )
 
 
 @pytest.fixture

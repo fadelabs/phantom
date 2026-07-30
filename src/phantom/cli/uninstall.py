@@ -35,6 +35,15 @@ def _get_reaper_scripts_dir() -> Path:
         return Path.home() / ".config" / "REAPER" / "Scripts"
 
 
+def _mcp_candidates() -> list[Path]:
+    """.mcp.json locations to scan, nearest first.
+
+    Kept as a function rather than an inline list so tests can redirect it away
+    from the developer's real config files (see tests/conftest.py).
+    """
+    return [Path.cwd() / ".mcp.json", Path.home() / ".mcp.json"]
+
+
 def _find_artifacts() -> dict:
     """Scan for all Phantom artifacts on disk."""
     artifacts: dict = {}
@@ -42,7 +51,7 @@ def _find_artifacts() -> dict:
     if _PHANTOM_DIR.exists():
         artifacts["phantom_dir"] = str(_PHANTOM_DIR)
 
-    for mcp_path in [Path.cwd() / ".mcp.json", Path.home() / ".mcp.json"]:
+    for mcp_path in _mcp_candidates():
         if mcp_path.exists():
             try:
                 data = json.loads(mcp_path.read_text())
