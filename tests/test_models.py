@@ -38,130 +38,142 @@ from phantom.separation import SeparationResult
 
 
 # ---------------------------------------------------------------------------
-# SpectralResult
+# Simple serialization template (keys + precision + none)
+#
+# The models below share the exact three-test shape: expected key set, field
+# precision enforcement, and None-on-empty construction. They are driven by
+# the case table below rather than written out per model (D-06).
 # ---------------------------------------------------------------------------
 
 
-class TestSpectralResultSerialization:
-    def test_keys_match_expected(self):
-        result = SpectralResult(
-            spectral_centroid_hz=440.0,
-            spectral_rolloff_hz=8000.0,
-            spectral_flatness=0.1234,
-            spectral_contrast=[1.2345, 2.3456],
-            dissonance=0.4568,
-            octave_band_energy_db={"31.25": -40.12, "62.5": -35.68},
-        )
-        d = result.model_dump()
-        assert set(d.keys()) == {
+def _precision_spectral(d: dict) -> None:
+    # Hz fields: 1dp
+    assert d["spectral_centroid_hz"] == 440.1
+    assert d["spectral_rolloff_hz"] == 8000.8
+    # Ratio fields: 4dp
+    assert d["spectral_flatness"] == 0.1235
+    assert d["dissonance"] == 0.9877
+    # Contrast list: 4dp (ratio_list)
+    assert d["spectral_contrast"] == [1.2346, 2.3457]
+    # dB dict: 2dp
+    assert d["octave_band_energy_db"]["31.25"] == -40.12
+
+
+def _precision_loudness(d: dict) -> None:
+    assert d["integrated_lufs"] == -14.12
+    assert d["true_peak_dbtp"] == -1.57
+    assert d["loudness_range_lu"] == 9.0
+    assert isinstance(d["short_term_lufs"], dict)
+    assert d["short_term_lufs"]["count"] == 2
+    assert isinstance(d["momentary_lufs"], dict)
+    assert d["momentary_lufs"]["count"] == 2
+
+
+def _precision_dynamics(d: dict) -> None:
+    # dB fields: 2dp
+    assert d["rms_dbfs"] == -18.12
+    assert d["peak_dbfs"] == -0.57
+    assert d["crest_factor_db"] == 17.54
+    assert d["dynamic_range_db"] == 12.99
+    assert d["loudness_db"] == -14.12
+    # Ratio: 4dp
+    assert d["dynamic_complexity"] == 0.3457
+    # Bool unchanged
+    assert d["crest_factor_is_low"] is True
+
+
+def _precision_phase(d: dict) -> None:
+    # Ratio: 4dp
+    assert d["phase_correlation"] == 0.9512
+    assert d["per_band_correlation"]["low"] == 0.9912
+    assert d["per_band_correlation"]["mid"] == 0.8568
+
+
+def _precision_phase_compare(d: dict) -> None:
+    # delay_ms uses round_db (2dp)
+    assert d["delay_ms"] == 0.23
+    # correlation: 4dp (ratio)
+    assert d["correlation"] == 0.9512
+    # int unchanged
+    assert d["delay_samples"] == 10
+    # bool unchanged
+    assert d["polarity_inverted"] is True
+
+
+def _precision_metric_diff(d: dict) -> None:
+    # Round to 2dp
+    assert d["before"] == -14.12
+    assert d["after"] == -13.57
+    assert d["change"] == 0.56
+
+
+# (model_type, filled_kwargs, expected_keys, precision_fn, none_keys)
+_SERIALIZATION_CASES = (
+    (
+        SpectralResult,
+        {
+            "spectral_centroid_hz": 440.123456,
+            "spectral_rolloff_hz": 8000.789012,
+            "spectral_flatness": 0.123456789,
+            "dissonance": 0.987654321,
+            "spectral_contrast": [1.23456789, 2.34567890],
+            "octave_band_energy_db": {"31.25": -40.123456},
+        },
+        {
             "spectral_centroid_hz",
             "spectral_rolloff_hz",
             "spectral_flatness",
             "spectral_contrast",
             "dissonance",
             "octave_band_energy_db",
-        }
-
-    def test_precision_enforcement(self):
-        result = SpectralResult(
-            spectral_centroid_hz=440.123456,
-            spectral_rolloff_hz=8000.789012,
-            spectral_flatness=0.123456789,
-            dissonance=0.987654321,
-            spectral_contrast=[1.23456789, 2.34567890],
-            octave_band_energy_db={"31.25": -40.123456},
-        )
-        d = result.model_dump()
-        # Hz fields: 1dp
-        assert d["spectral_centroid_hz"] == 440.1
-        assert d["spectral_rolloff_hz"] == 8000.8
-        # Ratio fields: 4dp
-        assert d["spectral_flatness"] == 0.1235
-        assert d["dissonance"] == 0.9877
-        # Contrast list: 4dp (ratio_list)
-        assert d["spectral_contrast"] == [1.2346, 2.3457]
-        # dB dict: 2dp
-        assert d["octave_band_energy_db"]["31.25"] == -40.12
-
-    def test_none_fields_serialize(self):
-        result = SpectralResult()
-        d = result.model_dump()
-        assert d["spectral_centroid_hz"] is None
-        assert d["spectral_rolloff_hz"] is None
-        assert d["spectral_flatness"] is None
-        assert d["spectral_contrast"] is None
-        assert d["dissonance"] is None
-        assert d["octave_band_energy_db"] is None
-
-
-# ---------------------------------------------------------------------------
-# LoudnessResult
-# ---------------------------------------------------------------------------
-
-
-class TestLoudnessResultSerialization:
-    def test_keys_match_expected(self):
-        result = LoudnessResult(
-            integrated_lufs=-14.0,
-            true_peak_dbtp=-1.0,
-            loudness_range_lu=8.0,
-            short_term_lufs=LufsStats.from_array([-14.0, -13.5]),
-            momentary_lufs=LufsStats.from_array([-12.0, -11.5]),
-        )
-        d = result.model_dump()
-        assert set(d.keys()) == {
+        },
+        _precision_spectral,
+        (
+            "spectral_centroid_hz",
+            "spectral_rolloff_hz",
+            "spectral_flatness",
+            "spectral_contrast",
+            "dissonance",
+            "octave_band_energy_db",
+        ),
+    ),
+    (
+        LoudnessResult,
+        {
+            "integrated_lufs": -14.12345,
+            "true_peak_dbtp": -1.56789,
+            "loudness_range_lu": 8.99999,
+            "short_term_lufs": LufsStats.from_array([-14.12345, -13.56789]),
+            "momentary_lufs": LufsStats.from_array([-12.12345, -11.56789]),
+        },
+        {
             "integrated_lufs",
             "true_peak_dbtp",
             "loudness_range_lu",
             "short_term_lufs",
             "momentary_lufs",
-        }
-
-    def test_precision_enforcement(self):
-        result = LoudnessResult(
-            integrated_lufs=-14.12345,
-            true_peak_dbtp=-1.56789,
-            loudness_range_lu=8.99999,
-            short_term_lufs=LufsStats.from_array([-14.12345, -13.56789]),
-            momentary_lufs=LufsStats.from_array([-12.12345, -11.56789]),
-        )
-        d = result.model_dump()
-        assert d["integrated_lufs"] == -14.12
-        assert d["true_peak_dbtp"] == -1.57
-        assert d["loudness_range_lu"] == 9.0
-        assert isinstance(d["short_term_lufs"], dict)
-        assert d["short_term_lufs"]["count"] == 2
-        assert isinstance(d["momentary_lufs"], dict)
-        assert d["momentary_lufs"]["count"] == 2
-
-    def test_none_fields_serialize(self):
-        result = LoudnessResult()
-        d = result.model_dump()
-        assert d["integrated_lufs"] is None
-        assert d["true_peak_dbtp"] is None
-        assert d["loudness_range_lu"] is None
-        assert d["short_term_lufs"] is None
-        assert d["momentary_lufs"] is None
-
-
-# ---------------------------------------------------------------------------
-# DynamicsResult
-# ---------------------------------------------------------------------------
-
-
-class TestDynamicsResultSerialization:
-    def test_keys_match_expected(self):
-        result = DynamicsResult(
-            rms_dbfs=-18.0,
-            peak_dbfs=-0.5,
-            crest_factor_db=17.5,
-            crest_factor_is_low=False,
-            dynamic_range_db=12.0,
-            dynamic_complexity=0.3456,
-            loudness_db=-14.0,
-        )
-        d = result.model_dump()
-        assert set(d.keys()) == {
+        },
+        _precision_loudness,
+        (
+            "integrated_lufs",
+            "true_peak_dbtp",
+            "loudness_range_lu",
+            "short_term_lufs",
+            "momentary_lufs",
+        ),
+    ),
+    (
+        DynamicsResult,
+        {
+            "rms_dbfs": -18.12345,
+            "peak_dbfs": -0.56789,
+            "crest_factor_db": 17.54321,
+            "crest_factor_is_low": True,
+            "dynamic_range_db": 12.98765,
+            "dynamic_complexity": 0.345678,
+            "loudness_db": -14.12345,
+        },
+        {
             "rms_dbfs",
             "peak_dbfs",
             "crest_factor_db",
@@ -169,40 +181,91 @@ class TestDynamicsResultSerialization:
             "dynamic_range_db",
             "dynamic_complexity",
             "loudness_db",
-        }
+        },
+        _precision_dynamics,
+        (
+            "rms_dbfs",
+            "peak_dbfs",
+            "crest_factor_db",
+            "crest_factor_is_low",
+            "dynamic_range_db",
+            "dynamic_complexity",
+            "loudness_db",
+        ),
+    ),
+    (
+        PhaseResult,
+        {
+            "phase_correlation": 0.951234567,
+            "per_band_correlation": {"low": 0.991234567, "mid": 0.856789012},
+            "polarity_inverted": False,
+        },
+        {
+            "phase_correlation",
+            "per_band_correlation",
+            "polarity_inverted",
+        },
+        _precision_phase,
+        ("phase_correlation", "per_band_correlation", "polarity_inverted"),
+    ),
+    (
+        PhaseCompareResult,
+        {
+            "delay_samples": 10,
+            "delay_ms": 0.23456,
+            "correlation": 0.951234567,
+            "polarity_inverted": True,
+        },
+        {"delay_samples", "delay_ms", "correlation", "polarity_inverted"},
+        _precision_phase_compare,
+        ("delay_samples", "delay_ms", "correlation", "polarity_inverted"),
+    ),
+    (
+        MetricDiff,
+        {"before": -14.12345, "after": -13.56789, "change": 0.55556},
+        {"before", "after", "change"},
+        _precision_metric_diff,
+        ("before", "after", "change"),
+    ),
+)
 
-    def test_precision_enforcement(self):
-        result = DynamicsResult(
-            rms_dbfs=-18.12345,
-            peak_dbfs=-0.56789,
-            crest_factor_db=17.54321,
-            crest_factor_is_low=True,
-            dynamic_range_db=12.98765,
-            dynamic_complexity=0.345678,
-            loudness_db=-14.12345,
-        )
-        d = result.model_dump()
-        # dB fields: 2dp
-        assert d["rms_dbfs"] == -18.12
-        assert d["peak_dbfs"] == -0.57
-        assert d["crest_factor_db"] == 17.54
-        assert d["dynamic_range_db"] == 12.99
-        assert d["loudness_db"] == -14.12
-        # Ratio: 4dp
-        assert d["dynamic_complexity"] == 0.3457
-        # Bool unchanged
-        assert d["crest_factor_is_low"] is True
 
-    def test_none_fields_serialize(self):
-        result = DynamicsResult()
-        d = result.model_dump()
-        assert d["rms_dbfs"] is None
-        assert d["peak_dbfs"] is None
-        assert d["crest_factor_db"] is None
-        assert d["crest_factor_is_low"] is None
-        assert d["dynamic_range_db"] is None
-        assert d["dynamic_complexity"] is None
-        assert d["loudness_db"] is None
+@pytest.mark.parametrize(
+    "model_type, kwargs, expected_keys, precision_fn, none_keys",
+    _SERIALIZATION_CASES,
+    ids=[case[0].__name__ for case in _SERIALIZATION_CASES],
+)
+def test_keys_match_expected(
+    model_type, kwargs, expected_keys, precision_fn, none_keys
+):
+    result = model_type(**kwargs)
+    d = result.model_dump()
+    assert set(d.keys()) == expected_keys
+
+
+@pytest.mark.parametrize(
+    "model_type, kwargs, expected_keys, precision_fn, none_keys",
+    _SERIALIZATION_CASES,
+    ids=[case[0].__name__ for case in _SERIALIZATION_CASES],
+)
+def test_precision_enforcement(
+    model_type, kwargs, expected_keys, precision_fn, none_keys
+):
+    result = model_type(**kwargs)
+    precision_fn(result.model_dump())
+
+
+@pytest.mark.parametrize(
+    "model_type, kwargs, expected_keys, precision_fn, none_keys",
+    _SERIALIZATION_CASES,
+    ids=[case[0].__name__ for case in _SERIALIZATION_CASES],
+)
+def test_none_fields_serialize(
+    model_type, kwargs, expected_keys, precision_fn, none_keys
+):
+    d = model_type().model_dump()
+    for key in none_keys:
+        assert d[key] is None
 
 
 # ---------------------------------------------------------------------------
@@ -282,92 +345,6 @@ class TestStereoResultSerialization:
         assert d["panorama_pct"]["left"] == 25.0
         assert d["panorama_pct"]["center"] == 50.0
         assert d["panorama_pct"]["right"] == 25.0
-
-
-# ---------------------------------------------------------------------------
-# PhaseResult
-# ---------------------------------------------------------------------------
-
-
-class TestPhaseResultSerialization:
-    def test_keys_match_expected(self):
-        result = PhaseResult(
-            phase_correlation=0.95,
-            per_band_correlation={"low": 0.99, "mid": 0.85},
-            polarity_inverted=False,
-        )
-        d = result.model_dump()
-        assert set(d.keys()) == {
-            "phase_correlation",
-            "per_band_correlation",
-            "polarity_inverted",
-        }
-
-    def test_precision_enforcement(self):
-        result = PhaseResult(
-            phase_correlation=0.951234567,
-            per_band_correlation={"low": 0.991234567, "mid": 0.856789012},
-            polarity_inverted=False,
-        )
-        d = result.model_dump()
-        # Ratio: 4dp
-        assert d["phase_correlation"] == 0.9512
-        assert d["per_band_correlation"]["low"] == 0.9912
-        assert d["per_band_correlation"]["mid"] == 0.8568
-
-    def test_none_fields_serialize(self):
-        result = PhaseResult()
-        d = result.model_dump()
-        assert d["phase_correlation"] is None
-        assert d["per_band_correlation"] is None
-        assert d["polarity_inverted"] is None
-
-
-# ---------------------------------------------------------------------------
-# PhaseCompareResult
-# ---------------------------------------------------------------------------
-
-
-class TestPhaseCompareResultSerialization:
-    def test_keys_match_expected(self):
-        result = PhaseCompareResult(
-            delay_samples=10,
-            delay_ms=0.23,
-            correlation=0.95,
-            polarity_inverted=False,
-        )
-        d = result.model_dump()
-        assert set(d.keys()) == {
-            "delay_samples",
-            "delay_ms",
-            "correlation",
-            "polarity_inverted",
-        }
-
-    def test_precision_enforcement(self):
-        result = PhaseCompareResult(
-            delay_samples=10,
-            delay_ms=0.23456,
-            correlation=0.951234567,
-            polarity_inverted=True,
-        )
-        d = result.model_dump()
-        # delay_ms uses round_db (2dp)
-        assert d["delay_ms"] == 0.23
-        # correlation: 4dp (ratio)
-        assert d["correlation"] == 0.9512
-        # int unchanged
-        assert d["delay_samples"] == 10
-        # bool unchanged
-        assert d["polarity_inverted"] is True
-
-    def test_none_fields_serialize(self):
-        result = PhaseCompareResult()
-        d = result.model_dump()
-        assert d["delay_samples"] is None
-        assert d["delay_ms"] is None
-        assert d["correlation"] is None
-        assert d["polarity_inverted"] is None
 
 
 # ---------------------------------------------------------------------------
@@ -953,33 +930,6 @@ class TestMatchResultSerialization:
         assert d["output_path"] == "/out/matched.wav"
         assert d["adjustments"]["integrated_lufs"]["before"] == -14.0
         assert d["adjustments"]["spectral_change_db"]["500_hz"]["change"] == 0.5
-
-
-# ---------------------------------------------------------------------------
-# MetricDiff
-# ---------------------------------------------------------------------------
-
-
-class TestMetricDiffSerialization:
-    def test_keys_match_expected(self):
-        result = MetricDiff(before=-14.0, after=-13.5, change=0.5)
-        d = result.model_dump()
-        assert set(d.keys()) == {"before", "after", "change"}
-
-    def test_precision_enforcement(self):
-        """MetricDiff should round before/after/change to 2dp."""
-        result = MetricDiff(before=-14.12345, after=-13.56789, change=0.55556)
-        d = result.model_dump()
-        assert d["before"] == -14.12
-        assert d["after"] == -13.57
-        assert d["change"] == 0.56
-
-    def test_none_fields_serialize(self):
-        result = MetricDiff()
-        d = result.model_dump()
-        assert d["before"] is None
-        assert d["after"] is None
-        assert d["change"] is None
 
 
 # ---------------------------------------------------------------------------
