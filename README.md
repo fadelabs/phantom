@@ -191,6 +191,18 @@ cd phantom
 uv sync --dev
 ```
 
+## Telemetry
+
+The Unix installer (`install.sh`) reports anonymized install telemetry to `fadelab.net` at the start, completion, and failure of an install. Each report carries the OS, architecture, phantom version (when known), and the chosen extras, plus a per-run install ID used to join the start and completion events of a single install. No audio, file names, or other personal data is sent, and the request has no effect on the install.
+
+Telemetry is on by default. Opt out by exporting the flag for the install command:
+
+```bash
+PHANTOM_NO_TELEMETRY=1 curl -sSL https://fadelab.net/install | bash
+```
+
+The Windows installer (`install.ps1`) sends no telemetry.
+
 ## Usage
 
 ### With Claude Code (Recommended)
