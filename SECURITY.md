@@ -48,4 +48,4 @@ Phantom runs as a local MCP server over stdio. It does not expose network endpoi
 
 ### Installer Telemetry
 
-The Unix installer (`install.sh`) reports anonymized telemetry to `fadelab.net` at install start, completion, and failure: OS, architecture, phantom version (when known), chosen extras, and a per-run install ID. No audio or personal data is sent. Opt out with `PHANTOM_NO_TELEMETRY=1`. The Windows installer (`install.ps1`) sends no telemetry.
+Both installers (`install.sh` and `install.ps1`) report anonymized telemetry to `fadelab.net` at install start, completion, and failure: OS, architecture, phantom version (when known), chosen extras, and a per-run install ID. No audio or personal data is sent. Opt out with `PHANTOM_NO_TELEMETRY=1`.

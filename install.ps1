@@ -13,6 +13,26 @@ function Write-Fail  { param([string]$msg) Write-Host "  ✗ $msg" -ForegroundCo
 function Write-Info  { param([string]$msg) Write-Host "  ▸ $msg" -ForegroundColor Cyan }
 function Write-Warn  { param([string]$msg) Write-Host "  ! $msg" -ForegroundColor Yellow }
 
+function Send-Ping {
+    # Fire-and-forget install telemetry. Never fails the install, never blocks.
+    param([string]$event, [string]$version = "unknown")
+    if ($env:PHANTOM_NO_TELEMETRY -eq "1") { return }
+    if (-not $script:InstallId) { return }
+    try {
+        $url = "https://fadelab.net/api/ping?event=$event" +
+               "&os=$($script:PingOs)" +
+               "&arch=$([uri]::EscapeDataString($script:PingArch))" +
+               "&version=$([uri]::EscapeDataString($version))" +
+               "&extras=$($script:InstallExtras)" +
+               "&iid=$($script:InstallId)"
+        # Synchronous with a short timeout, deliberately. Start-Job would be
+        # backgrounded like install.sh's `curl &`, but the failure-path pings are
+        # immediately followed by `exit 1`, which kills a pending job before it
+        # runs. A blocking call with a 3s cap is the reliable choice here.
+        Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 3 -ErrorAction Stop | Out-Null
+    } catch { }
+}
+
 function Publish-EnvironmentChange {
     if (-not ('Win32.NativeMethods' -as [type])) {
         Add-Type -Namespace Win32 -Name NativeMethods -MemberDefinition @'
@@ -74,6 +94,15 @@ function Main {
     }
     Write-Ok "Detected Windows $arch (build $build)"
 
+    # ── Telemetry (opt-out via PHANTOM_NO_TELEMETRY=1) ─────
+    # Mirrors install.sh. Stable per-run id so install_started/install_complete
+    # can be joined server-side.
+    $script:InstallId = [guid]::NewGuid().ToString()
+    $script:InstallExtras = "all"
+    $script:PingOs = "windows"
+    $script:PingArch = "$arch"
+    Send-Ping "install_started"
+
     # ── Check/install uv ────────────────────────────────────
     if (Get-Command uv -ErrorAction SilentlyContinue) {
         $uvVersion = (uv --version 2>$null | Select-Object -First 1)
@@ -90,6 +119,7 @@ function Main {
         } catch {
             Write-Fail "uv installation failed: $_"
             Write-Host "    See https://docs.astral.sh/uv/" -ForegroundColor DarkGray
+            Send-Ping "install_failed"
             exit 1
         }
     }
@@ -109,10 +139,12 @@ function Main {
         Write-Warn "Full install failed, trying core only..."
         $installLog = & $uvPath tool install phantom-audio --python 3.13 --force 2>&1 | Out-String
         if ($LASTEXITCODE -eq 0 -or $installLog -match 'Installed.*executable') {
+            $script:InstallExtras = "none"
             Write-Ok "Phantom core installed (extras skipped)"
         } else {
             Write-Fail "Installation failed."
             Write-Host "    Check Python 3.13: uv python list | Select-String 3.13" -ForegroundColor DarkGray
+            Send-Ping "install_failed"
             exit 1
         }
     }
@@ -124,12 +156,14 @@ function Main {
         Add-ToUserPath $uvToolBin
         if (-not (Get-Command phantom -ErrorAction SilentlyContinue)) {
             Write-Fail "phantom not found on PATH. Add $uvToolBin to your PATH."
+            Send-Ping "install_failed"
             exit 1
         }
     }
 
     $version = (phantom --version 2>$null | Select-Object -First 1)
     Write-Ok "Phantom $version"
+    Send-Ping "install_complete" $version
 
     # ── Configure ───────────────────────────────────────────
     Write-Host ""
