@@ -39,7 +39,7 @@ UNFIXABLE_TYPES: frozenset[str] = frozenset(
 
 # Severity ordering: higher int = worse severity.
 # Used by _compare_results to classify improvement vs regression.
-_SEVERITY_ORDER: dict[str, int] = {
+_SEVERITY_RANK: dict[str, int] = {
     "minor": 0,
     "moderate": 1,
     "significant": 2,
@@ -360,11 +360,11 @@ def _get_severity_rank(severity: str) -> int:
     Raises AnalysisError on unknown values so that contract violations
     surface immediately rather than being silently treated as lowest severity.
     """
-    rank = _SEVERITY_ORDER.get(severity)
+    rank = _SEVERITY_RANK.get(severity)
     if rank is None:
         raise AnalysisError(
             f"Unknown severity '{severity}' in problem comparison. "
-            f"Expected one of: {sorted(_SEVERITY_ORDER.keys())}"
+            f"Expected one of: {sorted(_SEVERITY_RANK.keys())}"
         )
     return rank
 

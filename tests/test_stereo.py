@@ -11,23 +11,12 @@ import pytest
 from phantom.audio import AudioData
 from phantom.exceptions import AnalysisError
 from phantom.stereo import analyze_stereo, StereoResult, PanoramaDistribution
+from tests.conftest import _make_audio
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-
-def _make_audio(samples_1d: np.ndarray, sr: int) -> AudioData:
-    """Wrap a 1D mono signal into an AudioData instance."""
-    samples_2d = samples_1d.reshape(-1, 1)
-    return AudioData(
-        samples=samples_2d,
-        sample_rate=sr,
-        num_channels=1,
-        duration=len(samples_1d) / sr,
-        num_samples=len(samples_1d),
-    )
 
 
 def _make_stereo_audio(samples_2d: np.ndarray, sr: int) -> AudioData:

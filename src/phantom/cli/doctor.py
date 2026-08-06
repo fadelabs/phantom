@@ -14,6 +14,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from phantom import __version__
+from phantom._config import ENV_VARS
 from phantom._diagnostics import (
     CORE_DEPS,
     OPTIONAL_DEPS,
@@ -23,14 +24,6 @@ from phantom._diagnostics import (
 )
 from phantom.cli._formatting import get_console, output_json
 from phantom.exceptions import RECOMMENDED_PYTHON
-
-_ENV_VARS = [
-    "PHANTOM_AUDIO_DIR",
-    "PHANTOM_OUTPUT_DIR",
-    "PHANTOM_PROFILES_DIR",
-    "PHANTOM_MAX_DURATION",
-    "PHANTOM_MAX_FILE_SIZE",
-]
 
 OK = "[green]OK[/green]"
 FAIL = "[red]FAIL[/red]"
@@ -85,12 +78,12 @@ def _collect_results() -> dict:
 
     # 4. Environment vars
     env = {}
-    for var in _ENV_VARS:
-        val = os.environ.get(var)
+    for var in ENV_VARS:
+        val = os.environ.get(var.name)
         entry: dict = {"set": val is not None, "value": val}
-        if val and var.endswith("_DIR"):
+        if val and var.kind == "dir":
             entry["exists"] = Path(val).expanduser().exists()
-        env[var] = entry
+        env[var.name] = entry
     results["env_vars"] = env
 
     # 5. External tools

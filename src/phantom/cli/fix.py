@@ -11,7 +11,7 @@ from rich.table import Table
 
 from phantom.processing import fix_audio, UNFIXABLE_TYPES, RECIPES
 from phantom.problems import detect_problems
-from phantom.exceptions import DependencyMissingError, PhantomError
+from phantom.exceptions import PhantomError
 from phantom.audio import load_audio
 from phantom.cli._formatting import (
     get_console,
@@ -217,9 +217,6 @@ def fix(
 
         console.print(f"\nOutput: {result.output_path}")
 
-    except DependencyMissingError as exc:
-        render_error(exc, console)
-        sys.exit(1)
     except PhantomError as exc:
         render_error(exc, console)
         sys.exit(1)

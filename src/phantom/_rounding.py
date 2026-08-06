@@ -13,11 +13,6 @@ def round_hz(v: float | None, dp: int = 1) -> float | None:
     return round(v, dp) if v is not None else v
 
 
-def round_db_list(v: list[float] | None, dp: int = 2) -> list[float] | None:
-    """Round a list of dB values. Returns None unchanged."""
-    return [round(x, dp) for x in v] if v is not None else v
-
-
 def round_ratio(v: float | None, dp: int = 4) -> float | None:
     """Round a dimensionless ratio. Returns None unchanged."""
     return round(v, dp) if v is not None else v

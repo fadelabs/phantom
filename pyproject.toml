@@ -100,6 +100,61 @@ filterwarnings = [
     "ignore::DeprecationWarning:matchering.*",
 ]
 
+[tool.ruff]
+target-version = "py310"
+
+[tool.ruff.lint]
+extend-select = [
+    "B",   # bugbear
+    "C90", # complexity gate (mccabe)
+    "I",   # import sorting (isort)
+]
+# Curated baseline (code review 2026-08, D.2): these codes currently fire
+# across src/, tests/, and packages/ and are tolerated while the debt is
+# cleared. Remove a code here once its findings are fixed; new code must
+# satisfy every other rule in the selected families from the start.
+extend-ignore = [
+    "B007",  # unused loop control variable (7x)
+    "B017",  # blind `assert Exception` (1x)
+    "B028",  # logging call without explicit stacklevel (1x)
+    "B904",  # raise inside except without `from` (13x)
+    "B905",  # zip without strict= (7x)
+    "I001",  # unsorted imports (97x) -- run `ruff check --fix --select I001`
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Complexity gate stays live everywhere else; these are the known-complex
+# CLI / comparison files scheduled for the Phase-2 facade.
+"src/phantom/cli/__init__.py" = ["C901"]
+"src/phantom/cli/compare.py" = ["C901"]
+"src/phantom/cli/doctor.py" = ["C901"]
+"src/phantom/cli/fix.py" = ["C901"]
+"src/phantom/cli/render.py" = ["C901"]
+"src/phantom/cli/setup.py" = ["C901"]
+"src/phantom/cli/setup_reaper.py" = ["C901"]
+"src/phantom/cli/uninstall.py" = ["C901"]
+"src/phantom/comparison.py" = ["C901"]
+"src/phantom/_profiles.py" = ["C901"]
+"src/phantom/_utils.py" = ["C901"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.ruff.lint.isort]
+known-first-party = ["phantom"]
+
+[tool.mypy]
+python_version = "3.10"
+# Third-party analysis deps (essentia, soundfile, fastmcp) ship without
+# stubs; matching CONTRIBUTING which waived typing on those grounds.
+ignore_missing_imports = true
+
+[tool.coverage.run]
+source = ["src"]
+
+[tool.coverage.report]
+show_missing = true
+
 [dependency-groups]
 dev = [
     "midiutil>=1.2.1",

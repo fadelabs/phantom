@@ -11,7 +11,6 @@ from rich.table import Table
 from phantom import (
     separate_stems,
     PhantomError,
-    DependencyMissingError,
 )
 from phantom._utils import validate_output_path
 from phantom.cli._formatting import (
@@ -85,9 +84,6 @@ def separate(file: str, output_dir: str | None, json_output: bool) -> None:
 
         console.print(table)
 
-    except DependencyMissingError as exc:
-        render_error(exc, console)
-        sys.exit(1)
     except PhantomError as exc:
         render_error(exc, console)
         sys.exit(1)

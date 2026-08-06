@@ -535,11 +535,11 @@ class TestCompareResults:
 
     def test_severity_order_dealbreaker_highest(self):
         """Severity ordering: dealbreaker > significant > moderate > minor."""
-        from phantom.processing import _SEVERITY_ORDER
+        from phantom.processing import _SEVERITY_RANK
 
-        assert _SEVERITY_ORDER["dealbreaker"] > _SEVERITY_ORDER["significant"]
-        assert _SEVERITY_ORDER["significant"] > _SEVERITY_ORDER["moderate"]
-        assert _SEVERITY_ORDER["moderate"] > _SEVERITY_ORDER["minor"]
+        assert _SEVERITY_RANK["dealbreaker"] > _SEVERITY_RANK["significant"]
+        assert _SEVERITY_RANK["significant"] > _SEVERITY_RANK["moderate"]
+        assert _SEVERITY_RANK["moderate"] > _SEVERITY_RANK["minor"]
 
     def test_unknown_severity_raises_analysis_error(self):
         """Unknown severity in before or after raises AnalysisError."""

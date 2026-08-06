@@ -24,7 +24,7 @@ from phantom.audio import AudioData
 from phantom.exceptions import AnalysisError
 from phantom._utils import is_near_silent, _block_rms_db, wrap_errors
 
-_SEVERITY_ORDER = {"dealbreaker": 0, "significant": 1, "moderate": 2, "minor": 3}
+_SEVERITY_SORT_ORDER = {"dealbreaker": 0, "significant": 1, "moderate": 2, "minor": 3}
 
 # ---------------------------------------------------------------------------
 # Threshold constants (extracted from inline magic numbers for clarity)
@@ -243,7 +243,7 @@ def detect_problems(audio: AudioData) -> ProblemsResult:
     )
 
     # Sort by severity: dealbreaker first, minor last
-    problems.sort(key=lambda p: _SEVERITY_ORDER[p.severity])
+    problems.sort(key=lambda p: _SEVERITY_SORT_ORDER[p.severity])
 
     return ProblemsResult(
         problems=problems,
