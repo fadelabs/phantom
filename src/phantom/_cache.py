@@ -32,11 +32,13 @@ class AnalysisCache:
     ----------
     max_entries:
         Maximum number of cached results before LRU eviction.
-        Defaults to 8 (sufficient for a typical compare workflow
-        analyzing 4 functions x 2 files).
+        Defaults to 400, sized for a full ``batch_diagnostic`` (6 analyzers
+        x up to 50 files, server.MAX_BATCH) plus headroom, so the shared
+        cache actually serves the reuse it documents rather than evicting
+        mid-batch.
     """
 
-    def __init__(self, max_entries: int = 8) -> None:
+    def __init__(self, max_entries: int = 400) -> None:
         self._max_entries = max_entries
         self._store: OrderedDict[str, Any] = OrderedDict()
         self._lock = threading.Lock()
