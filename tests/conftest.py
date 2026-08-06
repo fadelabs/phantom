@@ -14,6 +14,21 @@ import scipy.signal as _sig
 import soundfile as sf
 from hypothesis import HealthCheck, settings
 
+from phantom.audio import AudioData
+
+
+def _make_audio(samples_1d: np.ndarray, sr: int) -> AudioData:
+    """Wrap a 1D mono signal into an AudioData instance."""
+    samples_2d = samples_1d.reshape(-1, 1)
+    return AudioData(
+        samples=samples_2d,
+        sample_rate=sr,
+        num_channels=1,
+        duration=len(samples_1d) / sr,
+        num_samples=len(samples_1d),
+    )
+
+
 # -- Hypothesis profiles (issue #17) ------------------------------------------
 #
 # "ci" (default): derandomized so every run replays the same examples --
