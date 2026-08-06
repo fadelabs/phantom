@@ -49,8 +49,9 @@ Contributions are welcome under the [AGPL-3.0](LICENSE) license (inbound = outbo
 
 - **Linting:** `uv tool run ruff check src/ tests/`
 - **Formatting:** `uv tool run ruff format src/ tests/`
-- The pre-push hook runs both automatically before each push
-- No manual type checking required (essentia lacks type stubs)
+- **Type checking:** `uv tool run mypy src/` (config in `pyproject.toml`;
+  third-party deps without stubs are `ignore_missing_imports`)
+- The pre-push hook runs linting and formatting automatically before each push
 
 ## Architecture Overview
 
