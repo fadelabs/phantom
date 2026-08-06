@@ -188,7 +188,7 @@ uv add phantom-audio
 ```bash
 git clone https://github.com/fadelabs/phantom.git
 cd phantom
-uv sync --dev
+uv sync --extra dev
 ```
 
 ## Telemetry

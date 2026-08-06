@@ -18,7 +18,7 @@ Contributions are welcome under the [AGPL-3.0](LICENSE) license (inbound = outbo
 2. Install dependencies (requires Python 3.10+ and [uv](https://docs.astral.sh/uv/)):
 
    ```bash
-   uv sync --dev
+   uv sync --extra dev
    ```
 
    Or with pip:
@@ -103,7 +103,7 @@ Phantom uses a tiered dependency system:
 | Tier | Packages | Install |
 |------|----------|---------|
 | **Core** | essentia, scipy, numpy, soundfile, pydantic, FastMCP | `uv sync` |
-| **Dev** | pytest, ruff, pyloudnorm | `uv sync --dev` |
+| **Dev** | pytest, ruff, pyloudnorm | `uv sync --extra dev` |
 | **Separation** | demucs, torch | `uv sync --extra separation` |
 | **Matching** | matchering (GPLv3) | `uv sync --extra matching` |
 | **Processing** | pedalboard | `uv sync --extra processing` |
