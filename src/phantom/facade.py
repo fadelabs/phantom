@@ -20,20 +20,27 @@ the same row.
 
 Adding a dimension
 ------------------
-New dimension = 1 analyzer module in ``src/phantom/`` + 1 ``AnalysisSpec``
-row in ``ANALYSIS_TYPES``. The row then shows up automatically as:
+A new dimension is: 1 analyzer module in ``src/phantom/`` + 1 ``AnalysisSpec``
+row in ``ANALYSIS_TYPES``, plus two explicit edits the plan's "1 module + 1
+row" target does not quite cover (a dynamic payload model was deliberately
+not built):
 
-- a key in ``run_analyses`` output and the shared ``StemDiagnosticResult``
-  payload,
-- a ``--<key>`` narrowing flag path in the ``analyze`` CLI (via
-  ``cli.analyze._enabled_analyses``),
-- a load -> analyze -> dump MCP tool registered by ``server`` (the wrapper
-  generator iterates ``ANALYSIS_TYPES``).
+- a field in ``StemDiagnosticResult`` -- the composite-tools payload
+  hardcodes the six dimensions, so the row only reaches ``full_diagnostic`` /
+  ``batch_diagnostic`` output once its field exists there. The model's
+  ``extra="forbid"`` makes a missing row fail loudly instead of silently
+  vanishing.
+- a ``--<key>`` click flag and ``_enabled_analyses`` branch in the ``analyze``
+  CLI.
 
-No other file changes. The tool-schema snapshot test
-(``tests/test_tool_schema.py``) gates the MCP surface: adding a dimension
-adds a tool, which is an *additive* contract change and must be committed
-deliberately with the snapshot updated in that same commit.
+The MCP tool needs no edit: ``server`` iterates ``ANALYSIS_TYPES`` to generate
+the ``load -> analyze -> dump`` wrapper, named after ``cache_key``.
+
+The tool-schema snapshot (``tests/test_tool_schema.py``) is the gate: a new
+dimension adds an MCP tool, tripping its "a tool appearing" policy. That
+policy is authoritative -- for an intended extension, treat the trip as a
+stop-and-get-approval event, then update the snapshot in the same commit as
+the new tool. This module does not override the snapshot's wording.
 """
 
 from __future__ import annotations
@@ -73,6 +80,10 @@ class AnalysisSpec:
         ``phantom.comparison`` uses internally so composite/compare tools
         reuse results across calls. Deliberately explicit, never derived from
         ``fn.__name__`` -- that is the B.1 drift this facade exists to remove.
+        For these dimensions ``cache_key`` is also the public MCP tool name
+        (``server`` names the generated wrapper after it), so renaming a
+        cache key renames the public tool; it is not a purely internal value.
+        Register values must be unique, enforced at import.
     description:
         MCP tool description (the tool-wrapper generator uses it verbatim).
     """
@@ -147,6 +158,17 @@ ANALYSIS_TYPES: dict[str, AnalysisSpec] = {
     ),
 }
 
+# Cache keys are both the shared cache namespace and, for the generated
+# wrappers, the public MCP tool name. A duplicate would alias the cache
+# between two dimensions and register colliding MCP tools (FastMCP replaces
+# a tool on duplicate registration), so the registry rejects them at import.
+_CACHE_KEYS: list[str] = [spec.cache_key for spec in ANALYSIS_TYPES.values()]
+if len(_CACHE_KEYS) != len(set(_CACHE_KEYS)):
+    raise ValueError(
+        "ANALYSIS_TYPES cache_key values must be unique; duplicates would "
+        "alias the shared cache and shadow a generated MCP tool"
+    )
+
 
 def analysis_keys() -> tuple[str, ...]:
     """Return the dimension keys in registry (declaration) order."""
@@ -176,7 +198,7 @@ def run_analyses(
     ``{key: model}`` where *model* is the analyzer's Pydantic result (not a
     dumped dict); callers dump or render it as they need.
     """
-    ordered = list(keys) if keys is not None else list(ANALYSIS_TYPES)
+    ordered = list(keys) if keys is not None else list(analysis_keys())
     return {
         key: _cached_analysis(
             audio, ANALYSIS_TYPES[key].cache_key, ANALYSIS_TYPES[key].fn

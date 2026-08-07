@@ -9,7 +9,7 @@ import rich_click as click
 from rich.panel import Panel
 
 from phantom import load_audio, PhantomError
-from phantom.facade import ANALYSIS_TYPES, run_analyses
+from phantom.facade import ANALYSIS_TYPES, analysis_keys, run_analyses
 from phantom.cli._formatting import (
     get_console,
     render_problems_table,
@@ -52,7 +52,7 @@ def _enabled_analyses(
     """
     run_all = not any([spectrum, loudness, dynamics, stereo, phase, problems])
     if run_all:
-        return list(ANALYSIS_TYPES)
+        return list(analysis_keys())
 
     enabled: list[str] = []
     if spectrum:
@@ -93,7 +93,9 @@ def _render_results(results: dict, console) -> None:
         if name == "problems":
             render_problems_table(result, console)
         elif name == "spectral":
-            render_analysis_table("Spectral Analysis", result.model_dump(), console)
+            render_analysis_table(
+                ANALYSIS_TYPES["spectral"].title, result.model_dump(), console
+            )
             octave_bands = getattr(result, "octave_band_energy_db", None)
             if octave_bands is not None:
                 render_spectral_chart(octave_bands, console)

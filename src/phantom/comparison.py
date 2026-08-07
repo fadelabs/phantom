@@ -21,13 +21,11 @@ from phantom.audio import AudioData, load_audio
 # ``_cached_analysis`` from this module (see tests/test_comparison.py). The
 # canonical definition now lives in phantom._cache (P-01).
 from phantom._cache import _cached_analysis
-from phantom.dynamics import analyze_dynamics
 from phantom.exceptions import AnalysisError, AudioLoadError, DependencyMissingError
 from phantom.facade import ANALYSIS_TYPES
 from phantom.loudness import analyze_loudness
 from phantom._profiles import ReferenceProfile
 from phantom.spectral import analyze_spectrum
-from phantom.stereo import analyze_stereo
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -359,16 +357,17 @@ def compare_to_profile(
     if is_near_silent(mono):
         return _silent_comparison_result()
 
-    spectrum = _cached_analysis(
-        audio, ANALYSIS_TYPES["spectral"].cache_key, analyze_spectrum
-    )
-    loudness = _cached_analysis(
-        audio, ANALYSIS_TYPES["loudness"].cache_key, analyze_loudness
-    )
-    dynamics = _cached_analysis(
-        audio, ANALYSIS_TYPES["dynamics"].cache_key, analyze_dynamics
-    )
-    stereo = _cached_analysis(audio, ANALYSIS_TYPES["stereo"].cache_key, analyze_stereo)
+    # Cache key AND analyzer come from the same registry row, so they cannot
+    # diverge (a renamed analyzer goes through the registry's fn, not the
+    # module-level import below).
+    spectral_spec = ANALYSIS_TYPES["spectral"]
+    loudness_spec = ANALYSIS_TYPES["loudness"]
+    dynamics_spec = ANALYSIS_TYPES["dynamics"]
+    stereo_spec = ANALYSIS_TYPES["stereo"]
+    spectrum = _cached_analysis(audio, spectral_spec.cache_key, spectral_spec.fn)
+    loudness = _cached_analysis(audio, loudness_spec.cache_key, loudness_spec.fn)
+    dynamics = _cached_analysis(audio, dynamics_spec.cache_key, dynamics_spec.fn)
+    stereo = _cached_analysis(audio, stereo_spec.cache_key, stereo_spec.fn)
 
     # Loudness
     if loudness.integrated_lufs is not None:
@@ -464,30 +463,20 @@ def compare_to_reference(
     if is_near_silent(mono) or is_near_silent(ref_mono):
         return ReferenceComparisonResult()
 
-    spectrum_a = _cached_analysis(
-        audio, ANALYSIS_TYPES["spectral"].cache_key, analyze_spectrum
-    )
-    spectrum_b = _cached_analysis(
-        ref_audio, ANALYSIS_TYPES["spectral"].cache_key, analyze_spectrum
-    )
-    loudness_a = _cached_analysis(
-        audio, ANALYSIS_TYPES["loudness"].cache_key, analyze_loudness
-    )
-    loudness_b = _cached_analysis(
-        ref_audio, ANALYSIS_TYPES["loudness"].cache_key, analyze_loudness
-    )
-    dynamics_a = _cached_analysis(
-        audio, ANALYSIS_TYPES["dynamics"].cache_key, analyze_dynamics
-    )
-    dynamics_b = _cached_analysis(
-        ref_audio, ANALYSIS_TYPES["dynamics"].cache_key, analyze_dynamics
-    )
-    stereo_a = _cached_analysis(
-        audio, ANALYSIS_TYPES["stereo"].cache_key, analyze_stereo
-    )
-    stereo_b = _cached_analysis(
-        ref_audio, ANALYSIS_TYPES["stereo"].cache_key, analyze_stereo
-    )
+    # Cache key AND analyzer come from the same registry row (see the
+    # compare_to_profile twin above).
+    spectral_spec = ANALYSIS_TYPES["spectral"]
+    loudness_spec = ANALYSIS_TYPES["loudness"]
+    dynamics_spec = ANALYSIS_TYPES["dynamics"]
+    stereo_spec = ANALYSIS_TYPES["stereo"]
+    spectrum_a = _cached_analysis(audio, spectral_spec.cache_key, spectral_spec.fn)
+    spectrum_b = _cached_analysis(ref_audio, spectral_spec.cache_key, spectral_spec.fn)
+    loudness_a = _cached_analysis(audio, loudness_spec.cache_key, loudness_spec.fn)
+    loudness_b = _cached_analysis(ref_audio, loudness_spec.cache_key, loudness_spec.fn)
+    dynamics_a = _cached_analysis(audio, dynamics_spec.cache_key, dynamics_spec.fn)
+    dynamics_b = _cached_analysis(ref_audio, dynamics_spec.cache_key, dynamics_spec.fn)
+    stereo_a = _cached_analysis(audio, stereo_spec.cache_key, stereo_spec.fn)
+    stereo_b = _cached_analysis(ref_audio, stereo_spec.cache_key, stereo_spec.fn)
 
     # Loudness
     loudness_devs = {}

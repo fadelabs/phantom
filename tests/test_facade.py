@@ -70,9 +70,9 @@ def test_registry_cache_keys_are_explicit_and_shared():
             f"{key} cache_key must stay the legacy shared key so composite and "
             "compare tools keep hitting the same cache entries"
         )
-        # The key is explicit and decoupled from the analyzer function's name:
-        # today they coincide, but renaming the fn must not move the cache key.
-        assert spec.fn.__name__ == spec.cache_key
+        # Deliberately NOT asserted that spec.fn.__name__ == spec.cache_key:
+        # that coincidence is exactly what the facade removes. The key is
+        # explicit; renaming an analyzer must not move a cache entry.
         assert callable(spec.fn)
         assert spec.title
         assert spec.description
