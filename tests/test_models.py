@@ -1144,3 +1144,21 @@ class TestRoundedModel:
             _ROUND_FIELDS = {"db": round_db}
 
         assert Sample(db=1.23456, raw=9.87654321).model_dump()["raw"] == 9.87654321
+
+
+class TestUnitNeutralRounders:
+    """round_list / round_dict are the unit-neutral primitives (review F8)."""
+
+    def test_round_list(self):
+        from phantom._rounding import round_list
+
+        assert round_list([1.23456, 2.34567], dp=2) == [1.23, 2.35]
+        assert round_list([1.23456], dp=4) == [1.2346]
+        assert round_list(None) is None
+
+    def test_round_dict(self):
+        from phantom._rounding import round_dict
+
+        assert round_dict({"a": 1.23456, "b": 2.34567}, dp=2) == {"a": 1.23, "b": 2.35}
+        assert round_dict({"a": 0.951234567}, dp=4) == {"a": 0.9512}
+        assert round_dict(None) is None

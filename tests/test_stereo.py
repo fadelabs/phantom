@@ -291,6 +291,37 @@ class TestErrorHandling:
         with pytest.raises(AnalysisError):
             analyze_stereo(audio)
 
+    def test_empty_buffer_with_bogus_num_samples_raises(self):
+        """An empty sample buffer raises even when the declared num_samples
+        metadata lies (shape[0] vs num_samples is never cross-checked): the
+        guard reads the actual array, not the metadata."""
+        audio = AudioData(
+            samples=np.zeros((0, 2), dtype=np.float32),
+            sample_rate=44100,
+            num_channels=2,
+            duration=0.0,
+            num_samples=44100,  # contradicts the array
+        )
+        with pytest.raises(AnalysisError, match="audio has 0 samples"):
+            analyze_stereo(audio)
+
+    def test_real_buffer_with_zero_num_samples_analyzes(self):
+        """Real samples analyze even when num_samples metadata says 0 (no
+        false '0 samples' error on audible audio)."""
+        sr = 44100
+        t = np.linspace(0, 100 / sr, 100, endpoint=False, dtype=np.float32)
+        ch = (0.5 * np.sin(2 * np.pi * 440 * t)).astype(np.float32)
+        audio = AudioData(
+            samples=np.column_stack([ch, ch]),
+            sample_rate=sr,
+            num_channels=2,
+            duration=100 / sr,
+            num_samples=0,  # contradicts the array
+        )
+        result = analyze_stereo(audio)
+        assert result.correlation is not None
+        assert result.correlation == pytest.approx(1.0, abs=1e-5)
+
 
 # ---------------------------------------------------------------------------
 # Result structure

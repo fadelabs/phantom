@@ -248,7 +248,7 @@ class TestMemoizedDerivatives:
 
     def test_computed_once(self, mono_sine_440hz, monkeypatch):
         """First access computes; subsequent accesses hit the memo (P-04)."""
-        from phantom._utils import _block_rms_db, is_near_silent
+        from phantom._utils import _block_rms_db
 
         samples, sr = mono_sine_440hz
         ad = AudioData(
@@ -259,27 +259,25 @@ class TestMemoizedDerivatives:
             num_samples=len(samples),
         )
 
-        calls = {"block": 0, "silent": 0}
+        calls = {"block": 0}
 
         def counting_block(mono, *args, **kwargs):
             calls["block"] += 1
             return _block_rms_db(mono)
 
-        def counting_silent(mono, *args, **kwargs):
-            calls["silent"] += 1
-            return is_near_silent(mono)
-
         import phantom.audio as audio_mod
 
         monkeypatch.setattr(audio_mod, "_block_rms_db", counting_block)
-        monkeypatch.setattr(audio_mod, "is_near_silent", counting_silent)
 
         _ = ad.block_rms_db
         _ = ad.block_rms_db
-        _ = ad.is_near_silent
-        _ = ad.is_near_silent
+        assert ad.is_near_silent is False
+        assert ad.is_near_silent is False
+        # The property derives from the memoized mono_rms: audio.py no longer
+        # imports the array helper at all (review F4), so no second pass.
+        assert not hasattr(audio_mod, "is_near_silent")
 
-        assert calls == {"block": 1, "silent": 1}
+        assert calls == {"block": 1}
 
     def test_stale_after_mutation(self, mono_sine_440hz):
         """In-place sample mutation after first access does NOT refresh the

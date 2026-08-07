@@ -181,9 +181,8 @@ def detect_problems(audio: AudioData) -> ProblemsResult:
     problems.extend(_detect_dc_offset(audio))
     problems.extend(_detect_inter_sample_peaks(audio))
     # Noise floor + SNR are ~half identical (P10 block-RMS percentile and the
-    # dynamic-spread guard); the shared estimate comes from the block loop
-    # memoized on AudioData (A.2).
-    problems.extend(_detect_noise_and_snr(mono, audio.block_rms_db))
+    # dynamic-spread guard); both inputs are memoized on AudioData (A.2).
+    problems.extend(_detect_noise_and_snr(audio.block_rms_db, audio.mono_rms))
     problems.extend(_detect_hum(mono, audio.sample_rate))
 
     # Pre-compute shared FFT results for frequency-domain detectors.
@@ -397,14 +396,15 @@ def _noise_floor_estimate(block_rms_db: list[float]) -> float | None:
 
 
 def _detect_noise_and_snr(
-    mono: np.ndarray, block_rms_db: list[float]
+    block_rms_db: list[float], signal_rms: float
 ) -> list[ProblemItem]:
     """Detect elevated noise floor and poor SNR (PROB-04, PROB-05).
 
     Formerly two functions that each re-ran the block-RMS loop and guarded
-    it identically; the shared estimate is now passed in once from
-    ``audio.block_rms_db`` (A.2). Item order is preserved (noise floor
-    before SNR), so within-severity output order is unchanged.
+    it identically. Both inputs now come from AudioData's memoized
+    ``block_rms_db`` and ``mono_rms`` (A.2, review F4), so the merged
+    detector adds no array recomputation. Item order is preserved (noise
+    floor before SNR), so within-severity output order is unchanged.
     """
     noise_floor_db = _noise_floor_estimate(block_rms_db)
     if noise_floor_db is None:
@@ -439,41 +439,36 @@ def _detect_noise_and_snr(
         )
 
     # -- SNR (PROB-05) --
-    # Overall signal RMS in dB. Unreachable via detect_problems (near-silent
-    # audio returns early), kept as the former guard for direct callers.
-    signal_rms = float(np.sqrt(np.mean(mono**2)))
-    if signal_rms > 0:
-        signal_rms_db = float(20.0 * np.log10(signal_rms + 1e-10))
+    # Upper-bound approximation: overall RMS includes noise, so true SNR
+    # is lower.
+    signal_rms_db = float(20.0 * np.log10(signal_rms + 1e-10))
+    snr_db = signal_rms_db - noise_floor_db
 
-        # Upper-bound approximation: overall RMS includes noise, so true SNR
-        # is lower.
-        snr_db = signal_rms_db - noise_floor_db
+    if snr_db < _SNR_PROFESSIONAL_DB:
+        if snr_db < _SNR_POOR_DB:
+            severity = "significant"
+            quality = "poor"
+        else:
+            severity = "minor"
+            quality = "acceptable"
 
-        if snr_db < _SNR_PROFESSIONAL_DB:
-            if snr_db < _SNR_POOR_DB:
-                severity = "significant"
-                quality = "poor"
-            else:
-                severity = "minor"
-                quality = "acceptable"
-
-            items.append(
-                ProblemItem(
-                    type="snr",
-                    severity=severity,
-                    message=(
-                        f"SNR is {snr_db:.1f} dB ({quality}). "
-                        f"Signal RMS: {signal_rms_db:.1f} dBFS, "
-                        f"noise floor: {noise_floor_db:.1f} dBFS."
-                    ),
-                    details={
-                        "snr_db": round(snr_db, 1),
-                        "signal_rms_dbfs": round(signal_rms_db, 1),
-                        "noise_floor_dbfs": round(noise_floor_db, 1),
-                        "quality": quality,
-                    },
-                )
+        items.append(
+            ProblemItem(
+                type="snr",
+                severity=severity,
+                message=(
+                    f"SNR is {snr_db:.1f} dB ({quality}). "
+                    f"Signal RMS: {signal_rms_db:.1f} dBFS, "
+                    f"noise floor: {noise_floor_db:.1f} dBFS."
+                ),
+                details={
+                    "snr_db": round(snr_db, 1),
+                    "signal_rms_dbfs": round(signal_rms_db, 1),
+                    "noise_floor_dbfs": round(noise_floor_db, 1),
+                    "quality": quality,
+                },
             )
+        )
 
     return items
 

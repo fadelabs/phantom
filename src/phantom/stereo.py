@@ -11,7 +11,8 @@ Near-silent audio returns None for all values (per D-05).
 
 from __future__ import annotations
 
-from typing import Optional
+from collections.abc import Callable
+from typing import ClassVar, Optional
 
 import numpy as np
 
@@ -28,7 +29,7 @@ class PanoramaDistribution(RoundedModel):
     center: float = 0.0
     right: float = 0.0
 
-    _ROUND_FIELDS = {
+    _ROUND_FIELDS: ClassVar[dict[str, Callable[[object], object]]] = {
         "left": round_pct,
         "center": round_pct,
         "right": round_pct,
@@ -44,7 +45,7 @@ class StereoResult(RoundedModel):
     balance_db: Optional[float] = None
     panorama_pct: Optional[PanoramaDistribution] = None
 
-    _ROUND_FIELDS = {
+    _ROUND_FIELDS: ClassVar[dict[str, Callable[[object], object]]] = {
         "correlation": round_ratio,
         "stereo_width": round_ratio,
         "mid_side_ratio_db": round_db,
@@ -157,9 +158,15 @@ def analyze_stereo(audio: AudioData) -> StereoResult:
     # Stereo: empty guard, then per-channel near-silence. Inverted polarity
     # (R = -L) would cancel in the mono mixdown but each channel carries real
     # energy, so the (mono) memoized is_near_silent cannot gate this path.
-    if audio.num_samples == 0:
+    left = audio.left
+    right = audio.right
+    # Guard on the actual sample buffer, not the declared num_samples
+    # metadata -- AudioData._validate_samples never cross-checks shape[0]
+    # against num_samples, so the declared value can disagree with the array
+    # (same len-based semantics as guarded_mono's mono path).
+    if len(left) == 0:
         raise AnalysisError("Stereo analysis failed: audio has 0 samples")
-    if is_near_silent(audio.left) and is_near_silent(audio.right):
+    if is_near_silent(left) and is_near_silent(right):
         return _silent_stereo_result()
 
     left = audio.left

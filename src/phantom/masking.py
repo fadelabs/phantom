@@ -10,6 +10,8 @@ and numpy for overlap scoring.
 from __future__ import annotations
 
 import itertools
+from collections.abc import Callable
+from typing import ClassVar
 
 import numpy as np
 
@@ -57,7 +59,9 @@ class MaskingBand(RoundedModel):
     severity: str
     overlap_score: float
 
-    _ROUND_FIELDS = {"overlap_score": round_ratio}
+    _ROUND_FIELDS: ClassVar[dict[str, Callable[[object], object]]] = {
+        "overlap_score": round_ratio
+    }
 
 
 class MaskingResult(RoundedModel):
@@ -67,7 +71,9 @@ class MaskingResult(RoundedModel):
     overall_severity: str = "none"
     overall_score: float = 0.0
 
-    _ROUND_FIELDS = {"overall_score": round_ratio}
+    _ROUND_FIELDS: ClassVar[dict[str, Callable[[object], object]]] = {
+        "overall_score": round_ratio
+    }
 
 
 class MaskingPair(RoundedModel):
@@ -79,7 +85,9 @@ class MaskingPair(RoundedModel):
     overall_score: float
     bands: list[MaskingBand]
 
-    _ROUND_FIELDS = {"overall_score": round_ratio}
+    _ROUND_FIELDS: ClassVar[dict[str, Callable[[object], object]]] = {
+        "overall_score": round_ratio
+    }
 
 
 class MaskingMatrixResult(RoundedModel):
