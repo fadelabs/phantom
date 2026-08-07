@@ -374,9 +374,10 @@ def guarded_mono(audio: "AudioData", failure_label: str) -> np.ndarray | None:
     ``guarded_mono(audio, "Spectral analysis failed")``.
 
     The near-silence decision uses the memoized ``AudioData.is_near_silent``
-    (mono mixdown, A.7). Callers that must check individual channels
-    (stereo, phase) keep using the module-level :func:`is_near_silent` array
-    helper instead.
+    (mono mixdown, A.7). The mono mixdown cancels coherent anti-phase stereo
+    (R = -L), so analyzers whose silence verdict must reflect individual
+    channels (stereo, per-band phase) deliberately keep their own per-channel
+    checks and must not adopt this helper (see stereo.py, phase.py).
 
     Returns:
         The mono mixdown when analysis should proceed, or ``None`` when the

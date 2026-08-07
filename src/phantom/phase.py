@@ -252,15 +252,10 @@ def compare_phase(audio1: AudioData, audio2: AudioData) -> PhaseCompareResult:
     # Auto-resample on sample rate mismatch
     audio1, audio2 = align_sample_rates(audio1, audio2)
 
-    mono1 = audio1.mono
-    mono2 = audio2.mono
-
-    # Empty-samples guard
-    if len(mono1) == 0 or len(mono2) == 0:
-        raise AnalysisError("Phase comparison failed: audio has 0 samples")
-
-    # Near-silence guard (memoized per audio, A.7)
-    if audio1.is_near_silent or audio2.is_near_silent:
+    # Empty/silence guards (B.2): mono per input, or None when near-silent.
+    mono1 = guarded_mono(audio1, "Phase comparison failed")
+    mono2 = guarded_mono(audio2, "Phase comparison failed")
+    if mono1 is None or mono2 is None:
         return _silent_compare_result()
 
     # Truncate to shorter signal
