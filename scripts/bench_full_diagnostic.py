@@ -25,6 +25,7 @@ import numpy as np
 import soundfile as sf
 
 from phantom._cache import analysis_cache
+from phantom._settings import analysis_settings
 from phantom.audio import load_audio
 from phantom.server import full_diagnostic
 from phantom.spectral import _octave_band_energies, analyze_spectrum
@@ -70,11 +71,14 @@ def _probe_spectral(p: str) -> None:
     sr = audio.sample_rate
 
     # Warmup both paths so Essentia/JIT costs don't land in the timed runs.
+    # The octave-band pass takes the effective settings for its frame sizes
+    # (C.1); defaults reproduce the pre-C.1 geometry.
+    settings = analysis_settings()
     analyze_spectrum(audio)
-    _octave_band_energies(mono, sr)
+    _octave_band_energies(mono, sr, settings)
 
     spectral_s = min(_timed(lambda: analyze_spectrum(audio)) for _ in range(3))
-    band_s = min(_timed(lambda: _octave_band_energies(mono, sr)) for _ in range(3))
+    band_s = min(_timed(lambda: _octave_band_energies(mono, sr, settings)) for _ in range(3))
 
     share = (band_s / spectral_s * 100.0) if spectral_s > 0 else 0.0
     print(f"P-05 probe -- analyze_spectrum 60s: {spectral_s * 1000:.1f} ms (best of 3)")
