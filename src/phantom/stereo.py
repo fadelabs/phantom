@@ -157,9 +157,15 @@ def analyze_stereo(audio: AudioData) -> StereoResult:
     # Stereo: empty guard, then per-channel near-silence. Inverted polarity
     # (R = -L) would cancel in the mono mixdown but each channel carries real
     # energy, so the (mono) memoized is_near_silent cannot gate this path.
-    if audio.num_samples == 0:
+    left = audio.left
+    right = audio.right
+    # Guard on the actual sample buffer, not the declared num_samples
+    # metadata -- AudioData._validate_samples never cross-checks shape[0]
+    # against num_samples, so the declared value can disagree with the array
+    # (same len-based semantics as guarded_mono's mono path).
+    if len(left) == 0:
         raise AnalysisError("Stereo analysis failed: audio has 0 samples")
-    if is_near_silent(audio.left) and is_near_silent(audio.right):
+    if is_near_silent(left) and is_near_silent(right):
         return _silent_stereo_result()
 
     left = audio.left
