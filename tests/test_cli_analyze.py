@@ -363,6 +363,7 @@ def test_analyze_cli_populates_cache(mono_sine_440hz, make_wav):
     call on the same bytes reuses the work.
     """
     from phantom._cache import _MISSING, analysis_cache
+    from phantom._settings import analysis_settings
     from phantom.audio import load_audio
     from phantom.cli.analyze import _run_selected_analyses
 
@@ -375,10 +376,12 @@ def test_analyze_cli_populates_cache(mono_sine_440hz, make_wav):
 
     _run_selected_analyses(audio, ["spectral", "loudness", "problems"])
 
-    # Entries stored under the analyzer __name__ keys shared with the server.
-    assert analysis_cache.get(audio, "analyze_spectrum") is not _MISSING
-    assert analysis_cache.get(audio, "analyze_loudness") is not _MISSING
-    assert analysis_cache.get(audio, "detect_problems") is not _MISSING
+    # Entries stored under the analyzer __name__ keys shared with the server
+    # (scoped by the effective settings fingerprint, C.1).
+    settings_key = "|" + analysis_settings().fingerprint()
+    assert analysis_cache.get(audio, "analyze_spectrum", settings_key) is not _MISSING
+    assert analysis_cache.get(audio, "analyze_loudness", settings_key) is not _MISSING
+    assert analysis_cache.get(audio, "detect_problems", settings_key) is not _MISSING
 
     # Clean up so we don't leak entries into other tests sharing the cache.
     analysis_cache.clear()

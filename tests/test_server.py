@@ -513,6 +513,7 @@ def test_full_diagnostic_populates_cache(mono_sine_440hz, make_wav):
     func name), so re-loading the same file hits the same entries.
     """
     from phantom._cache import _MISSING, analysis_cache
+    from phantom._settings import analysis_settings
     from phantom.audio import load_audio
     from phantom.server import full_diagnostic
 
@@ -523,14 +524,16 @@ def test_full_diagnostic_populates_cache(mono_sine_440hz, make_wav):
     path = make_wav(samples, sr)
     full_diagnostic(path)
 
-    # Re-load the same file; the content hash must match the cached entries.
+    # Re-load the same file; the content hash must match the cached entries
+    # (scoped by the effective settings fingerprint, C.1).
     audio = load_audio(path)
-    assert analysis_cache.get(audio, "analyze_spectrum") is not _MISSING
-    assert analysis_cache.get(audio, "analyze_loudness") is not _MISSING
-    assert analysis_cache.get(audio, "analyze_dynamics") is not _MISSING
-    assert analysis_cache.get(audio, "analyze_stereo") is not _MISSING
-    assert analysis_cache.get(audio, "analyze_phase") is not _MISSING
-    assert analysis_cache.get(audio, "detect_problems") is not _MISSING
+    settings_key = "|" + analysis_settings().fingerprint()
+    assert analysis_cache.get(audio, "analyze_spectrum", settings_key) is not _MISSING
+    assert analysis_cache.get(audio, "analyze_loudness", settings_key) is not _MISSING
+    assert analysis_cache.get(audio, "analyze_dynamics", settings_key) is not _MISSING
+    assert analysis_cache.get(audio, "analyze_stereo", settings_key) is not _MISSING
+    assert analysis_cache.get(audio, "analyze_phase", settings_key) is not _MISSING
+    assert analysis_cache.get(audio, "detect_problems", settings_key) is not _MISSING
 
     # Clean up so we don't leak entries into other tests sharing the cache.
     analysis_cache.clear()

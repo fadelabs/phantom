@@ -28,6 +28,7 @@ from phantom._rounding import (
     round_ratio,
     round_ratio_list,
 )
+from phantom._settings import AnalysisSettings
 from phantom._utils import guarded_mono, wrap_errors
 
 
@@ -57,8 +58,13 @@ def _silent_spectral_result() -> SpectralResult:
 
 
 @wrap_errors("Spectral analysis failed")
-def analyze_spectrum(audio: AudioData) -> SpectralResult:
+def analyze_spectrum(
+    audio: AudioData, settings: AnalysisSettings | None = None
+) -> SpectralResult:
     """Analyze spectral characteristics of an audio signal.
+
+    *settings* is accepted for facade signature uniformity (C.1); frame/hop
+    sizes consume it in the FFT-size migration.
 
     Computes six spectral descriptors from the mono mixdown of the input:
       - spectral_centroid_hz: center of spectral mass (Hz)

@@ -82,6 +82,18 @@ ENV_VARS: tuple[EnvVar, ...] = (
         "GCC-PHAT cross-correlation window in seconds.",
     ),
     EnvVar(
+        "PHANTOM_POLARITY_THRESHOLD",
+        "float",
+        "-0.5",
+        "L/R correlation below this flags polarity inversion.",
+    ),
+    EnvVar(
+        "PHANTOM_CREST_FACTOR_LOW_DB",
+        "float",
+        "6.0",
+        "Crest factor below this marks a track as over-compressed.",
+    ),
+    EnvVar(
         "PHANTOM_PROFILE_MERGE",
         "flag",
         "",

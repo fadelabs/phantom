@@ -19,6 +19,7 @@ import essentia.standard as es
 
 from phantom.audio import AudioData
 from phantom._rounding import RoundedModel, round_db, round_ratio
+from phantom._settings import AnalysisSettings, analysis_settings
 from phantom._utils import guarded_mono, wrap_errors
 
 
@@ -49,14 +50,17 @@ def _silent_dynamics_result() -> DynamicsResult:
 
 
 @wrap_errors("Dynamics analysis failed")
-def analyze_dynamics(audio: AudioData) -> DynamicsResult:
+def analyze_dynamics(
+    audio: AudioData, settings: AnalysisSettings | None = None
+) -> DynamicsResult:
     """Analyze dynamics characteristics of an audio signal.
 
     Computes seven dynamics descriptors from the mono mixdown of the input:
       - rms_dbfs: RMS level in dBFS
       - peak_dbfs: Peak level in dBFS
       - crest_factor_db: Crest factor in dB (peak_dbfs - rms_dbfs)
-      - crest_factor_is_low: True if crest_factor_db < 6.0
+      - crest_factor_is_low: True if crest_factor_db is below the
+        low-crest threshold (default 6.0, AnalysisSettings-tunable)
       - dynamic_range_db: 95th-5th percentile of block RMS in dB
       - dynamic_complexity: Essentia DynamicComplexity descriptor
       - loudness_db: Average loudness from DynamicComplexity
@@ -71,6 +75,8 @@ def analyze_dynamics(audio: AudioData) -> DynamicsResult:
     Raises:
         AnalysisError: If analysis fails or audio has 0 samples.
     """
+    effective = settings if settings is not None else analysis_settings()
+
     # Empty/silence guards (B.2): mono, or None when near-silent.
     mono = guarded_mono(audio, "Dynamics analysis failed")
     if mono is None:
@@ -86,7 +92,7 @@ def analyze_dynamics(audio: AudioData) -> DynamicsResult:
 
     # -- Crest factor (DYN-03) --
     crest_factor_db = float(peak_dbfs - rms_dbfs)
-    crest_factor_is_low = bool(crest_factor_db < 6.0)
+    crest_factor_is_low = bool(crest_factor_db < effective.crest_factor_low_db)
 
     # -- Dynamic range (DYN-04) --
     # Memoized on AudioData (A.2): also consumed by detect_problems'

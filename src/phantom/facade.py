@@ -53,6 +53,7 @@ from pydantic import BaseModel, ConfigDict
 
 from phantom._cache import _cached_analysis
 from phantom._rounding import RoundedModel, round_duration
+from phantom._settings import AnalysisSettings
 from phantom.audio import AudioData
 from phantom.dynamics import analyze_dynamics, DynamicsResult
 from phantom.loudness import analyze_loudness, LoudnessResult
@@ -177,7 +178,9 @@ def analysis_keys() -> tuple[str, ...]:
 
 
 def run_analyses(
-    audio: AudioData, keys: Iterable[str] | None = None
+    audio: AudioData,
+    keys: Iterable[str] | None = None,
+    settings: AnalysisSettings | None = None,
 ) -> dict[str, BaseModel]:
     """Run the requested analyses on *audio*, returning Pydantic instances.
 
@@ -193,6 +196,10 @@ def run_analyses(
         Subset of ``ANALYSIS_TYPES`` keys to run; defaults to all of them.
         Result keys follow the given order when *keys* is supplied (the CLI
         passes registry order) and registry order otherwise.
+    settings:
+        Explicit :class:`AnalysisSettings` for programmatic tuning (C.1);
+        ``None`` resolves the per-call env defaults. Threaded into every
+        analyzer and folded into the cache key.
 
     Returns
     -------
@@ -202,7 +209,7 @@ def run_analyses(
     ordered = list(keys) if keys is not None else list(analysis_keys())
     return {
         key: _cached_analysis(
-            audio, ANALYSIS_TYPES[key].cache_key, ANALYSIS_TYPES[key].fn
+            audio, ANALYSIS_TYPES[key].cache_key, ANALYSIS_TYPES[key].fn, settings
         )
         for key in ordered
     }

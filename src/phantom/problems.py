@@ -21,6 +21,7 @@ from scipy.fft import rfft, rfftfreq
 from pydantic import BaseModel
 
 from phantom.audio import AudioData
+from phantom._settings import AnalysisSettings
 from phantom._utils import guarded_mono, wrap_errors
 
 _SEVERITY_SORT_ORDER = {"dealbreaker": 0, "significant": 1, "moderate": 2, "minor": 3}
@@ -155,8 +156,14 @@ def inject_sample_rate_mismatch(
 
 
 @wrap_errors("Problem detection failed")
-def detect_problems(audio: AudioData) -> ProblemsResult:
+def detect_problems(
+    audio: AudioData, settings: AnalysisSettings | None = None
+) -> ProblemsResult:
     """Detect audio production problems and return severity-ranked results.
+
+    *settings* is accepted for facade signature uniformity (C.1); the
+    threshold block consumes it in the threshold migration.
+
 
     Runs all detection checks internally (D-01). Returns a ProblemsResult
     with problems (list of ProblemItem), clean (bool), and summary

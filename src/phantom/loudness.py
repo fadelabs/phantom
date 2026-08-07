@@ -18,6 +18,7 @@ import essentia.standard as es
 
 from phantom.audio import AudioData
 from phantom._rounding import RoundedModel, round_db
+from phantom._settings import AnalysisSettings
 from phantom._utils import guarded_mono, wrap_errors
 
 
@@ -95,8 +96,15 @@ def _silent_loudness_result() -> LoudnessResult:
 
 
 @wrap_errors("Loudness analysis failed")
-def analyze_loudness(audio: AudioData) -> LoudnessResult:
+def analyze_loudness(
+    audio: AudioData, settings: AnalysisSettings | None = None
+) -> LoudnessResult:
     """Analyze loudness characteristics of an audio signal.
+
+    *settings* is accepted for facade signature uniformity (C.1) and unused:
+    the EBU R128 / ITU-R BS.1770 descriptors are standard-defined, not
+    tunable.
+
 
     Computes five EBU R128 / ITU-R BS.1770-4 loudness descriptors from
     the mono mixdown of the input:
