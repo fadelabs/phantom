@@ -14,7 +14,7 @@ import hashlib
 import logging
 import threading
 from collections import OrderedDict
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any, Callable, TypeVar
 
 from phantom._settings import AnalysisSettings, analysis_settings
 
@@ -25,6 +25,10 @@ logger = logging.getLogger(__name__)
 
 # Sentinel object used to distinguish a cache miss from a cached ``None`` result.
 _MISSING = object()
+
+# An analysis function's result type, threaded through the cache so callers
+# keep static knowledge of what came back (C.3).
+AnalysisT = TypeVar("AnalysisT")
 
 
 class AnalysisCache:
@@ -161,9 +165,9 @@ analysis_cache = AnalysisCache()
 def _cached_analysis(
     audio: AudioData,
     func_name: str,
-    func: Callable[[AudioData, AnalysisSettings | None], Any],
+    func: Callable[[AudioData, AnalysisSettings | None], AnalysisT],
     settings: AnalysisSettings | None = None,
-) -> Any:
+) -> AnalysisT:
     """Run an analysis function with cache lookup/store.
 
     Checks the shared ``analysis_cache`` first. On miss, runs

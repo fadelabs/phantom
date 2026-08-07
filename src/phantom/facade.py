@@ -74,7 +74,8 @@ class AnalysisSpec:
         ``--<flag>`` name, and the key in ``run_analyses`` output
         (e.g. ``"spectral"``).
     fn:
-        Analyzer callable: ``fn(audio: AudioData) -> BaseModel``.
+        Analyzer callable: ``fn(audio, settings=None) -> BaseModel``; the
+        settings parameter carries tunable thresholds (C.1).
     title:
         Human display title for the CLI tables (e.g. ``"Spectral Analysis"``).
     cache_key:
@@ -91,7 +92,7 @@ class AnalysisSpec:
     """
 
     key: str
-    fn: Callable[[AudioData], BaseModel]
+    fn: Callable[[AudioData, AnalysisSettings | None], BaseModel]
     title: str
     cache_key: str
     description: str
