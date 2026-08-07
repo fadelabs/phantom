@@ -172,6 +172,132 @@ class TestAudioDataValidation:
         assert ad.file_path is None
 
 
+class TestMemoizedDerivatives:
+    """Memoized block_rms_db and is_near_silent (A.2, A.7).
+
+    Both delegate to the shared array helpers and are computed at most once
+    per instance. Invalidation story: samples are treated as immutable after
+    construction (the invariant _cache.py relies on for _content_hash), so
+    cached_property derivatives are never invalidated -- mutating samples in
+    place after first access leaves them stale by design, exactly like the
+    existing mono / mono_rms properties. test_stale_after_mutation locks that
+    contract in.
+    """
+
+    def test_block_rms_db_matches_helper(self, mono_sine_440hz):
+        """block_rms_db equals _block_rms_db(audio.mono) element-for-element."""
+        from phantom._utils import _block_rms_db
+
+        samples, sr = mono_sine_440hz
+        ad = AudioData(
+            samples=samples.reshape(-1, 1),
+            sample_rate=sr,
+            num_channels=1,
+            duration=len(samples) / sr,
+            num_samples=len(samples),
+        )
+        assert ad.block_rms_db == _block_rms_db(ad.mono)
+
+    def test_is_near_silent_matches_helper(self, mono_sine_440hz, near_silence):
+        """is_near_silent agrees with the array helper on audible and silent."""
+        from phantom._utils import is_near_silent
+
+        samples, sr = mono_sine_440hz
+        audible = AudioData(
+            samples=samples.reshape(-1, 1),
+            sample_rate=sr,
+            num_channels=1,
+            duration=len(samples) / sr,
+            num_samples=len(samples),
+        )
+        assert audible.is_near_silent == is_near_silent(audible.mono)
+        assert audible.is_near_silent is False
+
+        silent_samples, silent_sr = near_silence
+        silent = AudioData(
+            samples=silent_samples.reshape(-1, 1),
+            sample_rate=silent_sr,
+            num_channels=1,
+            duration=len(silent_samples) / silent_sr,
+            num_samples=len(silent_samples),
+        )
+        assert silent.is_near_silent == is_near_silent(silent.mono)
+        assert silent.is_near_silent is True
+
+    def test_out_of_phase_stereo_mono_silent_but_channels_not(self):
+        """Why stereo/phase paths keep per-channel checks: R = -L cancels in
+        the mono mixdown, so the mono-memoized flag must NOT gate those paths."""
+        from phantom._utils import is_near_silent
+
+        sr = 44100
+        t = np.linspace(0, 1.0, sr, endpoint=False, dtype=np.float32)
+        ch = (0.5 * np.sin(2 * np.pi * 440 * t)).astype(np.float32)
+        ad = AudioData(
+            samples=np.column_stack([ch, -ch]),
+            sample_rate=sr,
+            num_channels=2,
+            duration=1.0,
+            num_samples=sr,
+        )
+        assert ad.is_near_silent is True  # mono mixdown cancels
+        assert not is_near_silent(ad.left)  # but each channel carries energy
+
+    def test_computed_once(self, mono_sine_440hz, monkeypatch):
+        """First access computes; subsequent accesses hit the memo (P-04)."""
+        from phantom._utils import _block_rms_db, is_near_silent
+
+        samples, sr = mono_sine_440hz
+        ad = AudioData(
+            samples=samples.reshape(-1, 1),
+            sample_rate=sr,
+            num_channels=1,
+            duration=len(samples) / sr,
+            num_samples=len(samples),
+        )
+
+        calls = {"block": 0, "silent": 0}
+
+        def counting_block(mono, *args, **kwargs):
+            calls["block"] += 1
+            return _block_rms_db(mono)
+
+        def counting_silent(mono, *args, **kwargs):
+            calls["silent"] += 1
+            return is_near_silent(mono)
+
+        import phantom.audio as audio_mod
+
+        monkeypatch.setattr(audio_mod, "_block_rms_db", counting_block)
+        monkeypatch.setattr(audio_mod, "is_near_silent", counting_silent)
+
+        _ = ad.block_rms_db
+        _ = ad.block_rms_db
+        _ = ad.is_near_silent
+        _ = ad.is_near_silent
+
+        assert calls == {"block": 1, "silent": 1}
+
+    def test_stale_after_mutation(self, mono_sine_440hz):
+        """In-place sample mutation after first access does NOT refresh the
+        memo -- documented stale-by-design contract (samples are never mutated
+        after construction; same as mono/mono_rms/_content_hash)."""
+        samples, sr = mono_sine_440hz
+        ad = AudioData(
+            samples=samples.reshape(-1, 1),
+            sample_rate=sr,
+            num_channels=1,
+            duration=len(samples) / sr,
+            num_samples=len(samples),
+        )
+        audible_rms = ad.block_rms_db
+        audible_silent = ad.is_near_silent
+
+        ad.samples[:] = 0.0  # violates the no-mutation invariant
+
+        assert ad.block_rms_db == audible_rms  # stale, not recomputed
+        assert ad.is_near_silent == audible_silent  # stale, not recomputed
+
+
 # ── load_audio function tests ──────────────────────────────────────────
 
 

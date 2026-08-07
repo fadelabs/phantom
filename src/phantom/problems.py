@@ -22,7 +22,7 @@ from pydantic import BaseModel
 
 from phantom.audio import AudioData
 from phantom.exceptions import AnalysisError
-from phantom._utils import is_near_silent, _block_rms_db, wrap_errors
+from phantom._utils import _block_rms_db, wrap_errors
 
 _SEVERITY_SORT_ORDER = {"dealbreaker": 0, "significant": 1, "moderate": 2, "minor": 3}
 
@@ -178,8 +178,8 @@ def detect_problems(audio: AudioData) -> ProblemsResult:
     if len(mono) == 0:
         raise AnalysisError("Problem detection failed: audio has 0 samples")
 
-    # Near-silence guard (D-12)
-    if is_near_silent(mono):
+    # Near-silence guard (D-12) -- memoized on AudioData (A.7)
+    if audio.is_near_silent:
         return _empty_result()
 
     problems: list[ProblemItem] = []

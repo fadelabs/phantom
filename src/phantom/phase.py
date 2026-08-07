@@ -186,9 +186,8 @@ def analyze_phase(audio: AudioData) -> PhaseResult:
 
     # Mono guard (D-03): deterministic defaults
     if audio.num_channels == 1:
-        mono = audio.mono
-        # Near-silence guard for mono
-        if is_near_silent(mono):
+        # Near-silence guard for mono (memoized on AudioData, A.7)
+        if audio.is_near_silent:
             return _silent_phase_result()
         nyq = audio.sample_rate / 2.0
         band_defaults = {
@@ -201,7 +200,8 @@ def analyze_phase(audio: AudioData) -> PhaseResult:
         )
 
     # Stereo: near-silence guard checks individual channels, not mono mix
-    # (out-of-phase stereo has zero mono mix but non-silent channels)
+    # (out-of-phase stereo has zero mono mix but non-silent channels). The
+    # per-channel check cannot use the (mono) memoized is_near_silent.
     left = audio.left
     right = audio.right
     if is_near_silent(left) and is_near_silent(right):
@@ -265,8 +265,8 @@ def compare_phase(audio1: AudioData, audio2: AudioData) -> PhaseCompareResult:
     if len(mono1) == 0 or len(mono2) == 0:
         raise AnalysisError("Phase comparison failed: audio has 0 samples")
 
-    # Near-silence guard
-    if is_near_silent(mono1) or is_near_silent(mono2):
+    # Near-silence guard (memoized per audio, A.7)
+    if audio1.is_near_silent or audio2.is_near_silent:
         return _silent_compare_result()
 
     # Truncate to shorter signal

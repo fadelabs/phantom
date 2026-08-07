@@ -153,9 +153,10 @@ def analyze_stereo(audio: AudioData) -> StereoResult:
 
     # Near-silence guard
     # For stereo, check individual channels -- inverted polarity (R = -L) would
-    # cancel in the mono mixdown but each channel carries real energy.
+    # cancel in the mono mixdown but each channel carries real energy. The
+    # per-channel check cannot use the (mono) memoized is_near_silent.
     if audio.num_channels == 1:
-        signal_silent = is_near_silent(mono)
+        signal_silent = audio.is_near_silent
     else:
         signal_silent = is_near_silent(audio.left) and is_near_silent(audio.right)
 

@@ -10,7 +10,6 @@ from pydantic import BaseModel, field_validator
 
 from phantom._rounding import round_db, round_hz, round_ratio
 from phantom._utils import (
-    is_near_silent,
     validate_input_path,
     validate_output_path,
     wrap_errors,
@@ -354,7 +353,7 @@ def compare_to_profile(
     if len(mono) == 0:
         raise AnalysisError("Comparison analysis failed: audio has 0 samples")
 
-    if is_near_silent(mono):
+    if audio.is_near_silent:
         return _silent_comparison_result()
 
     # Cache key AND analyzer come from the same registry row, so they cannot
@@ -460,7 +459,7 @@ def compare_to_reference(
     if len(mono) == 0 or len(ref_mono) == 0:
         raise AnalysisError("Comparison analysis failed: audio has 0 samples")
 
-    if is_near_silent(mono) or is_near_silent(ref_mono):
+    if audio.is_near_silent or ref_audio.is_near_silent:
         return ReferenceComparisonResult()
 
     # Cache key AND analyzer come from the same registry row (see the

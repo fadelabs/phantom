@@ -22,7 +22,9 @@ from pydantic import BaseModel, ConfigDict, model_validator
 
 from phantom.exceptions import AudioLoadError
 from phantom._utils import (
+    _block_rms_db,
     check_duration_size,
+    is_near_silent,
     open_validated_input,
     validate_input_path,
 )
@@ -111,6 +113,33 @@ class AudioData(BaseModel):
         if not np.issubdtype(m.dtype, np.floating):
             m = m.astype(np.float64)
         return float(np.sqrt(np.mean(m**2)))
+
+    @cached_property
+    def block_rms_db(self) -> list[float]:
+        """Per-block RMS of the mono mixdown in dBFS, computed once (A.2).
+
+        Delegates to the shared array helper; memoized so the block loop that
+        previously ran separately in ``detect_problems`` (noise floor + SNR)
+        and ``analyze_dynamics`` (dynamic range) runs at most once per
+        instance.
+        """
+        return _block_rms_db(self.mono)
+
+    @cached_property
+    def is_near_silent(self) -> bool:
+        """Whether the mono mixdown falls below SILENCE_THRESHOLD_DB (A.7).
+
+        Same arithmetic as the module-level ``is_near_silent(audio.mono)``
+        helper, memoized per instance. The stereo/phase paths that must check
+        individual channels (an out-of-phase pair cancels in the mono mixdown
+        but both channels carry energy) still call the array helper directly.
+
+        Like ``mono``/``mono_rms``, this is a ``cached_property``: samples are
+        treated as immutable after construction (the same invariant
+        ``_cache.py`` relies on for ``_content_hash``), so the memo is never
+        invalidated and would go stale if samples were mutated in place.
+        """
+        return bool(is_near_silent(self.mono))
 
 
 def load_audio(

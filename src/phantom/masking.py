@@ -18,7 +18,7 @@ from phantom.audio import AudioData
 from phantom.exceptions import AnalysisError
 from phantom._resample import align_sample_rates, resample_to_match
 from phantom._rounding import round_ratio
-from phantom._utils import is_near_silent, wrap_errors
+from phantom._utils import wrap_errors
 from phantom.spectral import _BAND_LABELS, _octave_band_energies
 
 # Severity thresholds for per-band overlap classification.
@@ -235,8 +235,8 @@ def analyze_masking(audio_a: AudioData, audio_b: AudioData) -> MaskingResult:
     if len(mono_a) == 0 or len(mono_b) == 0:
         raise AnalysisError("Masking analysis failed: audio has 0 samples")
 
-    # Near-silence guard
-    if is_near_silent(mono_a) or is_near_silent(mono_b):
+    # Near-silence guard (memoized per audio, A.7)
+    if audio_a.is_near_silent or audio_b.is_near_silent:
         return _no_masking_result()
 
     # Compute per-band energies for both stems
@@ -292,7 +292,7 @@ def analyze_masking_matrix(stems: list[AudioData]) -> MaskingMatrixResult:
         mono = aligned.mono
         if len(mono) == 0:
             raise AnalysisError("Masking analysis failed: audio has 0 samples")
-        if is_near_silent(mono):
+        if aligned.is_near_silent:  # memoized per aligned instance, A.7
             energies.append(None)  # marker for silent stems
         else:
             energies.append(_compute_band_energies(mono, aligned.sample_rate))

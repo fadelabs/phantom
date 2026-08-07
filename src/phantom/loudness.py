@@ -19,7 +19,7 @@ from pydantic import BaseModel, field_validator
 from phantom.audio import AudioData
 from phantom.exceptions import AnalysisError
 from phantom._rounding import round_db
-from phantom._utils import is_near_silent, wrap_errors
+from phantom._utils import wrap_errors
 
 
 class LufsStats(BaseModel):
@@ -121,8 +121,8 @@ def analyze_loudness(audio: AudioData) -> LoudnessResult:
     if len(mono) == 0:
         raise AnalysisError("Loudness analysis failed: audio has 0 samples")
 
-    # Near-silence guard
-    if is_near_silent(mono):
+    # Near-silence guard (memoized on AudioData, A.7)
+    if audio.is_near_silent:
         return _silent_loudness_result()
 
     # -- EBU R128 loudness (LOUD-01, LOUD-03, LOUD-04) --

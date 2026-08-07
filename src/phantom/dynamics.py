@@ -20,7 +20,7 @@ from pydantic import BaseModel, field_validator
 from phantom.audio import AudioData
 from phantom.exceptions import AnalysisError
 from phantom._rounding import round_db, round_ratio
-from phantom._utils import is_near_silent, _block_rms_db, wrap_errors
+from phantom._utils import wrap_errors
 
 
 class DynamicsResult(BaseModel):
@@ -86,8 +86,8 @@ def analyze_dynamics(audio: AudioData) -> DynamicsResult:
     if len(mono) == 0:
         raise AnalysisError("Dynamics analysis failed: audio has 0 samples")
 
-    # Near-silence guard
-    if is_near_silent(mono):
+    # Near-silence guard (memoized on AudioData, A.7)
+    if audio.is_near_silent:
         return _silent_dynamics_result()
 
     # -- RMS level (DYN-01) --
@@ -103,7 +103,9 @@ def analyze_dynamics(audio: AudioData) -> DynamicsResult:
     crest_factor_is_low = bool(crest_factor_db < 6.0)
 
     # -- Dynamic range (DYN-04) --
-    block_rms_db = _block_rms_db(mono)
+    # Memoized on AudioData (A.2): also consumed by detect_problems'
+    # noise-floor/SNR detectors, so the block loop runs at most once.
+    block_rms_db = audio.block_rms_db
     if len(block_rms_db) >= 2:
         dynamic_range_db = float(
             np.percentile(block_rms_db, 95) - np.percentile(block_rms_db, 5)
