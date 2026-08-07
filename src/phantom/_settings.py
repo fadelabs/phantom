@@ -14,6 +14,17 @@ monkeypatch-based tests work naturally. Because results can differ by
 settings, the analysis cache folds a settings fingerprint into its key
 (``phantom._cache``) so a tuned run never serves a hit computed under
 different settings.
+
+Comparability caveat for the FFT-size knobs
+-------------------------------------------
+The frame/hop knobs below change the analysis geometry: a different
+octave-band or spectral frame size produces different band energies and
+descriptors. The built-in genre profiles and reference-target comparisons
+(``compare_to_profile`` / ``compare_to_reference``) are calibrated to the
+default geometry, so results computed under non-default FFT sizes are not
+numerically comparable with profile or reference targets. Reset the knobs
+to defaults before comparing, or re-run the comparison itself under the
+same tuned geometry.
 """
 
 from __future__ import annotations
@@ -63,6 +74,30 @@ class AnalysisSettings:
     spectral_flatness_min / band_excess_threshold_db (PROB-07/08/09),
     resonance_median_floor_db / resonance_prominence_db (PROB-10),
     lossy_shelf_drop_db (PROB-13).
+
+    Masking (``phantom.masking``)
+    ------------------------------
+    severity_high / severity_moderate / severity_low:
+        Overlap-score boundaries for the high/moderate/low/none labels.
+    masking_floor_db:
+        Bands more than this far below the pair peak are zeroed before
+        scoring.
+
+    FFT / frame sizes (``phantom.spectral``, ``phantom._bands``,
+    ``phantom.problems``)
+    -------------------------------------------------------------------------
+    spectral_frame_size / spectral_hop_size:
+        Main spectral pass (2048/1024 at 44.1k, ~46ms/~23ms).
+    octave_frame_size / octave_hop_size:
+        Octave-band energy pass, shared by spectral and masking (4096/2048).
+    flatness_frame_size:
+        Spectral-flatness gate used by the band-excess detectors (4096).
+    spectrum_frame_size:
+        Shared average-power-spectrum pass used by resonance and lossy-codec
+        detection (8192).
+
+    Changing any frame size changes measured values; see the module
+    docstring's comparability caveat before tuning.
     """
 
     # Phase / dynamics (previous migration).
@@ -85,6 +120,20 @@ class AnalysisSettings:
     resonance_median_floor_db: float = -40.0
     resonance_prominence_db: float = 12.0
     lossy_shelf_drop_db: float = 20.0
+
+    # Masking severity splits and energy floor.
+    severity_high: float = 0.6
+    severity_moderate: float = 0.3
+    severity_low: float = 0.1
+    masking_floor_db: float = 40.0
+
+    # FFT / frame sizes for the spectral, octave-band, and problems passes.
+    spectral_frame_size: int = 2048
+    spectral_hop_size: int = 1024
+    octave_frame_size: int = 4096
+    octave_hop_size: int = 2048
+    flatness_frame_size: int = 4096
+    spectrum_frame_size: int = 8192
 
     def fingerprint(self) -> str:
         """Deterministic per-value hash used for analysis cache keys.
@@ -132,4 +181,14 @@ def analysis_settings() -> AnalysisSettings:
         ),
         resonance_prominence_db=_get_env_int("PHANTOM_RESONANCE_PROMINENCE_DB", 12),
         lossy_shelf_drop_db=_get_env_float("PHANTOM_LOSSY_SHELF_DROP_DB", 20.0),
+        severity_high=_get_env_float("PHANTOM_MASKING_SEVERITY_HIGH", 0.6),
+        severity_moderate=_get_env_float("PHANTOM_MASKING_SEVERITY_MODERATE", 0.3),
+        severity_low=_get_env_float("PHANTOM_MASKING_SEVERITY_LOW", 0.1),
+        masking_floor_db=_get_env_float("PHANTOM_MASKING_FLOOR_DB", 40.0),
+        spectral_frame_size=_get_env_int("PHANTOM_SPECTRAL_FRAME_SIZE", 2048),
+        spectral_hop_size=_get_env_int("PHANTOM_SPECTRAL_HOP_SIZE", 1024),
+        octave_frame_size=_get_env_int("PHANTOM_OCTAVE_FRAME_SIZE", 4096),
+        octave_hop_size=_get_env_int("PHANTOM_OCTAVE_HOP_SIZE", 2048),
+        flatness_frame_size=_get_env_int("PHANTOM_FLATNESS_FRAME_SIZE", 4096),
+        spectrum_frame_size=_get_env_int("PHANTOM_SPECTRUM_FRAME_SIZE", 8192),
     )

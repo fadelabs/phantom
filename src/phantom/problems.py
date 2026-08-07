@@ -175,8 +175,10 @@ def detect_problems(
     # calls; _average_power_spectrum (frame_size=8192) is used by both
     # _detect_resonances and _detect_lossy_codec. Pre-computing eliminates
     # 4 redundant FFT passes (3 flatness + 1 power spectrum).
-    flatness = _spectral_flatness(mono)
-    spectrum_8k = _average_power_spectrum(mono, 8192, audio.sample_rate)
+    flatness = _spectral_flatness(mono, frame_size=effective.flatness_frame_size)
+    spectrum_8k = _average_power_spectrum(
+        mono, effective.spectrum_frame_size, audio.sample_rate
+    )
 
     # Frequency-domain detectors (band excess via parametric function)
     problems.extend(
@@ -721,11 +723,11 @@ def _detect_resonances(
         mono: Mono audio signal as numpy array.
         sample_rate: Sample rate in Hz.
         power_spectrum: Pre-computed (avg_spectrum, freqs) tuple from
-            _average_power_spectrum(mono, 8192, sample_rate). When None,
-            computes own. Passed by detect_problems to share FFT with
-            _detect_lossy_codec.
+            _average_power_spectrum(mono, spectrum_frame_size, sample_rate).
+            When None, computes own at the settings frame size. Passed by
+            detect_problems to share FFT with _detect_lossy_codec.
     """
-    frame_size = 8192
+    frame_size = settings.spectrum_frame_size
 
     if power_spectrum is None:
         result = _average_power_spectrum(mono, frame_size, sample_rate)
@@ -808,14 +810,14 @@ def _detect_lossy_codec(
         mono: Mono audio signal as numpy array.
         sample_rate: Sample rate in Hz.
         power_spectrum: Pre-computed (avg_spectrum, freqs) tuple from
-            _average_power_spectrum(mono, 8192, sample_rate). When None,
-            computes own. Passed by detect_problems to share FFT with
-            _detect_resonances.
+            _average_power_spectrum(mono, spectrum_frame_size, sample_rate).
+            When None, computes own at the settings frame size. Passed by
+            detect_problems to share FFT with _detect_resonances.
     """
     if sample_rate < 44100:
         return []  # Need Nyquist >= 22kHz
 
-    frame_size = 8192
+    frame_size = settings.spectrum_frame_size
 
     if power_spectrum is None:
         result = _average_power_spectrum(mono, frame_size, sample_rate)

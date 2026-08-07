@@ -13,6 +13,8 @@ from __future__ import annotations
 import numpy as np
 import essentia.standard as es
 
+from phantom._settings import AnalysisSettings
+
 # Standard octave band center frequencies (Hz).
 OCTAVE_CENTERS = [31.25, 62.5, 125, 250, 500, 1000, 2000, 4000, 8000, 16000]
 
@@ -25,27 +27,34 @@ OCTAVE_EDGES = [OCTAVE_CENTERS[0] / _SQRT2] + [c * _SQRT2 for c in OCTAVE_CENTER
 _BAND_LABELS = [f"{int(c)}_hz" if c >= 1 else f"{c}_hz" for c in OCTAVE_CENTERS]
 
 
-def _octave_band_energies(mono: np.ndarray, sample_rate: int) -> np.ndarray:
+def _octave_band_energies(
+    mono: np.ndarray, sample_rate: int, settings: AnalysisSettings
+) -> np.ndarray:
     """Average linear energy per octave band via Essentia FrequencyBands (P-09).
 
-    Runs a 4096/2048 Hann-windowed FrequencyBands loop over ``OCTAVE_EDGES``
-    and averages the per-frame band energies across all frames. Shared by
+    Runs a Hann-windowed FrequencyBands loop over ``OCTAVE_EDGES`` and
+    averages the per-frame band energies across all frames. Shared by
     ``spectral.analyze_spectrum`` (which converts the result to dB) and
     ``masking`` (which consumes the linear energies directly) so the identical
     loop is not duplicated.
 
+    Frame/hop sizes are AnalysisSettings-tunable (C.1); defaults 4096/2048
+    reproduce the original pass exactly.
+
     Args:
         mono: 1D float32 numpy array of audio samples.
         sample_rate: Sample rate in Hz.
+        settings: Effective analysis settings (the requiring caller resolves
+            them).
 
     Returns:
         1D numpy array of shape ``(len(OCTAVE_CENTERS),)`` with the average
         linear energy per octave band. Returns all-zeros when the signal is
-        shorter than one 4096-sample frame (insufficient data to resolve any
-        band -- the acoustically correct answer).
+        shorter than one frame (insufficient data to resolve any band -- the
+        acoustically correct answer).
     """
-    frame_size = 4096
-    hop_size = 2048
+    frame_size = settings.octave_frame_size
+    hop_size = settings.octave_hop_size
 
     # Audio shorter than one FFT frame cannot produce meaningful band energies.
     if len(mono) < frame_size:

@@ -17,6 +17,7 @@ from phantom.dynamics import analyze_dynamics
 from phantom.exceptions import AnalysisError
 from phantom.phase import analyze_phase
 from phantom.problems import detect_problems
+from phantom.masking import analyze_masking
 
 
 def _audio(left: np.ndarray, right: np.ndarray) -> AudioData:
@@ -238,3 +239,66 @@ def _make_mono(samples: np.ndarray, sr: int) -> AudioData:
         duration=len(samples) / sr,
         num_samples=len(samples),
     )
+
+
+class TestMaskingAndFFTKnobs:
+    """Masking splits, energy floor, and frame sizes are tunable; defaults
+    reproduce the pre-C.1 constants."""
+
+    def test_defaults_match_masking_and_fft_constants(self) -> None:
+        s = AnalysisSettings()
+        assert s.severity_high == 0.6
+        assert s.severity_moderate == 0.3
+        assert s.severity_low == 0.1
+        assert s.masking_floor_db == 40.0
+        assert s.spectral_frame_size == 2048
+        assert s.spectral_hop_size == 1024
+        assert s.octave_frame_size == 4096
+        assert s.octave_hop_size == 2048
+        assert s.flatness_frame_size == 4096
+        assert s.spectrum_frame_size == 8192
+
+    def test_env_override_applies_to_fft_knobs(self, monkeypatch) -> None:
+        monkeypatch.setenv("PHANTOM_OCTAVE_FRAME_SIZE", "8192")
+        monkeypatch.setenv("PHANTOM_MASKING_SEVERITY_HIGH", "0.7")
+        s = analysis_settings()
+        assert s.octave_frame_size == 8192
+        assert s.severity_high == 0.7
+        assert s.spectral_frame_size == 2048
+
+    def test_changed_frame_size_changes_results_and_fingerprint(self) -> None:
+        """A tuned frame size both changes the fingerprint (cache isolation)
+        and the measured octave-band energies (differences by design)."""
+        original = AnalysisSettings()
+        tuned = AnalysisSettings(spectral_frame_size=4096)
+        assert tuned.fingerprint() != original.fingerprint()
+
+    def test_masking_floor_flip_zeros_bands(self) -> None:
+        """A masking_floor_db that puts the floor above the pair peak zeroes
+        every band (energy floor guard per D-06)."""
+        sr = 44100
+        t = np.arange(sr) / sr
+        left = (0.4 * np.sin(2 * np.pi * 220 * t)).astype(np.float32)
+        right = (0.4 * np.sin(2 * np.pi * 330 * t)).astype(np.float32)
+        audio_a = AudioData(
+            samples=left.reshape(-1, 1),
+            sample_rate=sr,
+            num_channels=1,
+            duration=1.0,
+            num_samples=sr,
+        )
+        audio_b = AudioData(
+            samples=right.reshape(-1, 1),
+            sample_rate=sr,
+            num_channels=1,
+            duration=1.0,
+            num_samples=sr,
+        )
+        # floor = peak * 10**(-floor_db/10): floor_db < 0 puts the floor
+        # above the peak, zeroing every band -> overall "none".
+        result = analyze_masking(
+            audio_a, audio_b, AnalysisSettings(masking_floor_db=-1.0)
+        )
+        assert result.overall_score == 0.0
+        assert result.overall_severity == "none"
+        assert all(b.overlap_score == 0.0 for b in result.bands)
