@@ -23,6 +23,7 @@ from phantom.audio import AudioData, load_audio
 from phantom._cache import _cached_analysis
 from phantom.dynamics import analyze_dynamics
 from phantom.exceptions import AnalysisError, AudioLoadError, DependencyMissingError
+from phantom.facade import ANALYSIS_TYPES
 from phantom.loudness import analyze_loudness
 from phantom._profiles import ReferenceProfile
 from phantom.spectral import analyze_spectrum
@@ -358,10 +359,16 @@ def compare_to_profile(
     if is_near_silent(mono):
         return _silent_comparison_result()
 
-    spectrum = _cached_analysis(audio, "analyze_spectrum", analyze_spectrum)
-    loudness = _cached_analysis(audio, "analyze_loudness", analyze_loudness)
-    dynamics = _cached_analysis(audio, "analyze_dynamics", analyze_dynamics)
-    stereo = _cached_analysis(audio, "analyze_stereo", analyze_stereo)
+    spectrum = _cached_analysis(
+        audio, ANALYSIS_TYPES["spectral"].cache_key, analyze_spectrum
+    )
+    loudness = _cached_analysis(
+        audio, ANALYSIS_TYPES["loudness"].cache_key, analyze_loudness
+    )
+    dynamics = _cached_analysis(
+        audio, ANALYSIS_TYPES["dynamics"].cache_key, analyze_dynamics
+    )
+    stereo = _cached_analysis(audio, ANALYSIS_TYPES["stereo"].cache_key, analyze_stereo)
 
     # Loudness
     if loudness.integrated_lufs is not None:
@@ -457,14 +464,30 @@ def compare_to_reference(
     if is_near_silent(mono) or is_near_silent(ref_mono):
         return ReferenceComparisonResult()
 
-    spectrum_a = _cached_analysis(audio, "analyze_spectrum", analyze_spectrum)
-    spectrum_b = _cached_analysis(ref_audio, "analyze_spectrum", analyze_spectrum)
-    loudness_a = _cached_analysis(audio, "analyze_loudness", analyze_loudness)
-    loudness_b = _cached_analysis(ref_audio, "analyze_loudness", analyze_loudness)
-    dynamics_a = _cached_analysis(audio, "analyze_dynamics", analyze_dynamics)
-    dynamics_b = _cached_analysis(ref_audio, "analyze_dynamics", analyze_dynamics)
-    stereo_a = _cached_analysis(audio, "analyze_stereo", analyze_stereo)
-    stereo_b = _cached_analysis(ref_audio, "analyze_stereo", analyze_stereo)
+    spectrum_a = _cached_analysis(
+        audio, ANALYSIS_TYPES["spectral"].cache_key, analyze_spectrum
+    )
+    spectrum_b = _cached_analysis(
+        ref_audio, ANALYSIS_TYPES["spectral"].cache_key, analyze_spectrum
+    )
+    loudness_a = _cached_analysis(
+        audio, ANALYSIS_TYPES["loudness"].cache_key, analyze_loudness
+    )
+    loudness_b = _cached_analysis(
+        ref_audio, ANALYSIS_TYPES["loudness"].cache_key, analyze_loudness
+    )
+    dynamics_a = _cached_analysis(
+        audio, ANALYSIS_TYPES["dynamics"].cache_key, analyze_dynamics
+    )
+    dynamics_b = _cached_analysis(
+        ref_audio, ANALYSIS_TYPES["dynamics"].cache_key, analyze_dynamics
+    )
+    stereo_a = _cached_analysis(
+        audio, ANALYSIS_TYPES["stereo"].cache_key, analyze_stereo
+    )
+    stereo_b = _cached_analysis(
+        ref_audio, ANALYSIS_TYPES["stereo"].cache_key, analyze_stereo
+    )
 
     # Loudness
     loudness_devs = {}
