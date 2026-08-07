@@ -45,9 +45,9 @@ the new tool. This module does not override the snapshot's wording.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from typing import Callable
+from typing import ClassVar
 
 from pydantic import BaseModel, ConfigDict
 
@@ -240,7 +240,9 @@ class StemDiagnosticResult(RoundedModel):
     phase: PhaseResult
     problems: ProblemsResult
 
-    _ROUND_FIELDS = {"duration_seconds": round_duration}
+    _ROUND_FIELDS: ClassVar[dict[str, Callable[[object], object]]] = {
+        "duration_seconds": round_duration
+    }
 
 
 class BatchDiagnosticResult(BaseModel):

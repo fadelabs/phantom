@@ -11,7 +11,8 @@ Near-silent audio returns None for all values (per D-05).
 
 from __future__ import annotations
 
-from typing import Optional
+from collections.abc import Callable
+from typing import ClassVar, Optional
 
 import numpy as np
 
@@ -28,7 +29,7 @@ class PanoramaDistribution(RoundedModel):
     center: float = 0.0
     right: float = 0.0
 
-    _ROUND_FIELDS = {
+    _ROUND_FIELDS: ClassVar[dict[str, Callable[[object], object]]] = {
         "left": round_pct,
         "center": round_pct,
         "right": round_pct,
@@ -44,7 +45,7 @@ class StereoResult(RoundedModel):
     balance_db: Optional[float] = None
     panorama_pct: Optional[PanoramaDistribution] = None
 
-    _ROUND_FIELDS = {
+    _ROUND_FIELDS: ClassVar[dict[str, Callable[[object], object]]] = {
         "correlation": round_ratio,
         "stereo_width": round_ratio,
         "mid_side_ratio_db": round_db,

@@ -11,7 +11,8 @@ Near-silent audio returns None for all values (per D-05).
 
 from __future__ import annotations
 
-from typing import Optional
+from collections.abc import Callable
+from typing import ClassVar, Optional
 
 import numpy as np
 import essentia.standard as es
@@ -32,7 +33,7 @@ class DynamicsResult(RoundedModel):
     dynamic_complexity: Optional[float] = None
     loudness_db: Optional[float] = None
 
-    _ROUND_FIELDS = {
+    _ROUND_FIELDS: ClassVar[dict[str, Callable[[object], object]]] = {
         "rms_dbfs": round_db,
         "peak_dbfs": round_db,
         "crest_factor_db": round_db,

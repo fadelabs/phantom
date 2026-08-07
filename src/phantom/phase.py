@@ -16,9 +16,9 @@ Near-silent audio returns None for all values (per D-05).
 
 from __future__ import annotations
 
-from typing import Optional
-
+from collections.abc import Callable
 from functools import partial
+from typing import ClassVar, Optional
 
 import numpy as np
 import scipy.signal as sig
@@ -43,7 +43,7 @@ class PhaseResult(RoundedModel):
     per_band_correlation: Optional[dict[str, float]] = None
     polarity_inverted: Optional[bool] = None
 
-    _ROUND_FIELDS = {
+    _ROUND_FIELDS: ClassVar[dict[str, Callable[[object], object]]] = {
         "phase_correlation": round_ratio,
         # Per-band correlations round to 4dp (4th-order bandpass precision);
         # unit-neutral dict, not dB (review F8).
@@ -59,7 +59,7 @@ class PhaseCompareResult(RoundedModel):
     correlation: Optional[float] = None
     polarity_inverted: Optional[bool] = None
 
-    _ROUND_FIELDS = {
+    _ROUND_FIELDS: ClassVar[dict[str, Callable[[object], object]]] = {
         "delay_ms": round_ms,
         "correlation": round_ratio,
     }

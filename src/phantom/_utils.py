@@ -364,7 +364,7 @@ def is_near_silent(mono: np.ndarray) -> bool:
     return rms_db < SILENCE_THRESHOLD_DB
 
 
-def guarded_mono(audio: "AudioData", failure_label: str) -> np.ndarray | None:
+def guarded_mono(audio: AudioData, failure_label: str) -> np.ndarray | None:
     """Return ``audio.mono`` after the standard empty/silence guards (B.2).
 
     Every analyzer starts with the same two pre-checks: zero samples raise

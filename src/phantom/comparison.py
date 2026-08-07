@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from functools import partial
-from typing import Optional
+from typing import ClassVar, Optional
 
 import numpy as np
 from pydantic import BaseModel
@@ -81,7 +82,9 @@ class RangeDeviationResult(RoundedModel):
 
     # Unit-neutral list rounding: target_range is a LUFS/dB bound pair, not a
     # list of ratios (review F8).
-    _ROUND_FIELDS = {"target_range": partial(round_list, dp=2)}
+    _ROUND_FIELDS: ClassVar[dict[str, Callable[[object], object]]] = {
+        "target_range": partial(round_list, dp=2)
+    }
 
 
 class MonoBelowResult(RoundedModel):
@@ -92,7 +95,7 @@ class MonoBelowResult(RoundedModel):
     has_stereo_bass: bool
     rating: str
 
-    _ROUND_FIELDS = {
+    _ROUND_FIELDS: ClassVar[dict[str, Callable[[object], object]]] = {
         "mono_below_hz": round_hz,
         "bass_correlation": round_ratio,
     }
@@ -134,7 +137,7 @@ class MetricDiff(RoundedModel):
     after: Optional[float] = None
     change: Optional[float] = None
 
-    _ROUND_FIELDS = {
+    _ROUND_FIELDS: ClassVar[dict[str, Callable[[object], object]]] = {
         "before": round_db,
         "after": round_db,
         "change": round_db,

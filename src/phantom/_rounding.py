@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from functools import partial
-from typing import Callable, ClassVar
+from typing import ClassVar
 
 from pydantic import BaseModel, model_validator
 

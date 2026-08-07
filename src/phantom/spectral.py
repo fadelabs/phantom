@@ -9,7 +9,8 @@ Uses Essentia's standard-mode algorithms for all spectral feature extraction.
 
 from __future__ import annotations
 
-from typing import Optional
+from collections.abc import Callable
+from typing import ClassVar, Optional
 
 import numpy as np
 import essentia.standard as es
@@ -40,7 +41,7 @@ class SpectralResult(RoundedModel):
     dissonance: Optional[float] = None
     octave_band_energy_db: Optional[dict[str, float]] = None
 
-    _ROUND_FIELDS = {
+    _ROUND_FIELDS: ClassVar[dict[str, Callable[[object], object]]] = {
         "spectral_centroid_hz": round_hz,
         "spectral_rolloff_hz": round_hz,
         "spectral_flatness": round_ratio,
