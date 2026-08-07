@@ -19,6 +19,7 @@ import numpy as np
 from phantom.audio import AudioData
 from phantom.exceptions import AnalysisError
 from phantom._rounding import RoundedModel, round_db, round_pct, round_ratio
+from phantom._settings import AnalysisSettings
 from phantom._utils import guarded_mono, is_near_silent, wrap_errors
 
 
@@ -121,8 +122,14 @@ def _panorama_distribution(
 
 
 @wrap_errors("Stereo analysis failed")
-def analyze_stereo(audio: AudioData) -> StereoResult:
+def analyze_stereo(
+    audio: AudioData, settings: AnalysisSettings | None = None
+) -> StereoResult:
     """Analyze stereo field characteristics of an audio signal.
+
+    *settings* is accepted for facade signature uniformity (C.1) and unused:
+    stereo descriptors have no tunable thresholds.
+
 
     Computes five stereo descriptors:
       - correlation: L/R Pearson correlation coefficient [-1.0, 1.0]

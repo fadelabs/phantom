@@ -12,6 +12,7 @@ import pytest
 from pydantic import BaseModel, ValidationError
 
 from phantom._cache import _MISSING, analysis_cache
+from phantom._settings import analysis_settings
 from phantom.audio import AudioData
 from phantom.facade import (
     ANALYSIS_TYPES,
@@ -97,9 +98,15 @@ def test_run_analyses_all_runs_six_and_populates_shared_cache(
         assert set(results) == set(ANALYSIS_TYPES)
         for key, result in results.items():
             assert isinstance(result, BaseModel), f"{key} is not a model"
-        # Cache entries keyed under the canonical names.
-        assert analysis_cache.get(audio, "analyze_spectrum") is not _MISSING
-        assert analysis_cache.get(audio, "detect_problems") is not _MISSING
+        # Cache entries keyed under the canonical names, scoped by the
+        # effective settings fingerprint (C.1).
+        settings_key = "|" + analysis_settings().fingerprint()
+        assert (
+            analysis_cache.get(audio, "analyze_spectrum", settings_key) is not _MISSING
+        )
+        assert (
+            analysis_cache.get(audio, "detect_problems", settings_key) is not _MISSING
+        )
         # A second call on the same bytes reuses the cache (same object).
         assert run_analyses(audio)["spectral"] is results["spectral"]
     finally:

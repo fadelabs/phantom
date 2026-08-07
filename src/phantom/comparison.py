@@ -10,6 +10,7 @@ from typing import ClassVar, Optional
 import numpy as np
 from pydantic import BaseModel
 
+from phantom._bands import octave_band_map_model
 from phantom._rounding import (
     RoundedModel,
     round_db,
@@ -144,22 +145,29 @@ class MetricDiff(RoundedModel):
     }
 
 
+# Typed per-band value maps (C.2): the keys stay the "250_hz" octave-band
+# vocabulary; each band holds a DeviationResult (comparisons) or MetricDiff
+# (matching) model instead of an unreadable string-keyed dict.
+FrequencyDeviationMap = octave_band_map_model("FrequencyDeviationMap", DeviationResult)
+SpectralChangeMap = octave_band_map_model("SpectralChangeMap", MetricDiff)
+
+
 class MatchAdjustments(BaseModel):
     integrated_lufs: MetricDiff
     true_peak_dbtp: MetricDiff
-    spectral_change_db: dict[str, MetricDiff]
+    spectral_change_db: SpectralChangeMap
 
 
 class ProfileComparisonResult(BaseModel):
     loudness: Optional[LoudnessProfileComparisonSection] = None
-    frequency: Optional[dict[str, DeviationResult]] = None
+    frequency: Optional[FrequencyDeviationMap] = None
     dynamics: Optional[DynamicsComparisonSection] = None
     stereo: Optional[StereoProfileComparisonSection] = None
 
 
 class ReferenceComparisonResult(BaseModel):
     loudness: Optional[LoudnessReferenceComparisonSection] = None
-    frequency: Optional[dict[str, DeviationResult]] = None
+    frequency: Optional[FrequencyDeviationMap] = None
     dynamics: Optional[DynamicsReferenceComparisonSection] = None
     stereo: Optional[StereoReferenceComparisonSection] = None
 

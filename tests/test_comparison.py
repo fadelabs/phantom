@@ -12,6 +12,7 @@ from unittest.mock import patch, MagicMock
 from phantom.audio import AudioData
 from phantom.facade import ANALYSIS_TYPES, AnalysisSpec
 from phantom.comparison import (
+    FrequencyDeviationMap,
     _check_mono_below,
     _normalize_band_energies,
     _rate_deviation,
@@ -341,7 +342,7 @@ class TestCompareToProfile:
         """Frequency section should have per-band DeviationResult objects."""
         result = compare_to_profile(audio_3s, profile)
         freq = result.frequency
-        assert isinstance(freq, dict)
+        assert isinstance(freq, FrequencyDeviationMap)
         # Should have at least some band keys
         assert "1000_hz" in freq
 
@@ -592,7 +593,7 @@ class TestProfileComparisonUnmeasuredBands:
         result = compare_to_profile(audio, profile)
         freq = result.frequency
         assert "20000_hz" in freq
-        assert freq["20000_hz"].rating == "unmeasurable"
+        assert freq.get("20000_hz").rating == "unmeasurable"
 
 
 class TestReferenceComparisonUnionBands:
@@ -665,7 +666,7 @@ class TestReferenceComparisonUnionBands:
         assert "500_hz" in freq
         assert "1000_hz" in freq
         assert "extra_hz" in freq
-        assert freq["extra_hz"].rating == "unmeasurable"
+        assert freq.get("extra_hz").rating == "unmeasurable"
 
 
 class TestMatchToReferenceOverwrite:

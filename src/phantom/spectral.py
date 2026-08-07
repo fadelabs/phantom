@@ -18,6 +18,7 @@ import essentia.standard as es
 from phantom._bands import (  # re-exported for backward compatibility (B.6)
     OCTAVE_CENTERS,  # noqa: F401 -- tests import it from phantom.spectral
     _BAND_LABELS,
+    OctaveBandEnergyDb,
     _octave_band_energies,
 )
 from phantom.audio import AudioData
@@ -28,6 +29,7 @@ from phantom._rounding import (
     round_ratio,
     round_ratio_list,
 )
+from phantom._settings import AnalysisSettings, analysis_settings
 from phantom._utils import guarded_mono, wrap_errors
 
 
@@ -39,7 +41,7 @@ class SpectralResult(RoundedModel):
     spectral_flatness: Optional[float] = None
     spectral_contrast: Optional[list[float]] = None
     dissonance: Optional[float] = None
-    octave_band_energy_db: Optional[dict[str, float]] = None
+    octave_band_energy_db: Optional[OctaveBandEnergyDb] = None
 
     _ROUND_FIELDS: ClassVar[dict[str, Callable[[object], object]]] = {
         "spectral_centroid_hz": round_hz,
@@ -57,8 +59,13 @@ def _silent_spectral_result() -> SpectralResult:
 
 
 @wrap_errors("Spectral analysis failed")
-def analyze_spectrum(audio: AudioData) -> SpectralResult:
+def analyze_spectrum(
+    audio: AudioData, settings: AnalysisSettings | None = None
+) -> SpectralResult:
     """Analyze spectral characteristics of an audio signal.
+
+    *settings* carries the tunable frame/hop sizes (C.1) and defaults to
+    the per-call env resolution.
 
     Computes six spectral descriptors from the mono mixdown of the input:
       - spectral_centroid_hz: center of spectral mass (Hz)
@@ -79,15 +86,17 @@ def analyze_spectrum(audio: AudioData) -> SpectralResult:
         AnalysisError: If Essentia algorithms fail.
     """
     sample_rate = audio.sample_rate
+    effective = settings if settings is not None else analysis_settings()
 
     # Empty/silence guards (B.2): mono, or None when near-silent.
     mono = guarded_mono(audio, "Spectral analysis failed")
     if mono is None:
         return _silent_spectral_result()
 
-    # Spectral features: 2048/1024 (~46ms/~23ms at 44.1kHz) per AES standard for tonal analysis
-    frame_size = 2048
-    hop_size = 1024
+    # Spectral features: 2048/1024 (~46ms/~23ms at 44.1kHz) per AES standard
+    # for tonal analysis; both are AnalysisSettings-tunable (C.1).
+    frame_size = effective.spectral_frame_size
+    hop_size = effective.spectral_hop_size
 
     windowing = es.Windowing(type="hann", size=frame_size)
     spectrum = es.Spectrum(size=frame_size)
@@ -139,7 +148,7 @@ def analyze_spectrum(audio: AudioData) -> SpectralResult:
 
     # Octave bands: 4096/2048 (~93ms/~46ms) — longer window for low-frequency
     # resolution. Shared with masking via _bands._octave_band_energies (B.6).
-    avg_bands = _octave_band_energies(mono, sample_rate)
+    avg_bands = _octave_band_energies(mono, sample_rate, effective)
 
     # Convert to dB
     eps = 1e-10  # log-domain floor to avoid -inf on silence

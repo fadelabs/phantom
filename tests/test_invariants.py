@@ -157,7 +157,7 @@ def test_time_reversal_preserves_spectrum(seed, freq):
         forward.octave_band_energy_db.keys() == reversed_.octave_band_energy_db.keys()
     )
     for band, fwd_db in forward.octave_band_energy_db.items():
-        rev_db = reversed_.octave_band_energy_db[band]
+        rev_db = reversed_.octave_band_energy_db.get(band)
         assert abs(fwd_db - rev_db) < 1.0, f"band {band}: {fwd_db} vs {rev_db}"
 
     assert forward.spectral_centroid_hz is not None

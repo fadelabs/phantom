@@ -13,51 +13,81 @@ Near-silent audio returns an empty problems list with clean=True (per D-12).
 
 from __future__ import annotations
 
+from typing import Optional
+
 import numpy as np
 import essentia.standard as es
 import scipy.signal as sig
 from scipy.fft import rfft, rfftfreq
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from phantom.audio import AudioData
+from phantom._bands import FlatMapModel
+from phantom._settings import AnalysisSettings, analysis_settings
 from phantom._utils import guarded_mono, wrap_errors
 
 _SEVERITY_SORT_ORDER = {"dealbreaker": 0, "significant": 1, "moderate": 2, "minor": 3}
 
-# ---------------------------------------------------------------------------
-# Threshold constants (extracted from inline magic numbers for clarity)
-# ---------------------------------------------------------------------------
-
-_CLIPPING_THRESHOLD = 1.0  # Digital maximum for clipping detection (PROB-01)
-_DC_OFFSET_THRESHOLD = 5e-4  # 0.05% of full scale, above 24-bit noise floor (PROB-02)
-_ISP_OVERSHOOT_THRESHOLD_DB = 0.5  # Min overshoot to flag inter-sample peaks (PROB-03)
-_ISP_SEVERE_DBTP = -1.0  # True peak above this is "significant" severity (PROB-03)
-_DYNAMIC_SPREAD_MIN_DB = (
-    10.0  # Min dynamic range to trust noise floor estimate (PROB-04/05)
-)
-_NOISE_FLOOR_MODERATE_DB = -50.0  # Noise floor above this is "moderate" (PROB-04)
-_NOISE_FLOOR_MINOR_DB = -60.0  # Noise floor above this is "minor" (PROB-04)
-_SNR_PROFESSIONAL_DB = 60.0  # SNR above this is professional quality (PROB-05)
-_SNR_POOR_DB = 50.0  # SNR below this is "poor" / "significant" (PROB-05)
-_SPECTRAL_FLATNESS_MIN = (
-    0.01  # Min flatness to run band-excess detectors (PROB-07/08/09)
-)
-_BAND_EXCESS_THRESHOLD_DB = (
-    6.0  # Band excess above this triggers detection (PROB-07/08/09)
-)
-_RESONANCE_MEDIAN_FLOOR_DB = (
-    -40.0
-)  # Median spectral level floor for resonance detection (PROB-10)
-_RESONANCE_PROMINENCE_DB = (
-    12  # Peak prominence threshold for resonance detection (PROB-10)
-)
-_LOSSY_SHELF_DROP_DB = 20.0  # Shelf drop above this indicates lossy codec (PROB-13)
+# All detection thresholds live in AnalysisSettings (C.1), one knob per
+# detector (PROB-01..13); see phantom._settings for names, defaults, and env
+# overrides.
 
 
 # ---------------------------------------------------------------------------
 # Models
 # ---------------------------------------------------------------------------
+
+
+class ProblemDetails(FlatMapModel):
+    """Typed per-problem detail fields (C.2).
+
+    Declares every key the built-in detectors write (one field per
+    detector); fields serialize under their own names with unset fields
+    dropped, so ``model_dump()`` output is byte-identical to the raw dicts
+    this replaces -- including partial detail sets (e.g. mono dc_offset
+    carries no ``channel``). Unknown keys pass through as extras (matching
+    the band maps' policy) so forward-compatible detail vocabulary from
+    callers or future detectors is never dropped at serialization.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    # PROB-01 clipping
+    clipped_samples: Optional[int] = None
+    clipped_percent: Optional[float] = None
+    # PROB-02 dc offset (channel present only for stereo)
+    dc_offset: Optional[float] = None
+    channel: Optional[str] = None
+    # PROB-03 inter-sample peaks
+    true_peak_dbtp: Optional[float] = None
+    sample_peak_dbfs: Optional[float] = None
+    overshoot_db: Optional[float] = None
+    # PROB-04/05 noise floor + SNR (share values). Declared in the SNR
+    # detector's construction order so the serialized key order matches the
+    # raw dicts exactly; the noise-floor item carries only noise_floor_dbfs.
+    snr_db: Optional[float] = None
+    signal_rms_dbfs: Optional[float] = None
+    noise_floor_dbfs: Optional[float] = None
+    quality: Optional[str] = None
+    # PROB-06 hum
+    primary_frequency_hz: Optional[float] = None
+    primary_salience: Optional[float] = None
+    num_components: Optional[int] = None
+    frequencies_hz: Optional[list[float]] = None
+    # PROB-07/08/09 band excess
+    band_energy_db: Optional[float] = None
+    overall_energy_db: Optional[float] = None
+    excess_db: Optional[float] = None
+    # PROB-10 resonances
+    num_resonances: Optional[int] = None
+    resonances: Optional[list[dict[str, float]]] = None
+    # PROB-13 lossy codec
+    shelf_drop_db: Optional[float] = None
+    energy_14_16khz_db: Optional[float] = None
+    energy_16_20khz_db: Optional[float] = None
+    # batch sample-rate mismatch (inject_sample_rate_mismatch)
+    sample_rates: Optional[dict[str, int]] = None
 
 
 class ProblemItem(BaseModel):
@@ -66,7 +96,7 @@ class ProblemItem(BaseModel):
     type: str
     severity: str
     message: str
-    details: dict  # Varies per problem type -- kept as untyped dict per research A2
+    details: ProblemDetails
 
 
 class ProblemSummary(BaseModel):
@@ -155,8 +185,13 @@ def inject_sample_rate_mismatch(
 
 
 @wrap_errors("Problem detection failed")
-def detect_problems(audio: AudioData) -> ProblemsResult:
+def detect_problems(
+    audio: AudioData, settings: AnalysisSettings | None = None
+) -> ProblemsResult:
     """Detect audio production problems and return severity-ranked results.
+
+    All detection thresholds are AnalysisSettings-tunable (C.1); *settings*
+    defaults to the per-call env resolution.
 
     Runs all detection checks internally (D-01). Returns a ProblemsResult
     with problems (list of ProblemItem), clean (bool), and summary
@@ -171,18 +206,22 @@ def detect_problems(audio: AudioData) -> ProblemsResult:
     Raises:
         AnalysisError: If analysis fails or audio has 0 samples.
     """
+    effective = settings if settings is not None else analysis_settings()
+
     # Empty/silence guards (B.2): mono, or None when near-silent (D-12).
     mono = guarded_mono(audio, "Problem detection failed")
     if mono is None:
         return _empty_result()
 
     problems: list[ProblemItem] = []
-    problems.extend(_detect_clipping(mono))
-    problems.extend(_detect_dc_offset(audio))
-    problems.extend(_detect_inter_sample_peaks(audio))
+    problems.extend(_detect_clipping(mono, effective))
+    problems.extend(_detect_dc_offset(audio, effective))
+    problems.extend(_detect_inter_sample_peaks(audio, effective))
     # Noise floor + SNR are ~half identical (P10 block-RMS percentile and the
     # dynamic-spread guard); both inputs are memoized on AudioData (A.2).
-    problems.extend(_detect_noise_and_snr(audio.block_rms_db, audio.mono_rms))
+    problems.extend(
+        _detect_noise_and_snr(audio.block_rms_db, audio.mono_rms, effective)
+    )
     problems.extend(_detect_hum(mono, audio.sample_rate))
 
     # Pre-compute shared FFT results for frequency-domain detectors.
@@ -190,8 +229,10 @@ def detect_problems(audio: AudioData) -> ProblemsResult:
     # calls; _average_power_spectrum (frame_size=8192) is used by both
     # _detect_resonances and _detect_lossy_codec. Pre-computing eliminates
     # 4 redundant FFT passes (3 flatness + 1 power spectrum).
-    flatness = _spectral_flatness(mono)
-    spectrum_8k = _average_power_spectrum(mono, 8192, audio.sample_rate)
+    flatness = _spectral_flatness(mono, frame_size=effective.flatness_frame_size)
+    spectrum_8k = _average_power_spectrum(
+        mono, effective.spectrum_frame_size, audio.sample_rate
+    )
 
     # Frequency-domain detectors (band excess via parametric function)
     problems.extend(
@@ -204,6 +245,7 @@ def detect_problems(audio: AudioData) -> ProblemsResult:
             "sibilance",
             "5-10kHz",
             spectral_flatness=flatness,
+            settings=effective,
         )
     )
     problems.extend(
@@ -216,6 +258,7 @@ def detect_problems(audio: AudioData) -> ProblemsResult:
             "mud",
             "200-500Hz",
             spectral_flatness=flatness,
+            settings=effective,
         )
     )
     problems.extend(
@@ -228,13 +271,18 @@ def detect_problems(audio: AudioData) -> ProblemsResult:
             "harshness",
             "2-4kHz",
             spectral_flatness=flatness,
+            settings=effective,
         )
     )
     problems.extend(
-        _detect_resonances(mono, audio.sample_rate, power_spectrum=spectrum_8k)
+        _detect_resonances(
+            mono, audio.sample_rate, power_spectrum=spectrum_8k, settings=effective
+        )
     )
     problems.extend(
-        _detect_lossy_codec(mono, audio.sample_rate, power_spectrum=spectrum_8k)
+        _detect_lossy_codec(
+            mono, audio.sample_rate, power_spectrum=spectrum_8k, settings=effective
+        )
     )
 
     # Sort by severity: dealbreaker first, minor last
@@ -252,9 +300,9 @@ def detect_problems(audio: AudioData) -> ProblemsResult:
 # ---------------------------------------------------------------------------
 
 
-def _detect_clipping(mono: np.ndarray) -> list[ProblemItem]:
+def _detect_clipping(mono: np.ndarray, settings: AnalysisSettings) -> list[ProblemItem]:
     """Detect samples at digital maximum (+/-1.0). PROB-01."""
-    clipped_mask = np.abs(mono) >= _CLIPPING_THRESHOLD
+    clipped_mask = np.abs(mono) >= settings.clipping_threshold
     n_clipped = int(np.sum(clipped_mask))
     if n_clipped == 0:
         return []
@@ -275,7 +323,9 @@ def _detect_clipping(mono: np.ndarray) -> list[ProblemItem]:
     ]
 
 
-def _detect_dc_offset(audio: AudioData) -> list[ProblemItem]:
+def _detect_dc_offset(
+    audio: AudioData, settings: AnalysisSettings
+) -> list[ProblemItem]:
     """Detect non-zero DC offset. PROB-02.
 
     Checks DC per channel so antiphase DC (L=+x, R=-x), which cancels in the
@@ -287,7 +337,9 @@ def _detect_dc_offset(audio: AudioData) -> list[ProblemItem]:
     """
     if audio.num_channels == 1:
         dc = float(np.mean(audio.mono))
-        if abs(dc) < _DC_OFFSET_THRESHOLD:  # 0.05% FS — above 24-bit noise floor
+        if (
+            abs(dc) < settings.dc_offset_threshold
+        ):  # 0.05% FS — above 24-bit noise floor
             return []
         return [
             ProblemItem(
@@ -302,7 +354,10 @@ def _detect_dc_offset(audio: AudioData) -> list[ProblemItem]:
     # with the largest magnitude DC (the worst offender).
     left_dc = float(np.mean(audio.left))
     right_dc = float(np.mean(audio.right))
-    if abs(left_dc) < _DC_OFFSET_THRESHOLD and abs(right_dc) < _DC_OFFSET_THRESHOLD:
+    if (
+        abs(left_dc) < settings.dc_offset_threshold
+        and abs(right_dc) < settings.dc_offset_threshold
+    ):
         return []
     if abs(left_dc) >= abs(right_dc):
         dc, channel = left_dc, "left"
@@ -320,8 +375,10 @@ def _detect_dc_offset(audio: AudioData) -> list[ProblemItem]:
     ]
 
 
-def _detect_inter_sample_peaks(audio: AudioData) -> list[ProblemItem]:
-    """Detect inter-sample peaks exceeding sample peak by >0.5 dB. PROB-03."""
+def _detect_inter_sample_peaks(
+    audio: AudioData, settings: AnalysisSettings
+) -> list[ProblemItem]:
+    """Detect inter-sample peaks exceeding the overshoot threshold. PROB-03."""
     # Reuse the per-file true-peak computation memoized by channel_true_peaks
     # (shared with analyze_loudness) instead of running the x4-oversampled FIR
     # a second time (P-02, P-06).
@@ -348,11 +405,13 @@ def _detect_inter_sample_peaks(audio: AudioData) -> list[ProblemItem]:
     sample_peak = worst_sample_peak
     true_peak = worst_true_peak
 
-    if overshoot_db <= _ISP_OVERSHOOT_THRESHOLD_DB:
+    if overshoot_db <= settings.isp_overshoot_threshold_db:
         return []
 
     true_peak_dbtp = float(20 * np.log10(true_peak + eps))
-    severity = "significant" if true_peak_dbtp > _ISP_SEVERE_DBTP else "moderate"
+    severity = (
+        "significant" if true_peak_dbtp > settings.isp_severe_dbtp else "moderate"
+    )
 
     return [
         ProblemItem(
@@ -371,14 +430,17 @@ def _detect_inter_sample_peaks(audio: AudioData) -> list[ProblemItem]:
     ]
 
 
-def _noise_floor_estimate(block_rms_db: list[float]) -> float | None:
+def _noise_floor_estimate(
+    block_rms_db: list[float], settings: AnalysisSettings
+) -> float | None:
     """Return the P10 noise floor when it is measurable, else None.
 
     Shared by the noise-floor and SNR detectors (PROB-04/05), which are
     ~half identical: both need the P10 block-RMS percentile and both must
     reject signals whose block levels are too uniform to separate noise
     from signal. Returns ``None`` when there is no meaningful estimate
-    (too few blocks, or dynamic spread below _DYNAMIC_SPREAD_MIN_DB).
+    (too few blocks, or dynamic spread below
+    ``settings.dynamic_spread_min_db``).
     """
     if len(block_rms_db) < 4:
         return None
@@ -389,14 +451,16 @@ def _noise_floor_estimate(block_rms_db: list[float]) -> float | None:
     # reflects the signal level itself, not actual noise. Only flag noise floor
     # when there is enough level variation to distinguish noise from signal.
     dynamic_spread = float(np.percentile(block_rms_db, 90) - noise_floor_db)
-    if dynamic_spread < _DYNAMIC_SPREAD_MIN_DB:
+    if dynamic_spread < settings.dynamic_spread_min_db:
         return None
 
     return noise_floor_db
 
 
 def _detect_noise_and_snr(
-    block_rms_db: list[float], signal_rms: float
+    block_rms_db: list[float],
+    signal_rms: float,
+    settings: AnalysisSettings,
 ) -> list[ProblemItem]:
     """Detect elevated noise floor and poor SNR (PROB-04, PROB-05).
 
@@ -406,20 +470,20 @@ def _detect_noise_and_snr(
     detector adds no array recomputation. Item order is preserved (noise
     floor before SNR), so within-severity output order is unchanged.
     """
-    noise_floor_db = _noise_floor_estimate(block_rms_db)
+    noise_floor_db = _noise_floor_estimate(block_rms_db, settings)
     if noise_floor_db is None:
         return []
 
     items: list[ProblemItem] = []
 
     # -- Noise floor (PROB-04) --
-    if noise_floor_db >= _NOISE_FLOOR_MODERATE_DB:
+    if noise_floor_db >= settings.noise_floor_moderate_db:
         severity = "moderate"
         msg = (
             f"Elevated noise floor: {noise_floor_db:.1f} dBFS "
             "(above -50 dBFS threshold)."
         )
-    elif noise_floor_db >= _NOISE_FLOOR_MINOR_DB:
+    elif noise_floor_db >= settings.noise_floor_minor_db:
         severity = "minor"
         msg = (
             f"Noise floor at {noise_floor_db:.1f} dBFS "
@@ -444,8 +508,8 @@ def _detect_noise_and_snr(
     signal_rms_db = float(20.0 * np.log10(signal_rms + 1e-10))
     snr_db = signal_rms_db - noise_floor_db
 
-    if snr_db < _SNR_PROFESSIONAL_DB:
-        if snr_db < _SNR_POOR_DB:
+    if snr_db < settings.snr_professional_db:
+        if snr_db < settings.snr_poor_db:
             severity = "significant"
             quality = "poor"
         else:
@@ -607,6 +671,7 @@ def _detect_band_excess(
     freq_label: str,
     *,
     spectral_flatness: float | None = None,
+    settings: AnalysisSettings,
 ) -> list[ProblemItem]:
     """Detect excessive energy in a frequency band. PROB-07/08/09.
 
@@ -632,7 +697,7 @@ def _detect_band_excess(
     """
     if spectral_flatness is None:
         spectral_flatness = _spectral_flatness(mono)
-    if spectral_flatness < _SPECTRAL_FLATNESS_MIN:
+    if spectral_flatness < settings.spectral_flatness_min:
         return []
 
     band_db, overall_db, excess_db = _band_excess_db(
@@ -642,7 +707,7 @@ def _detect_band_excess(
         high_hz,
     )
 
-    if excess_db <= _BAND_EXCESS_THRESHOLD_DB:
+    if excess_db <= settings.band_excess_threshold_db:
         return []
 
     return [
@@ -700,6 +765,7 @@ def _detect_resonances(
     sample_rate: int,
     *,
     power_spectrum: tuple[np.ndarray, np.ndarray] | None = None,
+    settings: AnalysisSettings,
 ) -> list[ProblemItem]:
     """Detect narrow resonant peaks (room modes). PROB-10.
 
@@ -711,11 +777,11 @@ def _detect_resonances(
         mono: Mono audio signal as numpy array.
         sample_rate: Sample rate in Hz.
         power_spectrum: Pre-computed (avg_spectrum, freqs) tuple from
-            _average_power_spectrum(mono, 8192, sample_rate). When None,
-            computes own. Passed by detect_problems to share FFT with
-            _detect_lossy_codec.
+            _average_power_spectrum(mono, spectrum_frame_size, sample_rate).
+            When None, computes own at the settings frame size. Passed by
+            detect_problems to share FFT with _detect_lossy_codec.
     """
-    frame_size = 8192
+    frame_size = settings.spectrum_frame_size
 
     if power_spectrum is None:
         result = _average_power_spectrum(mono, frame_size, sample_rate)
@@ -735,12 +801,12 @@ def _detect_resonances(
     # because energy is concentrated in a few bins. Resonance detection
     # requires a noise floor baseline to identify anomalous peaks against.
     median_level = float(np.median(avg_db))
-    if median_level < _RESONANCE_MEDIAN_FLOOR_DB:
+    if median_level < settings.resonance_median_floor_db:
         return []
 
     # Find narrow peaks with significant prominence
     peaks, props = sig.find_peaks(
-        avg_db, prominence=_RESONANCE_PROMINENCE_DB, width=(1, 20)
+        avg_db, prominence=settings.resonance_prominence_db, width=(1, 20)
     )
 
     # Filter: only keep peaks in 30-5000 Hz range with Q > 5
@@ -790,6 +856,7 @@ def _detect_lossy_codec(
     sample_rate: int,
     *,
     power_spectrum: tuple[np.ndarray, np.ndarray] | None = None,
+    settings: AnalysisSettings,
 ) -> list[ProblemItem]:
     """Detect lossy codec artifacts via 16kHz spectral shelf. PROB-13.
 
@@ -797,14 +864,14 @@ def _detect_lossy_codec(
         mono: Mono audio signal as numpy array.
         sample_rate: Sample rate in Hz.
         power_spectrum: Pre-computed (avg_spectrum, freqs) tuple from
-            _average_power_spectrum(mono, 8192, sample_rate). When None,
-            computes own. Passed by detect_problems to share FFT with
-            _detect_resonances.
+            _average_power_spectrum(mono, spectrum_frame_size, sample_rate).
+            When None, computes own at the settings frame size. Passed by
+            detect_problems to share FFT with _detect_resonances.
     """
     if sample_rate < 44100:
         return []  # Need Nyquist >= 22kHz
 
-    frame_size = 8192
+    frame_size = settings.spectrum_frame_size
 
     if power_spectrum is None:
         result = _average_power_spectrum(mono, frame_size, sample_rate)
@@ -827,7 +894,7 @@ def _detect_lossy_codec(
     energy_above = float(10.0 * np.log10(np.mean(avg_spectrum[mask_above]) + 1e-10))
     shelf_drop = energy_below - energy_above
 
-    if shelf_drop < _LOSSY_SHELF_DROP_DB:
+    if shelf_drop < settings.lossy_shelf_drop_db:
         return []
 
     return [
