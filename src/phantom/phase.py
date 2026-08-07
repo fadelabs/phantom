@@ -27,7 +27,12 @@ from phantom.audio import AudioData
 from phantom.exceptions import AnalysisError
 from phantom._resample import align_sample_rates
 from phantom._rounding import round_ms, round_ratio
-from phantom._utils import _get_env_float, is_near_silent, wrap_errors
+from phantom._utils import (
+    _get_env_float,
+    guarded_mono,
+    is_near_silent,
+    wrap_errors,
+)
 
 
 class PhaseResult(BaseModel):
@@ -180,14 +185,13 @@ def analyze_phase(audio: AudioData) -> PhaseResult:
     Raises:
         AnalysisError: If audio has 0 samples or analysis fails.
     """
-    # Empty-samples guard
+    # Empty-samples guard (the stereo branch below checks channels individually)
     if audio.num_samples == 0:
         raise AnalysisError("Phase analysis failed: audio has 0 samples")
 
-    # Mono guard (D-03): deterministic defaults
+    # Mono guard (D-03): deterministic defaults after the empty/silence guards.
     if audio.num_channels == 1:
-        # Near-silence guard for mono (memoized on AudioData, A.7)
-        if audio.is_near_silent:
+        if guarded_mono(audio, "Phase analysis failed") is None:
             return _silent_phase_result()
         nyq = audio.sample_rate / 2.0
         band_defaults = {

@@ -10,6 +10,7 @@ from pydantic import BaseModel, field_validator
 
 from phantom._rounding import round_db, round_hz, round_ratio
 from phantom._utils import (
+    guarded_mono,
     validate_input_path,
     validate_output_path,
     wrap_errors,
@@ -348,12 +349,9 @@ def compare_to_profile(
     Raises:
         AnalysisError: If audio has 0 samples or analysis fails.
     """
-    mono = audio.mono
-
-    if len(mono) == 0:
-        raise AnalysisError("Comparison analysis failed: audio has 0 samples")
-
-    if audio.is_near_silent:
+    # Empty/silence guards (B.2): mono, or None when near-silent.
+    mono = guarded_mono(audio, "Comparison analysis failed")
+    if mono is None:
         return _silent_comparison_result()
 
     # Cache key AND analyzer come from the same registry row, so they cannot
@@ -453,13 +451,10 @@ def compare_to_reference(
     Raises:
         AnalysisError: If either audio has 0 samples or analysis fails.
     """
-    mono = audio.mono
-    ref_mono = ref_audio.mono
-
-    if len(mono) == 0 or len(ref_mono) == 0:
-        raise AnalysisError("Comparison analysis failed: audio has 0 samples")
-
-    if audio.is_near_silent or ref_audio.is_near_silent:
+    # Empty/silence guards (B.2) on both inputs.
+    mono = guarded_mono(audio, "Comparison analysis failed")
+    ref_mono = guarded_mono(ref_audio, "Comparison analysis failed")
+    if mono is None or ref_mono is None:
         return ReferenceComparisonResult()
 
     # Cache key AND analyzer come from the same registry row (see the

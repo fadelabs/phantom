@@ -16,9 +16,8 @@ import essentia.standard as es
 from pydantic import BaseModel, field_validator
 
 from phantom.audio import AudioData
-from phantom.exceptions import AnalysisError
 from phantom._rounding import round_db_dict, round_hz, round_ratio, round_ratio_list
-from phantom._utils import wrap_errors
+from phantom._utils import guarded_mono, wrap_errors
 
 # Standard octave band center frequencies (Hz).
 OCTAVE_CENTERS = [31.25, 62.5, 125, 250, 500, 1000, 2000, 4000, 8000, 16000]
@@ -133,15 +132,11 @@ def analyze_spectrum(audio: AudioData) -> SpectralResult:
     Raises:
         AnalysisError: If Essentia algorithms fail.
     """
-    mono = audio.mono
     sample_rate = audio.sample_rate
 
-    # Empty-samples guard
-    if len(mono) == 0:
-        raise AnalysisError("Spectral analysis failed: audio has 0 samples")
-
-    # Near-silence guard (memoized on AudioData, A.7)
-    if audio.is_near_silent:
+    # Empty/silence guards (B.2): mono, or None when near-silent.
+    mono = guarded_mono(audio, "Spectral analysis failed")
+    if mono is None:
         return _silent_spectral_result()
 
     # Spectral features: 2048/1024 (~46ms/~23ms at 44.1kHz) per AES standard for tonal analysis

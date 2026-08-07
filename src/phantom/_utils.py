@@ -7,6 +7,7 @@ import os
 import stat
 import tempfile
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 
@@ -16,6 +17,9 @@ from phantom.exceptions import (
     PathSecurityError,
     PhantomError,
 )
+
+if TYPE_CHECKING:
+    from phantom.audio import AudioData
 
 # Silence threshold in dBFS -- signals below this are treated as silence.
 SILENCE_THRESHOLD_DB = -80.0
@@ -358,6 +362,35 @@ def is_near_silent(mono: np.ndarray) -> bool:
         return True
     rms_db = 20 * np.log10(rms)
     return rms_db < SILENCE_THRESHOLD_DB
+
+
+def guarded_mono(audio: "AudioData", failure_label: str) -> np.ndarray | None:
+    """Return ``audio.mono`` after the standard empty/silence guards (B.2).
+
+    Every analyzer starts with the same two pre-checks: zero samples raise
+    ``AnalysisError``, and a near-silent signal short-circuits to the
+    analyzer's empty result. *failure_label* carries the per-module wrap
+    prefix so the raised message stays identical, e.g.
+    ``guarded_mono(audio, "Spectral analysis failed")``.
+
+    The near-silence decision uses the memoized ``AudioData.is_near_silent``
+    (mono mixdown, A.7). Callers that must check individual channels
+    (stereo, phase) keep using the module-level :func:`is_near_silent` array
+    helper instead.
+
+    Returns:
+        The mono mixdown when analysis should proceed, or ``None`` when the
+        signal is near-silent -- the caller returns its empty result.
+
+    Raises:
+        AnalysisError: If the audio has 0 samples.
+    """
+    mono = audio.mono
+    if len(mono) == 0:
+        raise AnalysisError(f"{failure_label}: audio has 0 samples")
+    if audio.is_near_silent:
+        return None
+    return mono
 
 
 def validate_input_path(path: str) -> str:

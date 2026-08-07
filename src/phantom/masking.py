@@ -15,10 +15,9 @@ import numpy as np
 from pydantic import BaseModel, field_validator
 
 from phantom.audio import AudioData
-from phantom.exceptions import AnalysisError
 from phantom._resample import align_sample_rates, resample_to_match
 from phantom._rounding import round_ratio
-from phantom._utils import wrap_errors
+from phantom._utils import guarded_mono, wrap_errors
 from phantom.spectral import _BAND_LABELS, _octave_band_energies
 
 # Severity thresholds for per-band overlap classification.
@@ -227,16 +226,10 @@ def analyze_masking(audio_a: AudioData, audio_b: AudioData) -> MaskingResult:
     # Auto-resample on sample rate mismatch
     audio_a, audio_b = align_sample_rates(audio_a, audio_b)
 
-    # Mono mixdown
-    mono_a = audio_a.mono
-    mono_b = audio_b.mono
-
-    # Empty samples guard
-    if len(mono_a) == 0 or len(mono_b) == 0:
-        raise AnalysisError("Masking analysis failed: audio has 0 samples")
-
-    # Near-silence guard (memoized per audio, A.7)
-    if audio_a.is_near_silent or audio_b.is_near_silent:
+    # Empty/silence guards (B.2) on both inputs.
+    mono_a = guarded_mono(audio_a, "Masking analysis failed")
+    mono_b = guarded_mono(audio_b, "Masking analysis failed")
+    if mono_a is None or mono_b is None:
         return _no_masking_result()
 
     # Compute per-band energies for both stems
@@ -289,10 +282,9 @@ def analyze_masking_matrix(stems: list[AudioData]) -> MaskingMatrixResult:
     energies: list[np.ndarray | None] = []
     for stem in stems:
         aligned = resample_to_match(stem, target_sr)  # identity if already at target
-        mono = aligned.mono
-        if len(mono) == 0:
-            raise AnalysisError("Masking analysis failed: audio has 0 samples")
-        if aligned.is_near_silent:  # memoized per aligned instance, A.7
+        # Empty/silence guards (B.2); the aligned copy is dropped right after.
+        mono = guarded_mono(aligned, "Masking analysis failed")
+        if mono is None:
             energies.append(None)  # marker for silent stems
         else:
             energies.append(_compute_band_energies(mono, aligned.sample_rate))

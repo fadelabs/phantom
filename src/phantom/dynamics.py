@@ -18,9 +18,8 @@ import essentia.standard as es
 from pydantic import BaseModel, field_validator
 
 from phantom.audio import AudioData
-from phantom.exceptions import AnalysisError
 from phantom._rounding import round_db, round_ratio
-from phantom._utils import wrap_errors
+from phantom._utils import guarded_mono, wrap_errors
 
 
 class DynamicsResult(BaseModel):
@@ -80,14 +79,9 @@ def analyze_dynamics(audio: AudioData) -> DynamicsResult:
     Raises:
         AnalysisError: If analysis fails or audio has 0 samples.
     """
-    mono = audio.mono
-
-    # Empty-samples guard
-    if len(mono) == 0:
-        raise AnalysisError("Dynamics analysis failed: audio has 0 samples")
-
-    # Near-silence guard (memoized on AudioData, A.7)
-    if audio.is_near_silent:
+    # Empty/silence guards (B.2): mono, or None when near-silent.
+    mono = guarded_mono(audio, "Dynamics analysis failed")
+    if mono is None:
         return _silent_dynamics_result()
 
     # -- RMS level (DYN-01) --

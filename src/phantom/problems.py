@@ -21,8 +21,7 @@ from scipy.fft import rfft, rfftfreq
 from pydantic import BaseModel
 
 from phantom.audio import AudioData
-from phantom.exceptions import AnalysisError
-from phantom._utils import wrap_errors
+from phantom._utils import guarded_mono, wrap_errors
 
 _SEVERITY_SORT_ORDER = {"dealbreaker": 0, "significant": 1, "moderate": 2, "minor": 3}
 
@@ -172,14 +171,9 @@ def detect_problems(audio: AudioData) -> ProblemsResult:
     Raises:
         AnalysisError: If analysis fails or audio has 0 samples.
     """
-    mono = audio.mono
-
-    # Empty-samples guard
-    if len(mono) == 0:
-        raise AnalysisError("Problem detection failed: audio has 0 samples")
-
-    # Near-silence guard (D-12) -- memoized on AudioData (A.7)
-    if audio.is_near_silent:
+    # Empty/silence guards (B.2): mono, or None when near-silent (D-12).
+    mono = guarded_mono(audio, "Problem detection failed")
+    if mono is None:
         return _empty_result()
 
     problems: list[ProblemItem] = []

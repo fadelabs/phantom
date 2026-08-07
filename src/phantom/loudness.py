@@ -17,9 +17,8 @@ import essentia.standard as es
 from pydantic import BaseModel, field_validator
 
 from phantom.audio import AudioData
-from phantom.exceptions import AnalysisError
 from phantom._rounding import round_db
-from phantom._utils import wrap_errors
+from phantom._utils import guarded_mono, wrap_errors
 
 
 class LufsStats(BaseModel):
@@ -114,15 +113,11 @@ def analyze_loudness(audio: AudioData) -> LoudnessResult:
     Raises:
         AnalysisError: If Essentia algorithms fail.
     """
-    mono = audio.mono
     sample_rate = audio.sample_rate
 
-    # Empty-samples guard
-    if len(mono) == 0:
-        raise AnalysisError("Loudness analysis failed: audio has 0 samples")
-
-    # Near-silence guard (memoized on AudioData, A.7)
-    if audio.is_near_silent:
+    # Empty/silence guards (B.2): mono, or None when near-silent.
+    mono = guarded_mono(audio, "Loudness analysis failed")
+    if mono is None:
         return _silent_loudness_result()
 
     # -- EBU R128 loudness (LOUD-01, LOUD-03, LOUD-04) --

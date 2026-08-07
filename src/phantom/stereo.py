@@ -19,7 +19,7 @@ from pydantic import BaseModel, field_validator
 from phantom.audio import AudioData
 from phantom.exceptions import AnalysisError
 from phantom._rounding import round_db, round_ratio, round_pct
-from phantom._utils import is_near_silent, wrap_errors
+from phantom._utils import guarded_mono, is_near_silent, wrap_errors
 
 
 class PanoramaDistribution(BaseModel):
@@ -145,26 +145,10 @@ def analyze_stereo(audio: AudioData) -> StereoResult:
     Raises:
         AnalysisError: If audio has 0 samples or computation fails.
     """
-    mono = audio.mono
-
-    # Empty-samples guard
-    if len(mono) == 0:
-        raise AnalysisError("Stereo analysis failed: audio has 0 samples")
-
-    # Near-silence guard
-    # For stereo, check individual channels -- inverted polarity (R = -L) would
-    # cancel in the mono mixdown but each channel carries real energy. The
-    # per-channel check cannot use the (mono) memoized is_near_silent.
+    # Mono input (D-03): deterministic defaults after the empty/silence guards.
     if audio.num_channels == 1:
-        signal_silent = audio.is_near_silent
-    else:
-        signal_silent = is_near_silent(audio.left) and is_near_silent(audio.right)
-
-    if signal_silent:
-        return _silent_stereo_result()
-
-    # Mono guard (per D-03): return deterministic defaults
-    if audio.num_channels == 1:
+        if guarded_mono(audio, "Stereo analysis failed") is None:
+            return _silent_stereo_result()
         return StereoResult(
             correlation=1.0,
             stereo_width=0.0,
@@ -172,6 +156,14 @@ def analyze_stereo(audio: AudioData) -> StereoResult:
             balance_db=0.0,
             panorama_pct=PanoramaDistribution(left=0.0, center=100.0, right=0.0),
         )
+
+    # Stereo: empty guard, then per-channel near-silence. Inverted polarity
+    # (R = -L) would cancel in the mono mixdown but each channel carries real
+    # energy, so the (mono) memoized is_near_silent cannot gate this path.
+    if audio.num_samples == 0:
+        raise AnalysisError("Stereo analysis failed: audio has 0 samples")
+    if is_near_silent(audio.left) and is_near_silent(audio.right):
+        return _silent_stereo_result()
 
     left = audio.left
     right = audio.right
