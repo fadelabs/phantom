@@ -16,9 +16,9 @@ from pydantic import BaseModel, field_validator
 
 from phantom.audio import AudioData
 from phantom._resample import align_sample_rates, resample_to_match
+from phantom._bands import _BAND_LABELS, _octave_band_energies
 from phantom._rounding import round_ratio
 from phantom._utils import guarded_mono, wrap_errors
-from phantom.spectral import _BAND_LABELS, _octave_band_energies
 
 # Severity thresholds for per-band overlap classification.
 _SEVERITY_HIGH = 0.6
@@ -138,9 +138,10 @@ def _no_masking_result() -> MaskingResult:
 def _compute_band_energies(mono: np.ndarray, sample_rate: int) -> np.ndarray:
     """Compute average energy per octave band using Essentia FrequencyBands.
 
-    Delegates to the shared ``spectral._octave_band_energies`` helper so the
+    Delegates to the shared ``_bands._octave_band_energies`` helper so the
     4096/2048 Hann + ``FrequencyBands(OCTAVE_EDGES)`` loop lives in one place
-    (P-09). Numerically identical to the former inline implementation.
+    (P-09, promoted to a public module in B.6). Numerically identical to the
+    former inline implementation.
 
     Args:
         mono: 1D float32 numpy array of audio samples.
