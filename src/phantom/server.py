@@ -10,6 +10,7 @@ import json
 import os
 import re
 import sys
+from collections.abc import Callable
 
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
@@ -18,17 +19,14 @@ from pydantic import BaseModel
 from phantom._utils import _get_env_int
 from phantom.audio import load_audio
 from phantom.exceptions import PhantomError
-from phantom.facade import BatchDiagnosticResult, StemDiagnosticResult, run_analyses
-from phantom.spectral import analyze_spectrum as _analyze_spectrum
-from phantom.loudness import analyze_loudness as _analyze_loudness
-from phantom.dynamics import analyze_dynamics as _analyze_dynamics
-from phantom.stereo import analyze_stereo as _analyze_stereo
-from phantom.phase import analyze_phase as _analyze_phase
-from phantom.phase import compare_phase as _compare_phase
-from phantom.problems import (
-    detect_problems as _detect_problems,
-    inject_sample_rate_mismatch,
+from phantom.facade import (
+    ANALYSIS_TYPES,
+    BatchDiagnosticResult,
+    StemDiagnosticResult,
+    run_analyses,
 )
+from phantom.phase import compare_phase as _compare_phase
+from phantom.problems import inject_sample_rate_mismatch
 from phantom.masking import analyze_masking as _analyze_masking
 from phantom.masking import (
     analyze_masking_matrix as _analyze_masking_matrix,
@@ -148,79 +146,87 @@ def _phantom_tool(fn):
 
 
 # ---------------------------------------------------------------------------
-# Individual analysis tools (Tools 1-7)
+# Generated load -> analyze -> dump tools
 # ---------------------------------------------------------------------------
+#
+# Nine tools share the identical shape "load N audio files, call the analyzer,
+# model_dump()". Instead of nine hand-written wrappers, one registry row drives
+# a tiny factory. The six single-file dimensions come from the facade registry;
+# the three two-file tools are listed below. The tool-schema snapshot test
+# (tests/test_tool_schema.py) gates the generated surface: any change to a
+# tool's name, description, or input schema fails loudly.
 
 
-@mcp.tool
-@_phantom_tool
-def analyze_spectrum(file_path: str) -> dict:
-    """Analyze frequency spectrum: centroid, rolloff, flatness, contrast, dissonance, octave band energy."""
-    audio = load_audio(file_path)
-    return _analyze_spectrum(audio).model_dump()
+def _make_unary_tool(name: str, fn, description: str):
+    """Generate a load(file_path) -> fn(audio) -> dump tool."""
+
+    def wrapper(file_path: str) -> dict:
+        audio = load_audio(file_path)
+        return fn(audio).model_dump()
+
+    wrapper.__name__ = name
+    wrapper.__doc__ = description
+    return wrapper
 
 
-@mcp.tool
-@_phantom_tool
-def analyze_loudness(file_path: str) -> dict:
-    """Measure EBU R128 loudness: integrated LUFS, true peak dBTP, loudness range, short-term and momentary LUFS."""
-    audio = load_audio(file_path)
-    return _analyze_loudness(audio).model_dump()
+def _make_pair_tool(name: str, fn, description: str):
+    """Generate a load(a/b) -> fn(audio_a, audio_b) -> dump tool."""
+
+    def wrapper(file_path_a: str, file_path_b: str) -> dict:
+        audio_a = load_audio(file_path_a)
+        audio_b = load_audio(file_path_b)
+        return fn(audio_a, audio_b).model_dump()
+
+    wrapper.__name__ = name
+    wrapper.__doc__ = description
+    return wrapper
 
 
-@mcp.tool
-@_phantom_tool
-def analyze_dynamics(file_path: str) -> dict:
-    """Measure dynamics: RMS, peak, crest factor, dynamic range, dynamic complexity."""
-    audio = load_audio(file_path)
-    return _analyze_dynamics(audio).model_dump()
+def _make_reference_tool(name: str, fn, description: str):
+    """Generate a load(file_path, reference_path) -> fn -> dump tool."""
+
+    def wrapper(file_path: str, reference_path: str) -> dict:
+        audio = load_audio(file_path)
+        ref_audio = load_audio(reference_path)
+        return fn(audio, ref_audio).model_dump()
+
+    wrapper.__name__ = name
+    wrapper.__doc__ = description
+    return wrapper
 
 
-@mcp.tool
-@_phantom_tool
-def analyze_stereo(file_path: str) -> dict:
-    """Analyze stereo field: correlation, width, mid/side ratio, L/R balance, panorama distribution."""
-    audio = load_audio(file_path)
-    return _analyze_stereo(audio).model_dump()
+_GENERATED_TOOLS: list[tuple[str, str, Callable, str]] = [
+    (spec.cache_key, "unary", spec.fn, spec.description)
+    for spec in ANALYSIS_TYPES.values()
+] + [
+    (
+        "compare_phase",
+        "pair",
+        _compare_phase,
+        "Compare phase between two audio files: cross-correlation, delay detection, polarity check.",
+    ),
+    (
+        "analyze_masking",
+        "pair",
+        _analyze_masking,
+        "Analyze frequency masking between two stems with per-octave-band severity.",
+    ),
+    (
+        "compare_to_reference",
+        "reference",
+        _compare_to_reference,
+        "Compare audio against a reference WAV file with normalized spectral curves.",
+    ),
+]
 
+_MAKERS = {
+    "unary": _make_unary_tool,
+    "pair": _make_pair_tool,
+    "reference": _make_reference_tool,
+}
 
-@mcp.tool
-@_phantom_tool
-def analyze_phase(file_path: str) -> dict:
-    """Check phase coherence: overall and per-band correlation, polarity detection."""
-    audio = load_audio(file_path)
-    return _analyze_phase(audio).model_dump()
-
-
-# ---------------------------------------------------------------------------
-# Two-file analysis tools (Tools 6, 8, 10)
-# ---------------------------------------------------------------------------
-
-
-@mcp.tool
-@_phantom_tool
-def compare_phase(file_path_a: str, file_path_b: str) -> dict:
-    """Compare phase between two audio files: cross-correlation, delay detection, polarity check."""
-    audio_a = load_audio(file_path_a)
-    audio_b = load_audio(file_path_b)
-    return _compare_phase(audio_a, audio_b).model_dump()
-
-
-@mcp.tool
-@_phantom_tool
-def detect_problems(file_path: str) -> dict:
-    """Scan for audio problems: clipping, DC offset, ISP, noise, hum, sibilance, mud, harshness, resonances."""
-    audio = load_audio(file_path)
-    return _detect_problems(audio).model_dump()
-
-
-@mcp.tool
-@_phantom_tool
-def analyze_masking(file_path_a: str, file_path_b: str) -> dict:
-    """Analyze frequency masking between two stems with per-octave-band severity."""
-    audio_a = load_audio(file_path_a)
-    audio_b = load_audio(file_path_b)
-    return _analyze_masking(audio_a, audio_b).model_dump()
+for _name, _shape, _fn, _description in _GENERATED_TOOLS:
+    mcp.tool(_phantom_tool(_MAKERS[_shape](_name, _fn, _description)))
 
 
 # ---------------------------------------------------------------------------
@@ -235,15 +241,6 @@ def compare_to_profile(file_path: str, profile_name: str) -> dict:
     audio = load_audio(file_path)
     profile = _load_profile(profile_name)
     return _compare_to_profile(audio, profile).model_dump()
-
-
-@mcp.tool
-@_phantom_tool
-def compare_to_reference(file_path: str, reference_path: str) -> dict:
-    """Compare audio against a reference WAV file with normalized spectral curves."""
-    audio = load_audio(file_path)
-    ref_audio = load_audio(reference_path)
-    return _compare_to_reference(audio, ref_audio).model_dump()
 
 
 @mcp.tool
