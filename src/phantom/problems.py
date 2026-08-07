@@ -22,7 +22,7 @@ from pydantic import BaseModel
 
 from phantom.audio import AudioData
 from phantom.exceptions import AnalysisError
-from phantom._utils import _block_rms_db, wrap_errors
+from phantom._utils import wrap_errors
 
 _SEVERITY_SORT_ORDER = {"dealbreaker": 0, "significant": 1, "moderate": 2, "minor": 3}
 
@@ -186,8 +186,10 @@ def detect_problems(audio: AudioData) -> ProblemsResult:
     problems.extend(_detect_clipping(mono))
     problems.extend(_detect_dc_offset(audio))
     problems.extend(_detect_inter_sample_peaks(audio))
-    problems.extend(_detect_noise_floor(mono, audio.sample_rate))
-    problems.extend(_detect_snr(mono, audio.sample_rate))
+    # Noise floor + SNR are ~half identical (P10 block-RMS percentile and the
+    # dynamic-spread guard); the shared estimate comes from the block loop
+    # memoized on AudioData (A.2).
+    problems.extend(_detect_noise_and_snr(mono, audio.block_rms_db))
     problems.extend(_detect_hum(mono, audio.sample_rate))
 
     # Pre-compute shared FFT results for frequency-domain detectors.
@@ -376,12 +378,17 @@ def _detect_inter_sample_peaks(audio: AudioData) -> list[ProblemItem]:
     ]
 
 
-def _detect_noise_floor(mono: np.ndarray, sample_rate: int) -> list[ProblemItem]:
-    """Estimate noise floor from quietest signal blocks. PROB-04."""
-    block_rms_db = _block_rms_db(mono)
+def _noise_floor_estimate(block_rms_db: list[float]) -> float | None:
+    """Return the P10 noise floor when it is measurable, else None.
 
+    Shared by the noise-floor and SNR detectors (PROB-04/05), which are
+    ~half identical: both need the P10 block-RMS percentile and both must
+    reject signals whose block levels are too uniform to separate noise
+    from signal. Returns ``None`` when there is no meaningful estimate
+    (too few blocks, or dynamic spread below _DYNAMIC_SPREAD_MIN_DB).
+    """
     if len(block_rms_db) < 4:
-        return []
+        return None
 
     noise_floor_db = float(np.percentile(block_rms_db, 10))
 
@@ -390,79 +397,91 @@ def _detect_noise_floor(mono: np.ndarray, sample_rate: int) -> list[ProblemItem]
     # when there is enough level variation to distinguish noise from signal.
     dynamic_spread = float(np.percentile(block_rms_db, 90) - noise_floor_db)
     if dynamic_spread < _DYNAMIC_SPREAD_MIN_DB:
+        return None
+
+    return noise_floor_db
+
+
+def _detect_noise_and_snr(
+    mono: np.ndarray, block_rms_db: list[float]
+) -> list[ProblemItem]:
+    """Detect elevated noise floor and poor SNR (PROB-04, PROB-05).
+
+    Formerly two functions that each re-ran the block-RMS loop and guarded
+    it identically; the shared estimate is now passed in once from
+    ``audio.block_rms_db`` (A.2). Item order is preserved (noise floor
+    before SNR), so within-severity output order is unchanged.
+    """
+    noise_floor_db = _noise_floor_estimate(block_rms_db)
+    if noise_floor_db is None:
         return []
 
+    items: list[ProblemItem] = []
+
+    # -- Noise floor (PROB-04) --
     if noise_floor_db >= _NOISE_FLOOR_MODERATE_DB:
         severity = "moderate"
-        msg = f"Elevated noise floor: {noise_floor_db:.1f} dBFS (above -50 dBFS threshold)."
+        msg = (
+            f"Elevated noise floor: {noise_floor_db:.1f} dBFS "
+            "(above -50 dBFS threshold)."
+        )
     elif noise_floor_db >= _NOISE_FLOOR_MINOR_DB:
         severity = "minor"
-        msg = f"Noise floor at {noise_floor_db:.1f} dBFS (acceptable but not professional-grade)."
-    else:
-        return []  # Below -60 dBFS is professional quality
-
-    return [
-        ProblemItem(
-            type="noise_floor",
-            severity=severity,
-            message=msg,
-            details={"noise_floor_dbfs": round(noise_floor_db, 1)},
+        msg = (
+            f"Noise floor at {noise_floor_db:.1f} dBFS "
+            "(acceptable but not professional-grade)."
         )
-    ]
+    else:
+        severity, msg = None, None  # Below -60 dBFS is professional quality
 
+    if severity is not None:
+        items.append(
+            ProblemItem(
+                type="noise_floor",
+                severity=severity,
+                message=msg,
+                details={"noise_floor_dbfs": round(noise_floor_db, 1)},
+            )
+        )
 
-def _detect_snr(mono: np.ndarray, sample_rate: int) -> list[ProblemItem]:
-    """Estimate SNR from signal RMS vs noise floor. PROB-05."""
-    # Overall signal RMS in dB
+    # -- SNR (PROB-05) --
+    # Overall signal RMS in dB. Unreachable via detect_problems (near-silent
+    # audio returns early), kept as the former guard for direct callers.
     signal_rms = float(np.sqrt(np.mean(mono**2)))
-    if signal_rms <= 0:
-        return []
-    signal_rms_db = float(20.0 * np.log10(signal_rms + 1e-10))
+    if signal_rms > 0:
+        signal_rms_db = float(20.0 * np.log10(signal_rms + 1e-10))
 
-    # Noise floor from block-RMS percentile
-    block_rms_db = _block_rms_db(mono)
+        # Upper-bound approximation: overall RMS includes noise, so true SNR
+        # is lower.
+        snr_db = signal_rms_db - noise_floor_db
 
-    if len(block_rms_db) < 4:
-        return []
+        if snr_db < _SNR_PROFESSIONAL_DB:
+            if snr_db < _SNR_POOR_DB:
+                severity = "significant"
+                quality = "poor"
+            else:
+                severity = "minor"
+                quality = "acceptable"
 
-    noise_floor_db = float(np.percentile(block_rms_db, 10))
+            items.append(
+                ProblemItem(
+                    type="snr",
+                    severity=severity,
+                    message=(
+                        f"SNR is {snr_db:.1f} dB ({quality}). "
+                        f"Signal RMS: {signal_rms_db:.1f} dBFS, "
+                        f"noise floor: {noise_floor_db:.1f} dBFS."
+                    ),
+                    details={
+                        "snr_db": round(snr_db, 1),
+                        "signal_rms_dbfs": round(signal_rms_db, 1),
+                        "noise_floor_dbfs": round(noise_floor_db, 1),
+                        "quality": quality,
+                    },
+                )
+            )
 
-    # Same guard as noise floor: uniform-level signals have no meaningful
-    # noise floor to compare against.
-    dynamic_spread = float(np.percentile(block_rms_db, 90) - noise_floor_db)
-    if dynamic_spread < _DYNAMIC_SPREAD_MIN_DB:
-        return []
-
-    # Upper-bound approximation: overall RMS includes noise, so true SNR is lower.
-    snr_db = signal_rms_db - noise_floor_db
-
-    if snr_db >= _SNR_PROFESSIONAL_DB:
-        return []  # Professional quality
-
-    if snr_db < _SNR_POOR_DB:
-        severity = "significant"
-        quality = "poor"
-    else:
-        severity = "minor"
-        quality = "acceptable"
-
-    return [
-        ProblemItem(
-            type="snr",
-            severity=severity,
-            message=(
-                f"SNR is {snr_db:.1f} dB ({quality}). "
-                f"Signal RMS: {signal_rms_db:.1f} dBFS, "
-                f"noise floor: {noise_floor_db:.1f} dBFS."
-            ),
-            details={
-                "snr_db": round(snr_db, 1),
-                "signal_rms_dbfs": round(signal_rms_db, 1),
-                "noise_floor_dbfs": round(noise_floor_db, 1),
-                "quality": quality,
-            },
-        )
-    ]
+    return items
 
 
 def _detect_hum(mono: np.ndarray, sample_rate: int) -> list[ProblemItem]:
