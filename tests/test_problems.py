@@ -301,9 +301,7 @@ class TestInterSamplePeaks:
         result = detect_problems(audio)
         isp = [p for p in result.problems if p.type == "inter_sample_peak"]
         assert len(isp) > 0
-        assert isp[0].details.true_peak_dbtp == pytest.approx(
-            expected_dbtp, abs=1e-9
-        )
+        assert isp[0].details.true_peak_dbtp == pytest.approx(expected_dbtp, abs=1e-9)
 
 
 # ---------------------------------------------------------------------------
