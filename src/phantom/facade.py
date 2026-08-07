@@ -42,7 +42,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Callable
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from phantom._cache import _cached_analysis
 from phantom.audio import AudioData
@@ -191,25 +191,31 @@ def run_analyses(
 
 
 class StemDiagnosticResult(BaseModel):
-    """Typed per-stem payload shared by the server composite tools and the
-    ``analyze`` CLI's JSON output.
+    """Typed per-stem payload for the server composite tools.
 
-    Dimension fields are optional so a subset run (e.g. ``analyze --spectrum``)
-    can use the same model; callers that always run all six (``full_diagnostic``)
-    see every field populated. Dump with ``exclude_none=True`` to omit unrun
-    dimensions.
+    All six dimensions are required: ``full_diagnostic`` and ``batch_diagnostic``
+    always run every analyzer. ``model_config = extra="forbid"`` makes a payload
+    key that is not a field fail loudly at construction instead of being
+    silently dropped, so the "add a dimension" workflow is explicitly: new
+    analyzer module + registry row + a matching field here.
+
+    The ``analyze`` CLI emits its own JSON shape from the individual results
+    and does not route through this model, so its subset runs stay
+    enabled-only with nested nulls intact.
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     file: str
     duration_seconds: float
     sample_rate: int
     channels: int
-    spectral: SpectralResult | None = None
-    loudness: LoudnessResult | None = None
-    dynamics: DynamicsResult | None = None
-    stereo: StereoResult | None = None
-    phase: PhaseResult | None = None
-    problems: ProblemsResult | None = None
+    spectral: SpectralResult
+    loudness: LoudnessResult
+    dynamics: DynamicsResult
+    stereo: StereoResult
+    phase: PhaseResult
+    problems: ProblemsResult
 
     @field_validator("duration_seconds", mode="before")
     @classmethod

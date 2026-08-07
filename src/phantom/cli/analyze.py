@@ -9,12 +9,7 @@ import rich_click as click
 from rich.panel import Panel
 
 from phantom import load_audio, PhantomError
-from phantom.facade import (
-    ANALYSIS_TYPES,
-    BatchDiagnosticResult,
-    StemDiagnosticResult,
-    run_analyses,
-)
+from phantom.facade import ANALYSIS_TYPES, run_analyses
 from phantom.cli._formatting import (
     get_console,
     render_problems_table,
@@ -109,15 +104,22 @@ def _render_results(results: dict, console) -> None:
 
 
 def _build_json_payload(audio, file_path: str, results: dict) -> dict:
-    """Build a JSON-serializable dict for a single file analysis."""
-    payload = StemDiagnosticResult(
-        file=os.path.basename(file_path),
-        duration_seconds=audio.duration,
-        sample_rate=audio.sample_rate,
-        channels=audio.num_channels,
-        **results,
-    )
-    return payload.model_dump(exclude_none=True)
+    """Build a JSON-serializable dict for a single file analysis.
+
+    Emits only the enabled dimensions, with full-precision duration and each
+    dimension's own ``model_dump()`` (so null measurement fields are preserved).
+    This is the CLI's output contract; it is deliberately not routed through
+    ``StemDiagnosticResult``, which is the server composite-tools payload.
+    """
+    payload: dict = {
+        "file": os.path.basename(file_path),
+        "duration_seconds": audio.duration,
+        "sample_rate": audio.sample_rate,
+        "channels": audio.num_channels,
+    }
+    for name, result in results.items():
+        payload[name] = result.model_dump()
+    return payload
 
 
 # ---------------------------------------------------------------------------
@@ -283,7 +285,14 @@ def _output_batch_json(
     files: tuple[str, ...],
     enabled: list[str],
 ) -> None:
-    """Output batch results as JSON."""
+    """Output batch results as JSON.
+
+    Each stem is the same enabled-only shape as single-file ``--json`` (raw
+    duration, per-dimension ``model_dump()``), collected into a
+    ``{"stems": ..., "stem_count": ...}`` wrapper. Stems are kept as plain
+    dicts -- passing them through ``BatchDiagnosticResult`` would re-validate
+    them as stem models and re-insert the unrun dimensions as nulls.
+    """
     stems: dict = {}
     for stem_name, data in all_results.items():
         if "error" in data:
@@ -295,18 +304,20 @@ def _output_batch_json(
 
         audio = data["audio"]
         results = data["results"]
-        stems[stem_name] = StemDiagnosticResult(
-            file=stem_name,
-            duration_seconds=audio.duration,
-            sample_rate=audio.sample_rate,
-            channels=audio.num_channels,
-            **results,
-        ).model_dump(exclude_none=True)
+        stem_payload: dict = {
+            "file": stem_name,
+            "duration_seconds": audio.duration,
+            "sample_rate": audio.sample_rate,
+            "channels": audio.num_channels,
+        }
+        for name, result in results.items():
+            stem_payload[name] = result.model_dump()
+        stems[stem_name] = stem_payload
 
-    batch_payload = BatchDiagnosticResult(
-        stems=stems,
-        stem_count=len(files),
-    ).model_dump()
+    batch_payload = {
+        "stems": stems,
+        "stem_count": len(files),
+    }
     output_json(batch_payload)
 
 

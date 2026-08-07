@@ -291,6 +291,63 @@ def test_analyze_batch_json_mismatch(runner, make_wav):
 
 
 # ---------------------------------------------------------------------------
+# CLI --json output contract
+# ---------------------------------------------------------------------------
+
+
+def test_analyze_json_duration_full_precision(runner, make_wav):
+    """--json duration_seconds is full precision (this is the CLI's contract;
+    the server composite tools round to 3 decimals)."""
+    sr = 44100
+    n = 68053  # frames/sr = 1.54315..., not a 3-decimal value
+    samples = np.sin(2 * np.pi * 440 * np.arange(n) / sr).astype(np.float32)
+    path = make_wav(samples, sr)
+    result = runner.invoke(cli, ["analyze", "--json", path])
+    assert result.exit_code == 0, f"Exit code {result.exit_code}: {result.output}"
+    data = json.loads(result.output)
+    expected = n / sr
+    assert data["duration_seconds"] == expected
+    assert data["duration_seconds"] != round(expected, 3)
+
+
+def test_analyze_json_preserves_nested_nulls(runner, make_wav):
+    """Near-silent audio keeps its explicit null measurement fields inside each
+    dimension -- the CLI must not recurse-exclude them to empty dicts."""
+    sr = 44100
+    t = np.linspace(0, 1.5, int(sr * 1.5), endpoint=False)
+    samples = (np.sin(2 * np.pi * 440 * t).astype(np.float32)) * 1e-5
+    path = make_wav(samples, sr)
+    result = runner.invoke(cli, ["analyze", "--json", path])
+    assert result.exit_code == 0, f"Exit code {result.exit_code}: {result.output}"
+    data = json.loads(result.output)
+    # All six dimensions present as dicts; the silent loudness carries its
+    # five explicit null fields instead of collapsing to {}.
+    for dim in ("spectral", "loudness", "dynamics", "stereo", "phase", "problems"):
+        assert isinstance(data[dim], dict), f"{dim} should be a dict"
+    assert "integrated_lufs" in data["loudness"]
+    assert data["loudness"]["integrated_lufs"] is None
+
+
+def test_analyze_batch_subset_omits_other_dimensions(runner, make_wav):
+    """Batch --spectrum --json emits only the enabled dimension per stem --
+    no explicitly-null keys for the unrun dimensions."""
+    sr = 44100
+    t = np.linspace(0, 1.0, sr, endpoint=False)
+    samples = np.sin(2 * np.pi * 440 * t).astype(np.float32)
+    path1 = make_wav(samples, sr, name="a.wav")
+    path2 = make_wav(samples, sr, name="b.wav")
+    result = runner.invoke(cli, ["analyze", "--spectrum", "--json", path1, path2])
+    assert result.exit_code == 0, f"Exit code {result.exit_code}: {result.output}"
+    data = json.loads(result.output)
+    for stem in data["stems"].values():
+        assert "spectral" in stem
+        for other in ("loudness", "dynamics", "stereo", "phase", "problems"):
+            assert other not in stem, (
+                f"unrun dimension {other} leaked into {list(stem)}"
+            )
+
+
+# ---------------------------------------------------------------------------
 # Shared analysis cache population (P-01)
 # ---------------------------------------------------------------------------
 

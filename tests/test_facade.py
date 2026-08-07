@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from phantom._cache import _MISSING, analysis_cache
 from phantom.audio import AudioData
@@ -160,28 +160,63 @@ def test_stem_result_full_dump(mono_sine_440hz):
     assert data["duration_seconds"] == round(audio.duration, 3)
 
 
-def test_stem_result_subset_dump_excludes_none(mono_sine_440hz):
-    """A subset run dumps the shared model with exclude_none dropping the
-    unrun dimensions -- the CLI `--json --<flag>` contract."""
+def test_stem_result_requires_all_dimensions(mono_sine_440hz):
+    """StemDiagnosticResult is the full-diagnostic payload: a subset cannot be
+    constructed, so no caller can accidentally emit a truncated stem."""
     samples, sr = mono_sine_440hz
     audio = _make_audio(samples, sr)
     results = run_analyses(audio, ["spectral"])
-    result = StemDiagnosticResult(
-        file="test.wav",
-        duration_seconds=audio.duration,
-        sample_rate=audio.sample_rate,
-        channels=audio.num_channels,
-        **results,
-    )
-    data = result.model_dump(exclude_none=True)
-    assert set(data) == {
-        "file",
-        "duration_seconds",
-        "sample_rate",
-        "channels",
-        "spectral",
+    with pytest.raises(ValidationError):
+        StemDiagnosticResult(
+            file="test.wav",
+            duration_seconds=audio.duration,
+            sample_rate=audio.sample_rate,
+            channels=audio.num_channels,
+            **results,
+        )
+
+
+def test_stem_result_forbids_unknown_dimension(mono_sine_440hz):
+    """extra='forbid' makes a payload key that is not a model field fail
+    loudly instead of being silently dropped (a forgotten registry row would
+    otherwise vanish from every stem)."""
+    samples, sr = mono_sine_440hz
+    audio = _make_audio(samples, sr)
+    results = run_analyses(audio)
+    with pytest.raises(ValidationError):
+        StemDiagnosticResult(
+            file="test.wav",
+            duration_seconds=audio.duration,
+            sample_rate=audio.sample_rate,
+            channels=audio.num_channels,
+            **results,
+            new_dimension=results["spectral"],
+        )
+
+
+def test_batch_keeps_partial_stem_dicts(mono_sine_440hz):
+    """BatchDiagnosticResult does not coerce a partial stem dict into a stem
+    model -- if it did, the missing dimensions would be re-inserted as nulls
+    (the CLI batch --json subset contract)."""
+    samples, sr = mono_sine_440hz
+    audio = _make_audio(samples, sr)
+    # A CLI-style subset stem: metadata + the enabled dimension only.
+    partial = {
+        "file": "a.wav",
+        "duration_seconds": audio.duration,
+        "sample_rate": audio.sample_rate,
+        "channels": audio.num_channels,
+        "spectral": run_analyses(audio, ["spectral"])["spectral"].model_dump(),
     }
-    assert "loudness" not in data
+    # A dict missing the required dims must pass through (and round-trip)
+    # as a plain dict -- no automatic null-filling of "loudness"/... keys.
+    batch = BatchDiagnosticResult(
+        stems={"a.wav": partial},
+        stem_count=1,
+    )
+    data = batch.model_dump()
+    assert data["stems"]["a.wav"] == partial
+    assert "loudness" not in data["stems"]["a.wav"]
 
 
 def test_batch_diagnostic_result_dumps_stems_and_count(mono_sine_440hz):
