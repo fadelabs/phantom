@@ -135,9 +135,11 @@ class TestAudioDataValidation:
     """Tests for AudioData model validation."""
 
     def test_rejects_1d_samples(self):
-        """AudioData rejects samples with ndim != 2."""
+        """AudioData rejects samples with ndim != 2 as AnalysisError (B.9)."""
+        from phantom.exceptions import AnalysisError
+
         samples_1d = np.zeros(100, dtype=np.float32)
-        with pytest.raises(ValueError):
+        with pytest.raises(AnalysisError, match="samples must be a 2D array"):
             AudioData(
                 samples=samples_1d,
                 sample_rate=44100,
@@ -147,9 +149,11 @@ class TestAudioDataValidation:
             )
 
     def test_rejects_channel_mismatch(self):
-        """AudioData rejects samples where shape[1] != num_channels."""
+        """AudioData rejects shape[1] != num_channels as AnalysisError (B.9)."""
+        from phantom.exceptions import AnalysisError
+
         samples = np.zeros((100, 2), dtype=np.float32)
-        with pytest.raises(ValueError):
+        with pytest.raises(AnalysisError, match="columns but"):
             AudioData(
                 samples=samples,
                 sample_rate=44100,

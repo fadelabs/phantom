@@ -20,7 +20,7 @@ import numpy as np
 import soundfile as sf
 from pydantic import BaseModel, ConfigDict, model_validator
 
-from phantom.exceptions import AudioLoadError
+from phantom.exceptions import AnalysisError, AudioLoadError
 from phantom._utils import (
     _block_rms_db,
     check_duration_size,
@@ -63,14 +63,21 @@ class AudioData(BaseModel):
 
     @model_validator(mode="after")
     def _validate_samples(self) -> "AudioData":
-        """Validate that samples array shape matches declared metadata."""
+        """Validate that samples array shape matches declared metadata.
+
+        Raises:
+            AnalysisError: If the samples shape contradicts the declared
+                metadata. PhantomError (not a bare ValueError, B.9) so callers
+                without the analyzer @wrap_errors decorator still surface a
+                type they can catch; the message is unchanged.
+        """
         if self.samples.ndim != 2:
-            raise ValueError(
+            raise AnalysisError(
                 f"samples must be a 2D array [num_samples, num_channels], "
                 f"got {self.samples.ndim}D array with shape {self.samples.shape}"
             )
         if self.samples.shape[1] != self.num_channels:
-            raise ValueError(
+            raise AnalysisError(
                 f"samples has {self.samples.shape[1]} columns but "
                 f"num_channels is {self.num_channels}"
             )
