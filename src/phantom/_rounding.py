@@ -43,6 +43,26 @@ def round_db_dict(v: dict[str, float] | None, dp: int = 2) -> dict[str, float] |
     return {k: round(val, dp) for k, val in v.items()} if v is not None else v
 
 
+def round_list(v: list[float] | None, dp: int = 4) -> list[float] | None:
+    """Round each value in a unit-neutral list. Returns None unchanged.
+
+    The unit-neutral primitive: use for values with no dB/ratio semantics
+    (e.g. RangeDeviationResult.target_range), so unit-typed helpers are not
+    borrowed for the wrong units (review F8).
+    """
+    return [round(x, dp) for x in v] if v is not None else v
+
+
+def round_dict(v: dict[str, float] | None, dp: int = 2) -> dict[str, float] | None:
+    """Round each value in a unit-neutral dict. Returns None unchanged.
+
+    The unit-neutral primitive: use for values with no dB semantics (e.g.
+    PhaseResult.per_band_correlation, unit-neutral correlation coefficients),
+    so round_db_dict is not borrowed for the wrong unit (review F8).
+    """
+    return {k: round(val, dp) for k, val in v.items()} if v is not None else v
+
+
 class RoundedModel(BaseModel):
     """Base model that applies per-field rounding on validation (B.3).
 

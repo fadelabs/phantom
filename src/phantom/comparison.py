@@ -13,8 +13,8 @@ from phantom._rounding import (
     RoundedModel,
     round_db,
     round_hz,
+    round_list,
     round_ratio,
-    round_ratio_list,
 )
 from phantom._utils import (
     guarded_mono,
@@ -79,7 +79,9 @@ class RangeDeviationResult(RoundedModel):
     deviation: Optional[float] = None
     rating: str = "unmeasurable"
 
-    _ROUND_FIELDS = {"target_range": partial(round_ratio_list, dp=2)}
+    # Unit-neutral list rounding: target_range is a LUFS/dB bound pair, not a
+    # list of ratios (review F8).
+    _ROUND_FIELDS = {"target_range": partial(round_list, dp=2)}
 
 
 class MonoBelowResult(RoundedModel):

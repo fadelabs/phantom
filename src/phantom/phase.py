@@ -27,7 +27,7 @@ from scipy.fft import fft, ifft
 from phantom.audio import AudioData
 from phantom.exceptions import AnalysisError
 from phantom._resample import align_sample_rates
-from phantom._rounding import RoundedModel, round_db_dict, round_ms, round_ratio
+from phantom._rounding import RoundedModel, round_dict, round_ms, round_ratio
 from phantom._utils import (
     _get_env_float,
     guarded_mono,
@@ -45,8 +45,9 @@ class PhaseResult(RoundedModel):
 
     _ROUND_FIELDS = {
         "phase_correlation": round_ratio,
-        # Per-band correlations round to 4dp (4th-order bandpass precision).
-        "per_band_correlation": partial(round_db_dict, dp=4),
+        # Per-band correlations round to 4dp (4th-order bandpass precision);
+        # unit-neutral dict, not dB (review F8).
+        "per_band_correlation": partial(round_dict, dp=4),
     }
 
 
