@@ -22,8 +22,8 @@ from phantom.problems import (
     _detect_lossy_codec,
     _spectral_flatness,
     _average_power_spectrum,
-    _DC_OFFSET_THRESHOLD,
 )
+from phantom._settings import AnalysisSettings
 from tests.conftest import _make_audio
 
 
@@ -221,7 +221,7 @@ class TestDCOffset:
         audio = _make_stereo_audio(samples, sr)
 
         # Sanity: mono mixdown cancels the DC, so a mono-only check sees nothing.
-        assert abs(float(np.mean(audio.mono))) < _DC_OFFSET_THRESHOLD
+        assert abs(float(np.mean(audio.mono))) < AnalysisSettings().dc_offset_threshold
 
         result = detect_problems(audio)
         dc_problems = [p for p in result.problems if p.type == "dc_offset"]
@@ -475,13 +475,14 @@ class TestMergedNoiseFloorSnr:
         """Every fixture yields byte-identical noise_floor+snr ProblemItems."""
         from phantom._utils import _block_rms_db
         from phantom.problems import _detect_noise_and_snr
+        from phantom._settings import AnalysisSettings
 
         samples, _sr = request.getfixturevalue(fixture_name)
         assert samples.ndim == 1  # all fixtures are 1D mono
         block = _block_rms_db(samples)
         signal_rms = float(np.sqrt(np.mean(samples**2)))
 
-        merged = _detect_noise_and_snr(block, signal_rms)
+        merged = _detect_noise_and_snr(block, signal_rms, AnalysisSettings())
         old = self._old_noise_floor(block) + self._old_snr(samples, block)
         assert merged == old
 
@@ -902,7 +903,14 @@ class TestDetectBandExcess:
         """_detect_band_excess with sibilance params detects excessive 5-10kHz."""
         samples, sr = sibilant_signal
         result = _detect_band_excess(
-            samples, sr, 5000.0, 10000.0, "sibilance", "sibilance", "5-10kHz"
+            samples,
+            sr,
+            5000.0,
+            10000.0,
+            "sibilance",
+            "sibilance",
+            "5-10kHz",
+            settings=AnalysisSettings(),
         )
         assert len(result) == 1
         assert result[0].type == "sibilance"
@@ -916,7 +924,14 @@ class TestDetectBandExcess:
         """_detect_band_excess with mud params detects excessive 200-500Hz."""
         samples, sr = muddy_signal
         result = _detect_band_excess(
-            samples, sr, 200.0, 500.0, "mud", "mud", "200-500Hz"
+            samples,
+            sr,
+            200.0,
+            500.0,
+            "mud",
+            "mud",
+            "200-500Hz",
+            settings=AnalysisSettings(),
         )
         assert len(result) == 1
         assert result[0].type == "mud"
@@ -927,7 +942,14 @@ class TestDetectBandExcess:
         """_detect_band_excess with harshness params detects excessive 2-4kHz."""
         samples, sr = harsh_signal
         result = _detect_band_excess(
-            samples, sr, 2000.0, 4000.0, "harshness", "harshness", "2-4kHz"
+            samples,
+            sr,
+            2000.0,
+            4000.0,
+            "harshness",
+            "harshness",
+            "2-4kHz",
+            settings=AnalysisSettings(),
         )
         assert len(result) == 1
         assert result[0].type == "harshness"
@@ -946,6 +968,7 @@ class TestDetectBandExcess:
             "sibilance",
             "sibilance",
             "5-10kHz",
+            settings=AnalysisSettings(),
         )
         assert result == []
 
@@ -955,7 +978,14 @@ class TestDetectBandExcess:
         rng = np.random.default_rng(200)
         noise = rng.standard_normal(sr * 2).astype(np.float32) * 0.3
         result = _detect_band_excess(
-            noise, sr, 5000.0, 10000.0, "sibilance", "sibilance", "5-10kHz"
+            noise,
+            sr,
+            5000.0,
+            10000.0,
+            "sibilance",
+            "sibilance",
+            "5-10kHz",
+            settings=AnalysisSettings(),
         )
         assert result == []
 
@@ -963,7 +993,14 @@ class TestDetectBandExcess:
         """Message matches format: 'Excessive {label}: {freq_label} band energy is {excess:.1f} dB above expected level.'"""
         samples, sr = sibilant_signal
         result = _detect_band_excess(
-            samples, sr, 5000.0, 10000.0, "sibilance", "sibilance", "5-10kHz"
+            samples,
+            sr,
+            5000.0,
+            10000.0,
+            "sibilance",
+            "sibilance",
+            "5-10kHz",
+            settings=AnalysisSettings(),
         )
         assert len(result) == 1
         msg = result[0].message
@@ -975,7 +1012,14 @@ class TestDetectBandExcess:
         """Mud message uses Hz-based freq label."""
         samples, sr = muddy_signal
         result = _detect_band_excess(
-            samples, sr, 200.0, 500.0, "mud", "mud", "200-500Hz"
+            samples,
+            sr,
+            200.0,
+            500.0,
+            "mud",
+            "mud",
+            "200-500Hz",
+            settings=AnalysisSettings(),
         )
         assert len(result) == 1
         assert "200-500Hz band energy is" in result[0].message
@@ -984,7 +1028,14 @@ class TestDetectBandExcess:
         """Detail values should be rounded to 1 decimal place."""
         samples, sr = sibilant_signal
         result = _detect_band_excess(
-            samples, sr, 5000.0, 10000.0, "sibilance", "sibilance", "5-10kHz"
+            samples,
+            sr,
+            5000.0,
+            10000.0,
+            "sibilance",
+            "sibilance",
+            "5-10kHz",
+            settings=AnalysisSettings(),
         )
         assert len(result) == 1
         for key in ("band_energy_db", "overall_energy_db", "excess_db"):
@@ -1052,6 +1103,7 @@ class TestFFTSpectrumSharing:
             "sibilance",
             "5-10kHz",
             spectral_flatness=None,
+            settings=AnalysisSettings(),
         )
         assert len(result) == 1
         assert result[0].type == "sibilance"
@@ -1072,6 +1124,7 @@ class TestFFTSpectrumSharing:
                 "sibilance",
                 "5-10kHz",
                 spectral_flatness=0.5,
+                settings=AnalysisSettings(),
             )
             mock_flatness.assert_not_called()
         # With flatness=0.5 (above threshold 0.01), detection should proceed
@@ -1092,6 +1145,7 @@ class TestFFTSpectrumSharing:
             "sibilance",
             "5-10kHz",
             spectral_flatness=0.001,
+            settings=AnalysisSettings(),
         )
         assert result == []
 
@@ -1100,7 +1154,9 @@ class TestFFTSpectrumSharing:
     def test_resonances_standalone_computes_own_spectrum(self, resonant_signal):
         """_detect_resonances with power_spectrum=None computes its own."""
         samples, sr = resonant_signal
-        result = _detect_resonances(samples, sr, power_spectrum=None)
+        result = _detect_resonances(
+            samples, sr, power_spectrum=None, settings=AnalysisSettings()
+        )
         assert len(result) == 1
         assert result[0].type == "resonant_peak"
 
@@ -1113,7 +1169,9 @@ class TestFFTSpectrumSharing:
         # Pre-compute the spectrum the same way the function would internally
         spectrum_tuple = _average_power_spectrum(samples, 8192, sr)
         with patch("phantom.problems._average_power_spectrum") as mock_aps:
-            result = _detect_resonances(samples, sr, power_spectrum=spectrum_tuple)
+            result = _detect_resonances(
+                samples, sr, power_spectrum=spectrum_tuple, settings=AnalysisSettings()
+            )
             mock_aps.assert_not_called()
         assert len(result) == 1
         assert result[0].type == "resonant_peak"
@@ -1123,7 +1181,9 @@ class TestFFTSpectrumSharing:
     def test_lossy_codec_standalone_computes_own_spectrum(self, lossy_sim_signal):
         """_detect_lossy_codec with power_spectrum=None computes its own."""
         samples, sr = lossy_sim_signal
-        result = _detect_lossy_codec(samples, sr, power_spectrum=None)
+        result = _detect_lossy_codec(
+            samples, sr, power_spectrum=None, settings=AnalysisSettings()
+        )
         assert len(result) == 1
         assert result[0].type == "lossy_codec"
 
@@ -1135,7 +1195,9 @@ class TestFFTSpectrumSharing:
         samples, sr = lossy_sim_signal
         spectrum_tuple = _average_power_spectrum(samples, 8192, sr)
         with patch("phantom.problems._average_power_spectrum") as mock_aps:
-            result = _detect_lossy_codec(samples, sr, power_spectrum=spectrum_tuple)
+            result = _detect_lossy_codec(
+                samples, sr, power_spectrum=spectrum_tuple, settings=AnalysisSettings()
+            )
             mock_aps.assert_not_called()
         assert len(result) == 1
         assert result[0].type == "lossy_codec"

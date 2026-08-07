@@ -101,8 +101,12 @@ def test_run_analyses_all_runs_six_and_populates_shared_cache(
         # Cache entries keyed under the canonical names, scoped by the
         # effective settings fingerprint (C.1).
         settings_key = "|" + analysis_settings().fingerprint()
-        assert analysis_cache.get(audio, "analyze_spectrum", settings_key) is not _MISSING
-        assert analysis_cache.get(audio, "detect_problems", settings_key) is not _MISSING
+        assert (
+            analysis_cache.get(audio, "analyze_spectrum", settings_key) is not _MISSING
+        )
+        assert (
+            analysis_cache.get(audio, "detect_problems", settings_key) is not _MISSING
+        )
         # A second call on the same bytes reuses the cache (same object).
         assert run_analyses(audio)["spectral"] is results["spectral"]
     finally:

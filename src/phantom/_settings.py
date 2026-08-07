@@ -21,7 +21,7 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 
-from phantom._utils import _get_env_float
+from phantom._utils import _get_env_float, _get_env_int
 
 # ---------------------------------------------------------------------------
 # The settings object
@@ -51,11 +51,40 @@ class AnalysisSettings:
     crest_factor_low_db:
         Crest factor below this marks the track as low-crest /
         over-compressed (was the literal 6.0).
+
+    Problems (``phantom.problems``, ``PROB-01`` family)
+    ----------------------------------------------------
+    One knob per detector threshold; defaults are the former module
+    constants. Codes refer to the detectors they gate:
+    clipping_threshold (PROB-01), dc_offset_threshold (PROB-02),
+    isp_overshoot_threshold_db / isp_severe_dbtp (PROB-03),
+    dynamic_spread_min_db / noise_floor_moderate_db / noise_floor_minor_db
+    (PROB-04), snr_professional_db / snr_poor_db (PROB-05),
+    spectral_flatness_min / band_excess_threshold_db (PROB-07/08/09),
+    resonance_median_floor_db / resonance_prominence_db (PROB-10),
+    lossy_shelf_drop_db (PROB-13).
     """
 
+    # Phase / dynamics (previous migration).
     polarity_threshold: float = -0.5
     phat_window_s: float = 10.0
     crest_factor_low_db: float = 6.0
+
+    # Problem detection threshold block (PROB-01..13).
+    clipping_threshold: float = 1.0
+    dc_offset_threshold: float = 5e-4
+    isp_overshoot_threshold_db: float = 0.5
+    isp_severe_dbtp: float = -1.0
+    dynamic_spread_min_db: float = 10.0
+    noise_floor_moderate_db: float = -50.0
+    noise_floor_minor_db: float = -60.0
+    snr_professional_db: float = 60.0
+    snr_poor_db: float = 50.0
+    spectral_flatness_min: float = 0.01
+    band_excess_threshold_db: float = 6.0
+    resonance_median_floor_db: float = -40.0
+    resonance_prominence_db: float = 12.0
+    lossy_shelf_drop_db: float = 20.0
 
     def fingerprint(self) -> str:
         """Deterministic per-value hash used for analysis cache keys.
@@ -83,4 +112,24 @@ def analysis_settings() -> AnalysisSettings:
         polarity_threshold=_get_env_float("PHANTOM_POLARITY_THRESHOLD", -0.5),
         phat_window_s=_get_env_float("PHANTOM_PHAT_WINDOW_S", 10.0),
         crest_factor_low_db=_get_env_float("PHANTOM_CREST_FACTOR_LOW_DB", 6.0),
+        clipping_threshold=_get_env_float("PHANTOM_CLIPPING_THRESHOLD", 1.0),
+        dc_offset_threshold=_get_env_float("PHANTOM_DC_OFFSET_THRESHOLD", 5e-4),
+        isp_overshoot_threshold_db=_get_env_float("PHANTOM_ISP_OVERSHOOT_DB", 0.5),
+        isp_severe_dbtp=_get_env_float("PHANTOM_ISP_SEVERE_DBTP", -1.0),
+        dynamic_spread_min_db=_get_env_float("PHANTOM_DYNAMIC_SPREAD_MIN_DB", 10.0),
+        noise_floor_moderate_db=_get_env_float(
+            "PHANTOM_NOISE_FLOOR_MODERATE_DB", -50.0
+        ),
+        noise_floor_minor_db=_get_env_float("PHANTOM_NOISE_FLOOR_MINOR_DB", -60.0),
+        snr_professional_db=_get_env_float("PHANTOM_SNR_PROFESSIONAL_DB", 60.0),
+        snr_poor_db=_get_env_float("PHANTOM_SNR_POOR_DB", 50.0),
+        spectral_flatness_min=_get_env_float("PHANTOM_SPECTRAL_FLATNESS_MIN", 0.01),
+        band_excess_threshold_db=_get_env_float(
+            "PHANTOM_BAND_EXCESS_THRESHOLD_DB", 6.0
+        ),
+        resonance_median_floor_db=_get_env_float(
+            "PHANTOM_RESONANCE_MEDIAN_FLOOR_DB", -40.0
+        ),
+        resonance_prominence_db=_get_env_int("PHANTOM_RESONANCE_PROMINENCE_DB", 12),
+        lossy_shelf_drop_db=_get_env_float("PHANTOM_LOSSY_SHELF_DROP_DB", 20.0),
     )

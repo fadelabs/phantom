@@ -16,6 +16,7 @@ from phantom.audio import AudioData
 from phantom.dynamics import analyze_dynamics
 from phantom.exceptions import AnalysisError
 from phantom.phase import analyze_phase
+from phantom.problems import detect_problems
 
 
 def _audio(left: np.ndarray, right: np.ndarray) -> AudioData:
@@ -76,9 +77,10 @@ class TestFingerprint:
         assert analysis_settings().fingerprint() == analysis_settings().fingerprint()
 
     def test_equal_values_equal_fingerprints(self) -> None:
-        assert AnalysisSettings().fingerprint() == AnalysisSettings(
-            polarity_threshold=-0.5
-        ).fingerprint()
+        assert (
+            AnalysisSettings().fingerprint()
+            == AnalysisSettings(polarity_threshold=-0.5).fingerprint()
+        )
 
     def test_changes_with_env(self, monkeypatch) -> None:
         monkeypatch.delenv("PHANTOM_POLARITY_THRESHOLD", raising=False)
@@ -158,3 +160,81 @@ class TestAnalyzersHonorSettings:
             ).crest_factor_is_low
             is False
         )
+
+
+class TestProblemThresholds:
+    """AnalysisSettings carries the PROB-01..13 threshold block, with env
+    overrides per knob and behavioral flips through detect_problems."""
+
+    def test_defaults_match_problem_constants(self) -> None:
+        s = AnalysisSettings()
+        assert s.clipping_threshold == 1.0
+        assert s.dc_offset_threshold == 5e-4
+        assert s.isp_overshoot_threshold_db == 0.5
+        assert s.isp_severe_dbtp == -1.0
+        assert s.dynamic_spread_min_db == 10.0
+        assert s.noise_floor_moderate_db == -50.0
+        assert s.noise_floor_minor_db == -60.0
+        assert s.snr_professional_db == 60.0
+        assert s.snr_poor_db == 50.0
+        assert s.spectral_flatness_min == 0.01
+        assert s.band_excess_threshold_db == 6.0
+        assert s.resonance_median_floor_db == -40.0
+        assert s.resonance_prominence_db == 12.0
+        assert s.lossy_shelf_drop_db == 20.0
+
+    def test_env_override_applies_to_problem_knobs(self, monkeypatch) -> None:
+        monkeypatch.setenv("PHANTOM_BAND_EXCESS_THRESHOLD_DB", "9.0")
+        monkeypatch.setenv("PHANTOM_RESONANCE_PROMINENCE_DB", "20")
+        s = analysis_settings()
+        assert s.band_excess_threshold_db == 9.0
+        assert s.resonance_prominence_db == 20
+        assert s.clipping_threshold == 1.0
+
+    def test_malformed_int_env_raises_analysis_error(self, monkeypatch) -> None:
+        monkeypatch.setenv("PHANTOM_RESONANCE_PROMINENCE_DB", "many")
+        with pytest.raises(
+            AnalysisError, match="PHANTOM_RESONANCE_PROMINENCE_DB must be an integer"
+        ):
+            analysis_settings()
+
+    def test_clipping_threshold_flips_detection(self) -> None:
+        sr = 44100
+        t = np.arange(sr) / sr
+        x = np.clip(1.2 * np.sin(2 * np.pi * 440 * t), -1.0, 1.0).astype(np.float32)
+        audio = _make_mono(x, sr)
+
+        def has_clipping(a) -> bool:
+            return any(p.type == "clipping" for p in detect_problems(a).problems)
+
+        assert has_clipping(audio) is True
+        relaxed = detect_problems(audio, AnalysisSettings(clipping_threshold=1.0001))
+        assert not any(p.type == "clipping" for p in relaxed.problems)
+
+    def test_clipping_env_override_flips_detection(self, monkeypatch) -> None:
+        sr = 44100
+        t = np.arange(sr) / sr
+        x = np.clip(1.2 * np.sin(2 * np.pi * 220 * t), -1.0, 1.0).astype(np.float32)
+        audio = _make_mono(x, sr)
+        assert any(p.type == "clipping" for p in detect_problems(audio).problems)
+        monkeypatch.setenv("PHANTOM_CLIPPING_THRESHOLD", "1.0001")
+        assert not any(p.type == "clipping" for p in detect_problems(audio).problems)
+
+    def test_dc_offset_threshold_flips_detection(self) -> None:
+        sr = 44100
+        t = np.arange(sr) / sr
+        x = (0.3 * np.sin(2 * np.pi * 440 * t) + 0.001).astype(np.float32)
+        audio = _make_mono(x, sr)
+        assert any(p.type == "dc_offset" for p in detect_problems(audio).problems)
+        relaxed = detect_problems(audio, AnalysisSettings(dc_offset_threshold=0.005))
+        assert not any(p.type == "dc_offset" for p in relaxed.problems)
+
+
+def _make_mono(samples: np.ndarray, sr: int) -> AudioData:
+    return AudioData(
+        samples=samples.reshape(-1, 1),
+        sample_rate=sr,
+        num_channels=1,
+        duration=len(samples) / sr,
+        num_samples=len(samples),
+    )
