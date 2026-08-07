@@ -18,15 +18,16 @@ from __future__ import annotations
 
 from typing import Optional
 
+from functools import partial
+
 import numpy as np
 import scipy.signal as sig
-from pydantic import BaseModel, field_validator
 from scipy.fft import fft, ifft
 
 from phantom.audio import AudioData
 from phantom.exceptions import AnalysisError
 from phantom._resample import align_sample_rates
-from phantom._rounding import round_ms, round_ratio
+from phantom._rounding import RoundedModel, round_db_dict, round_ms, round_ratio
 from phantom._utils import (
     _get_env_float,
     guarded_mono,
@@ -35,27 +36,21 @@ from phantom._utils import (
 )
 
 
-class PhaseResult(BaseModel):
+class PhaseResult(RoundedModel):
     """Result of phase coherence analysis."""
 
     phase_correlation: Optional[float] = None
     per_band_correlation: Optional[dict[str, float]] = None
     polarity_inverted: Optional[bool] = None
 
-    @field_validator("phase_correlation", mode="before")
-    @classmethod
-    def _round_corr(cls, v: float | None) -> float | None:
-        return round_ratio(v)
-
-    @field_validator("per_band_correlation", mode="before")
-    @classmethod
-    def _round_band_corr(cls, v: dict[str, float] | None) -> dict[str, float] | None:
-        if v is None:
-            return v
-        return {k: round(val, 4) for k, val in v.items()}
+    _ROUND_FIELDS = {
+        "phase_correlation": round_ratio,
+        # Per-band correlations round to 4dp (4th-order bandpass precision).
+        "per_band_correlation": partial(round_db_dict, dp=4),
+    }
 
 
-class PhaseCompareResult(BaseModel):
+class PhaseCompareResult(RoundedModel):
     """Result of cross-file phase comparison."""
 
     delay_samples: Optional[int] = None
@@ -63,15 +58,10 @@ class PhaseCompareResult(BaseModel):
     correlation: Optional[float] = None
     polarity_inverted: Optional[bool] = None
 
-    @field_validator("delay_ms", mode="before")
-    @classmethod
-    def _round_ms(cls, v: float | None) -> float | None:
-        return round_ms(v)
-
-    @field_validator("correlation", mode="before")
-    @classmethod
-    def _round_corr(cls, v: float | None) -> float | None:
-        return round_ratio(v)
+    _ROUND_FIELDS = {
+        "delay_ms": round_ms,
+        "correlation": round_ratio,
+    }
 
 
 # Frequency bands for per-band phase correlation (PHAS-02).

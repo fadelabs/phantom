@@ -1080,3 +1080,67 @@ class TestRoundTripReconstruction:
         d = original.model_dump()
         reconstructed = MaskingResult(**d)
         assert reconstructed.model_dump() == d
+
+
+# ---------------------------------------------------------------------------
+# RoundedModel base (B.3)
+# ---------------------------------------------------------------------------
+
+
+class TestRoundedModel:
+    """The base class applies each subclass's _ROUND_FIELDS spec on
+    validation, preserving the numeric behavior of the former per-field
+    @field_validator decorators (which every model's precision tests above
+    already pin)."""
+
+    def test_subclass_spec_applied(self):
+        """Declared fields round through the spec callable."""
+        from phantom._rounding import RoundedModel, round_db, round_ratio
+
+        class Sample(RoundedModel):
+            db: float | None = None
+            ratio: float | None = None
+            untouched: int = 0
+
+            _ROUND_FIELDS = {"db": round_db, "ratio": round_ratio}
+
+        result = Sample(db=-14.12345, ratio=0.12345678, untouched=3).model_dump()
+        assert result == {"db": -14.12, "ratio": 0.1235, "untouched": 3}
+
+    def test_none_passes_through(self):
+        """Present-but-None declared fields stay None (validators were
+        None-tolerant and the model spec skips them)."""
+        from phantom._rounding import RoundedModel, round_db
+
+        class Sample(RoundedModel):
+            db: float | None = None
+
+            _ROUND_FIELDS = {"db": round_db}
+
+        assert Sample(db=None).model_dump() == {"db": None}
+
+    def test_input_dict_not_mutated(self):
+        """The validator doesn't mutate caller-owned input dicts."""
+        from phantom._rounding import RoundedModel, round_db
+
+        class Sample(RoundedModel):
+            db: float | None = None
+
+            _ROUND_FIELDS = {"db": round_db}
+
+        raw = {"db": -14.12345}
+        Sample.model_validate(raw)
+        assert raw == {"db": -14.12345}
+
+    def test_unrounded_field_stays_unrounded(self):
+        """Fields outside the spec pass through verbatim (no default
+        rounding is applied by the base class)."""
+        from phantom._rounding import RoundedModel, round_db
+
+        class Sample(RoundedModel):
+            db: float | None = None
+            raw: float | None = None
+
+            _ROUND_FIELDS = {"db": round_db}
+
+        assert Sample(db=1.23456, raw=9.87654321).model_dump()["raw"] == 9.87654321

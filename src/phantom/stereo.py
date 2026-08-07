@@ -14,28 +14,28 @@ from __future__ import annotations
 from typing import Optional
 
 import numpy as np
-from pydantic import BaseModel, field_validator
 
 from phantom.audio import AudioData
 from phantom.exceptions import AnalysisError
-from phantom._rounding import round_db, round_ratio, round_pct
+from phantom._rounding import RoundedModel, round_db, round_pct, round_ratio
 from phantom._utils import guarded_mono, is_near_silent, wrap_errors
 
 
-class PanoramaDistribution(BaseModel):
+class PanoramaDistribution(RoundedModel):
     """Stereo panorama distribution percentages."""
 
     left: float = 0.0
     center: float = 0.0
     right: float = 0.0
 
-    @field_validator("left", "center", "right", mode="before")
-    @classmethod
-    def _round_pct(cls, v: float) -> float:
-        return round_pct(v)
+    _ROUND_FIELDS = {
+        "left": round_pct,
+        "center": round_pct,
+        "right": round_pct,
+    }
 
 
-class StereoResult(BaseModel):
+class StereoResult(RoundedModel):
     """Result of stereo field analysis."""
 
     correlation: Optional[float] = None
@@ -44,15 +44,12 @@ class StereoResult(BaseModel):
     balance_db: Optional[float] = None
     panorama_pct: Optional[PanoramaDistribution] = None
 
-    @field_validator("correlation", "stereo_width", mode="before")
-    @classmethod
-    def _round_ratio(cls, v: float | None) -> float | None:
-        return round_ratio(v)
-
-    @field_validator("mid_side_ratio_db", "balance_db", mode="before")
-    @classmethod
-    def _round_db(cls, v: float | None) -> float | None:
-        return round_db(v)
+    _ROUND_FIELDS = {
+        "correlation": round_ratio,
+        "stereo_width": round_ratio,
+        "mid_side_ratio_db": round_db,
+        "balance_db": round_db,
+    }
 
 
 def _silent_stereo_result() -> StereoResult:

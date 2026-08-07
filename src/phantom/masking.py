@@ -12,12 +12,11 @@ from __future__ import annotations
 import itertools
 
 import numpy as np
-from pydantic import BaseModel, field_validator
 
 from phantom.audio import AudioData
 from phantom._resample import align_sample_rates, resample_to_match
 from phantom._bands import _BAND_LABELS, _octave_band_energies
-from phantom._rounding import round_ratio
+from phantom._rounding import RoundedModel, round_ratio
 from phantom._utils import guarded_mono, wrap_errors
 
 # Severity thresholds for per-band overlap classification.
@@ -51,33 +50,27 @@ _FLOOR_DB = 40.0
 # ---------------------------------------------------------------------------
 
 
-class MaskingBand(BaseModel):
+class MaskingBand(RoundedModel):
     """Per-band masking analysis result."""
 
     band: str
     severity: str
     overlap_score: float
 
-    @field_validator("overlap_score", mode="before")
-    @classmethod
-    def _round_score(cls, v: float) -> float | None:
-        return round_ratio(v)
+    _ROUND_FIELDS = {"overlap_score": round_ratio}
 
 
-class MaskingResult(BaseModel):
+class MaskingResult(RoundedModel):
     """Result of pairwise masking analysis."""
 
     bands: list[MaskingBand] = []
     overall_severity: str = "none"
     overall_score: float = 0.0
 
-    @field_validator("overall_score", mode="before")
-    @classmethod
-    def _round_score(cls, v: float) -> float | None:
-        return round_ratio(v)
+    _ROUND_FIELDS = {"overall_score": round_ratio}
 
 
-class MaskingPair(BaseModel):
+class MaskingPair(RoundedModel):
     """A single stem pair in the masking matrix."""
 
     stem_a: str
@@ -86,13 +79,10 @@ class MaskingPair(BaseModel):
     overall_score: float
     bands: list[MaskingBand]
 
-    @field_validator("overall_score", mode="before")
-    @classmethod
-    def _round_score(cls, v: float) -> float | None:
-        return round_ratio(v)
+    _ROUND_FIELDS = {"overall_score": round_ratio}
 
 
-class MaskingMatrixResult(BaseModel):
+class MaskingMatrixResult(RoundedModel):
     """Result of multi-stem masking matrix analysis."""
 
     pairs: list[MaskingPair] = []

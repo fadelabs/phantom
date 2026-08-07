@@ -3,12 +3,19 @@
 from __future__ import annotations
 
 import os
+from functools import partial
 from typing import Optional
 
 import numpy as np
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel
 
-from phantom._rounding import round_db, round_hz, round_ratio
+from phantom._rounding import (
+    RoundedModel,
+    round_db,
+    round_hz,
+    round_ratio,
+    round_ratio_list,
+)
 from phantom._utils import (
     guarded_mono,
     validate_input_path,
@@ -64,7 +71,7 @@ class DeviationResult(BaseModel):
     rating: str = "unmeasurable"
 
 
-class RangeDeviationResult(BaseModel):
+class RangeDeviationResult(RoundedModel):
     """Deviation of a measured value from a target range."""
 
     value: Optional[float] = None
@@ -72,15 +79,10 @@ class RangeDeviationResult(BaseModel):
     deviation: Optional[float] = None
     rating: str = "unmeasurable"
 
-    @field_validator("target_range", mode="before")
-    @classmethod
-    def _round_range(cls, v):
-        if v is None:
-            return v
-        return [round(x, 2) for x in v]
+    _ROUND_FIELDS = {"target_range": partial(round_ratio_list, dp=2)}
 
 
-class MonoBelowResult(BaseModel):
+class MonoBelowResult(RoundedModel):
     """Result of mono-below frequency check."""
 
     mono_below_hz: float
@@ -88,15 +90,10 @@ class MonoBelowResult(BaseModel):
     has_stereo_bass: bool
     rating: str
 
-    @field_validator("mono_below_hz", mode="before")
-    @classmethod
-    def _round_hz(cls, v):
-        return round_hz(v)
-
-    @field_validator("bass_correlation", mode="before")
-    @classmethod
-    def _round_corr(cls, v):
-        return round_ratio(v)
+    _ROUND_FIELDS = {
+        "mono_below_hz": round_hz,
+        "bass_correlation": round_ratio,
+    }
 
 
 class LoudnessProfileComparisonSection(BaseModel):
@@ -130,15 +127,16 @@ class StereoReferenceComparisonSection(BaseModel):
     stereo_width: DeviationResult
 
 
-class MetricDiff(BaseModel):
+class MetricDiff(RoundedModel):
     before: Optional[float] = None
     after: Optional[float] = None
     change: Optional[float] = None
 
-    @field_validator("before", "after", "change", mode="before")
-    @classmethod
-    def _round(cls, v):
-        return round_db(v)
+    _ROUND_FIELDS = {
+        "before": round_db,
+        "after": round_db,
+        "change": round_db,
+    }
 
 
 class MatchAdjustments(BaseModel):

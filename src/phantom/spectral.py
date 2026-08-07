@@ -13,7 +13,6 @@ from typing import Optional
 
 import numpy as np
 import essentia.standard as es
-from pydantic import BaseModel, field_validator
 
 from phantom._bands import (  # re-exported for backward compatibility (B.6)
     OCTAVE_CENTERS,  # noqa: F401 -- tests import it from phantom.spectral
@@ -22,11 +21,17 @@ from phantom._bands import (  # re-exported for backward compatibility (B.6)
     _octave_band_energies,
 )
 from phantom.audio import AudioData
-from phantom._rounding import round_db_dict, round_hz, round_ratio, round_ratio_list
+from phantom._rounding import (
+    RoundedModel,
+    round_db_dict,
+    round_hz,
+    round_ratio,
+    round_ratio_list,
+)
 from phantom._utils import guarded_mono, wrap_errors
 
 
-class SpectralResult(BaseModel):
+class SpectralResult(RoundedModel):
     """Result of spectral analysis."""
 
     spectral_centroid_hz: Optional[float] = None
@@ -36,25 +41,14 @@ class SpectralResult(BaseModel):
     dissonance: Optional[float] = None
     octave_band_energy_db: Optional[dict[str, float]] = None
 
-    @field_validator("spectral_centroid_hz", "spectral_rolloff_hz", mode="before")
-    @classmethod
-    def _round_hz(cls, v: float | None) -> float | None:
-        return round_hz(v)
-
-    @field_validator("spectral_flatness", "dissonance", mode="before")
-    @classmethod
-    def _round_ratio(cls, v: float | None) -> float | None:
-        return round_ratio(v)
-
-    @field_validator("spectral_contrast", mode="before")
-    @classmethod
-    def _round_contrast(cls, v: list[float] | None) -> list[float] | None:
-        return round_ratio_list(v)
-
-    @field_validator("octave_band_energy_db", mode="before")
-    @classmethod
-    def _round_band_db(cls, v: dict[str, float] | None) -> dict[str, float] | None:
-        return round_db_dict(v)
+    _ROUND_FIELDS = {
+        "spectral_centroid_hz": round_hz,
+        "spectral_rolloff_hz": round_hz,
+        "spectral_flatness": round_ratio,
+        "dissonance": round_ratio,
+        "spectral_contrast": round_ratio_list,
+        "octave_band_energy_db": round_db_dict,
+    }
 
 
 def _silent_spectral_result() -> SpectralResult:
