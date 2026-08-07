@@ -479,8 +479,9 @@ class TestMergedNoiseFloorSnr:
         samples, _sr = request.getfixturevalue(fixture_name)
         assert samples.ndim == 1  # all fixtures are 1D mono
         block = _block_rms_db(samples)
+        signal_rms = float(np.sqrt(np.mean(samples**2)))
 
-        merged = _detect_noise_and_snr(samples, block)
+        merged = _detect_noise_and_snr(block, signal_rms)
         old = self._old_noise_floor(block) + self._old_snr(samples, block)
         assert merged == old
 
