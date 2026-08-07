@@ -51,9 +51,12 @@ class FlatMapModel(BaseModel):
     pass through as extras). Subclasses may override ``extra`` (details
     forbids unknown keys).
 
-    Dict-style read methods (``keys``/``values``/``items``/``get``,
-    ``in``/``iter``/``len``) keep existing consumers working; subscripting is
-    deliberately *not* supported -- attribute access is the typed interface.
+    Dict-style access keeps existing consumers working: ``__getitem__``
+    reads by serialized key, ``__eq__`` compares against the dict the model
+    serializes to (both directions), and ``keys``/``values``/``items``/
+    ``get``/``in``/``iter``/``len`` iterate the flat view. The one accepted
+    break from the raw-dict era is ``isinstance(x, dict)`` -- these are
+    typed models. Attribute access remains the primary typed interface.
     """
 
     model_config = ConfigDict(extra="allow", populate_by_name=True)
@@ -97,6 +100,28 @@ class FlatMapModel(BaseModel):
 
     def get(self, key: str, default: Any = None) -> Any:
         return self._flat().get(key, default)
+
+    def __getitem__(self, key: str) -> Any:
+        """Read by serialized key, dict-style.
+
+        Returns the typed value; absent keys raise ``KeyError`` exactly as a
+        dict would.
+        """
+        return self._flat()[key]
+
+    def __eq__(self, other: Any) -> bool:
+        """Equality against the serialized flat view.
+
+        A map equals the dict it serializes to, in both directions, so
+        existing comparisons like ``item.details == {"dc_offset": 0.05}``
+        keep working (nested models are reduced, matching model_dump).
+        FlatMapModel instances compare by the same view.
+        """
+        if isinstance(other, dict):
+            return self._serialize_flat() == other
+        if isinstance(other, FlatMapModel):
+            return self._serialize_flat() == other._serialize_flat()
+        return NotImplemented
 
     def __contains__(self, key: object) -> bool:
         return key in self._flat()

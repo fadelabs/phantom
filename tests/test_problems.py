@@ -1280,9 +1280,9 @@ class TestInjectSampleRateMismatch:
         expected_detail = {"a.wav": 44100, "b.wav": 96000}
         item = result.problems[0]
         assert item.message == f"Sample rate mismatch across stems: {expected_detail}"
-        # Typed access + byte-identical serialized shape (C.2).
+        # Original dict-equality comparison keeps working (C.2 follow-up).
+        assert item.details == {"sample_rates": expected_detail}
         assert item.details.sample_rates == expected_detail
-        assert item.details.model_dump() == {"sample_rates": expected_detail}
 
     def test_preserves_existing_problems_after_mismatch(self):
         """Existing problems are preserved and follow the prepended mismatch item."""

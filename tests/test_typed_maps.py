@@ -47,10 +47,15 @@ class TestPerBandCorrelation:
         assert m.mid == 0.4
         assert m.low_mid is None
 
-    def test_subscript_is_deliberately_unsupported(self) -> None:
+    def test_subscript_reads_by_serialized_key(self) -> None:
+        m = PerBandCorrelation(sub=0.9, mid=0.4)
+        assert m["sub"] == 0.9
+        assert m["mid"] == 0.4
+
+    def test_subscript_missing_key_raises_key_error(self) -> None:
         m = PerBandCorrelation(sub=0.9)
-        with pytest.raises(TypeError):
-            m["sub"]  # noqa: B018
+        with pytest.raises(KeyError):
+            m["air"]
 
 
 class TestOctaveBandEnergyDb:
@@ -63,10 +68,11 @@ class TestOctaveBandEnergyDb:
 
     def test_extra_key_passes_through(self) -> None:
         # Non-canonical keys (custom profiles, the "31.25" test-key idiom)
-        # survive as extras with their values intact.
+        # survive as extras with their values intact, readable by subscript.
         m = OctaveBandEnergyDb.model_validate({"250_hz": -8.1, "31.25": -40.12})
         dumped = m.model_dump()
         assert dumped == {"250_hz": -8.1, "31.25": -40.12}
+        assert m["31.25"] == -40.12
 
     def test_rounding_orders_before_coercion(self) -> None:
         # SpectralResult's _ROUND_FIELDS rounds the incoming dB dict; the
@@ -183,3 +189,54 @@ class TestProblemDetails:
         assert d.clipped_samples == 5
         assert d.clipped_percent == 0.5
         assert d.snr_db is None
+
+
+class TestDictStyleCompat:
+    """Subscript access and dict equality (C.2 follow-up): existing square-
+    bracket and ==-against-dict call sites keep working. isinstance(x, dict)
+    stays False -- the one accepted break."""
+
+    def test_dict_equality_both_directions(self) -> None:
+        m = OctaveBandEnergyDb.model_validate({"250_hz": -8.1})
+        assert m == {"250_hz": -8.1}
+        assert {"250_hz": -8.1} == m
+
+    def test_dict_inequality(self) -> None:
+        assert PerBandCorrelation(sub=0.9) != {"sub": 0.8}
+
+    def test_dict_equality_uses_serialized_view_for_models(self) -> None:
+        m = FrequencyDeviationMap(band_250_hz=DeviationResult(value=-2.0))
+        assert m == {
+            "250_hz": {
+                "value": -2.0,
+                "target": None,
+                "reference": None,
+                "deviation": None,
+                "rating": "unmeasurable",
+            }
+        }
+
+    def test_model_equality_by_serialized_view(self) -> None:
+        a = OctaveBandEnergyDb(band_250_hz=-8.1)
+        b = OctaveBandEnergyDb.model_validate({"250_hz": -8.1})
+        assert a == b
+
+    def test_details_dict_comparison_and_subscript(self) -> None:
+        from phantom.problems import ProblemItem
+
+        item = ProblemItem(
+            type="dc_offset",
+            severity="minor",
+            message="dc",
+            details={"dc_offset": 0.05, "channel": "left"},
+        )
+        assert item.details == {"dc_offset": 0.05, "channel": "left"}
+        assert item.details["dc_offset"] == 0.05
+
+    def test_missing_key_dict_comparison_is_false(self) -> None:
+        assert PerBandCorrelation(sub=0.9) != {"sub": 0.9, "low": 0.9}
+
+    def test_isinstance_dict_remains_false(self) -> None:
+        """The one accepted break: maps are typed models, not dicts."""
+        assert not isinstance(OctaveBandEnergyDb(band_250_hz=-8.1), dict)
+        assert not isinstance(PerBandCorrelation(sub=0.9), dict)
