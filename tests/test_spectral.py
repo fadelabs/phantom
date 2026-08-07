@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 from phantom.audio import AudioData
-from phantom.spectral import SpectralResult, analyze_spectrum
+from phantom.spectral import OctaveBandEnergyDb, SpectralResult, analyze_spectrum
 
 
 def _make_audio_data(samples_1d: np.ndarray, sr: int) -> AudioData:
@@ -157,7 +157,7 @@ class TestOctaveBandEnergy:
             "8000_hz",
             "16000_hz",
         }
-        assert isinstance(result.octave_band_energy_db, dict)
+        assert isinstance(result.octave_band_energy_db, OctaveBandEnergyDb)
         assert set(result.octave_band_energy_db.keys()) == expected_keys
 
     def test_band_values_are_floats(self, mono_sine_440hz):
@@ -176,7 +176,7 @@ class TestOctaveBandEnergy:
         bands = result.octave_band_energy_db
         # 440 Hz falls in the 500 Hz octave band (354-707 Hz)
         # It should be among the highest energy bands
-        band_500 = bands["500_hz"]
+        band_500 = bands.band_500_hz
         other_bands = [v for k, v in bands.items() if k != "500_hz"]
         # 500 Hz band should be higher than most other bands
         assert band_500 > max(other_bands) - 6  # within 6 dB of the max

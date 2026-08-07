@@ -26,23 +26,41 @@ from scipy.fft import fft, ifft
 
 from phantom.audio import AudioData
 from phantom.exceptions import AnalysisError
+from phantom._bands import BandKeyedModel
 from phantom._resample import align_sample_rates
 from phantom._rounding import RoundedModel, round_dict, round_ms, round_ratio
 from phantom._settings import AnalysisSettings, analysis_settings
 from phantom._utils import guarded_mono, is_near_silent, wrap_errors
 
 
+class PerBandCorrelation(BandKeyedModel):
+    """Typed per-band L/R correlation map (C.2).
+
+    Fields mirror ``PHASE_BANDS``; each field's name is already the
+    serialized key (``"sub"``, ``"low_mid"``, ...), so model_dump() output
+    is byte-identical to the raw dicts this replaces. Bands above Nyquist at
+    the file's sample rate are simply absent (fields stay unset).
+    """
+
+    sub: Optional[float] = None
+    low: Optional[float] = None
+    low_mid: Optional[float] = None
+    mid: Optional[float] = None
+    high: Optional[float] = None
+    air: Optional[float] = None
+
+
 class PhaseResult(RoundedModel):
     """Result of phase coherence analysis."""
 
     phase_correlation: Optional[float] = None
-    per_band_correlation: Optional[dict[str, float]] = None
+    per_band_correlation: Optional[PerBandCorrelation] = None
     polarity_inverted: Optional[bool] = None
 
     _ROUND_FIELDS: ClassVar[dict[str, Callable[[object], object]]] = {
         "phase_correlation": round_ratio,
-        # Per-band correlations round to 4dp (4th-order bandpass precision);
-        # unit-neutral dict, not dB (review F8).
+        # Per-band correlations round to 4dp (4th-order bandpass precision)
+        # before the typed map validates them (review F8).
         "per_band_correlation": partial(round_dict, dp=4),
     }
 
@@ -61,7 +79,8 @@ class PhaseCompareResult(RoundedModel):
     }
 
 
-# Frequency bands for per-band phase correlation (PHAS-02).
+# Frequency bands for per-band phase correlation (PHAS-02). Keys are also the
+# PerBandCorrelation field names, so the serialized keys stay identical.
 PHASE_BANDS = {
     "sub": (20, 80),
     "low": (80, 250),

@@ -12,6 +12,7 @@ from phantom.phase import (
     analyze_phase,
     compare_phase,
     _gcc_phat_delay,
+    PerBandCorrelation,
     PhaseResult,
     PhaseCompareResult,
 )
@@ -138,12 +139,13 @@ class TestPerBandCorrelation:
         for band, val in result.per_band_correlation.items():
             assert val < -0.5, f"Band {band} correlation {val} >= -0.5"
 
-    def test_per_band_is_dict(self, in_phase_stereo):
-        """per_band_correlation should be a dict."""
+    def test_per_band_is_typed_map(self, in_phase_stereo):
+        """per_band_correlation is a typed per-band map (C.2)."""
         samples, sr = in_phase_stereo
         audio = _make_stereo_audio(samples, sr)
         result = analyze_phase(audio)
-        assert isinstance(result.per_band_correlation, dict)
+        assert isinstance(result.per_band_correlation, PerBandCorrelation)
+        assert isinstance(result.per_band_correlation.sub, float)
 
     def test_band_keys_are_strings(self, in_phase_stereo):
         """All band keys should be strings."""

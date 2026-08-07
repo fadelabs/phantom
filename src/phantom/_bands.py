@@ -10,8 +10,11 @@ an underscore-prefixed helper.
 
 from __future__ import annotations
 
+from typing import Any, Optional
+
 import numpy as np
 import essentia.standard as es
+from pydantic import BaseModel, ConfigDict, Field, create_model, model_serializer
 
 from phantom._settings import AnalysisSettings
 
@@ -25,6 +28,116 @@ OCTAVE_EDGES = [OCTAVE_CENTERS[0] / _SQRT2] + [c * _SQRT2 for c in OCTAVE_CENTER
 
 # Band label keys for the output dict.
 _BAND_LABELS = [f"{int(c)}_hz" if c >= 1 else f"{c}_hz" for c in OCTAVE_CENTERS]
+
+# (field_name, serialized_key) pairs for the typed octave-band maps (C.2).
+# Field names are Python identifiers; serialized keys stay the "250_hz"
+# vocabulary the MCP responses and profiles use.
+OCTAVE_BAND_KEY_PAIRS: tuple[tuple[str, str], ...] = tuple(
+    (f"band_{label}", label) for label in _BAND_LABELS
+)
+
+
+class BandKeyedModel(BaseModel):
+    """Base for typed per-band maps that serialize as flat dicts (C.2).
+
+    Subclasses declare one typed field per band. The plain model serializer
+    emits ``{serialized_key: value}`` over the ``alias`` of each set field,
+    dropping unset (None) fields and merging ``extra`` entries, so
+    ``model_dump()`` of the owning result model is byte-identical to the raw
+    string-keyed dicts these models replace -- including partial maps (a band
+    filtered out at low sample rates) and non-canonical keys (custom profiles
+    with their own band vocabulary pass through as extras).
+
+    Dict-style read methods (``keys``/``values``/``items``/``get``,
+    ``in``/``iter``/``len``) keep existing consumers working; subscripting is
+    deliberately *not* supported -- attribute access is the typed interface.
+    """
+
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    @classmethod
+    def _key_for(cls, field_name: str) -> str:
+        return cls.model_fields[field_name].alias or field_name
+
+    def _flat(self) -> dict[str, Any]:
+        """Read view: alias-keyed set fields plus extras, values as-is.
+
+        Values keep their typed form (e.g. DeviationResult instances), so
+        iteration exposes the schema; serialization reduces them to plain
+        dicts (see :meth:`_serialize_flat`).
+        """
+        out: dict[str, Any] = {}
+        for name in type(self).model_fields:
+            value = getattr(self, name)
+            if value is not None:
+                out[self._key_for(name)] = value
+        for key, value in (self.__pydantic_extra__ or {}).items():
+            out[key] = value
+        return out
+
+    @model_serializer
+    def _serialize_flat(self) -> dict[str, Any]:
+        """Plain-dict serialization, byte-identical to the raw maps these
+        models replace: nested models are reduced to their own dumps so both
+        python-mode model_dump() and JSON output stay flat."""
+        return {key: _reduce_value(value) for key, value in self._flat().items()}
+
+    # -- dict-style reads ----------------------------------------------
+    def items(self):
+        return self._flat().items()
+
+    def keys(self):
+        return self._flat().keys()
+
+    def values(self):
+        return self._flat().values()
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return self._flat().get(key, default)
+
+    def __contains__(self, key: object) -> bool:
+        return key in self._flat()
+
+    def __iter__(self):
+        return iter(self._flat())
+
+    def __len__(self) -> int:
+        return len(self._flat())
+
+
+def _reduce_value(value: Any) -> Any:
+    """Plain-dict reduction for nested models inside serialized maps."""
+    return value.model_dump() if isinstance(value, BaseModel) else value
+
+
+def octave_band_map_model(name: str, value_type: type) -> type[BandKeyedModel]:
+    """Build a typed octave-band map model with the canonical-key aliases.
+
+    Every map is the same shape -- one field per octave band, each carrying
+    its ``"250_hz"``-style serialized key as the alias -- so the ten-band
+    vocabulary is defined once (``OCTAVE_BAND_KEY_PAIRS``) and reused for
+    every value type: float dB energies (spectral), DeviationResult
+    (comparisons), MetricDiff (matching). Serialization behavior is
+    identical across all of them (see :class:`BandKeyedModel`).
+
+    Args:
+        name: Model class name (for reprs and error messages).
+        value_type: Per-band value model (``float`` for scalar dB maps).
+
+    Returns:
+        A generated ``BandKeyedModel`` subclass with the given class name.
+    """
+    fields = {
+        field_name: (
+            Optional[value_type],
+            Field(None, alias=key, serialization_alias=key),
+        )
+        for field_name, key in OCTAVE_BAND_KEY_PAIRS
+    }
+    return create_model(name, __base__=BandKeyedModel, **fields)
+
+
+OctaveBandEnergyDb = octave_band_map_model("OctaveBandEnergyDb", float)
 
 
 def _octave_band_energies(

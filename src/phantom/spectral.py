@@ -18,6 +18,7 @@ import essentia.standard as es
 from phantom._bands import (  # re-exported for backward compatibility (B.6)
     OCTAVE_CENTERS,  # noqa: F401 -- tests import it from phantom.spectral
     _BAND_LABELS,
+    OctaveBandEnergyDb,
     _octave_band_energies,
 )
 from phantom.audio import AudioData
@@ -40,7 +41,7 @@ class SpectralResult(RoundedModel):
     spectral_flatness: Optional[float] = None
     spectral_contrast: Optional[list[float]] = None
     dissonance: Optional[float] = None
-    octave_band_energy_db: Optional[dict[str, float]] = None
+    octave_band_energy_db: Optional[OctaveBandEnergyDb] = None
 
     _ROUND_FIELDS: ClassVar[dict[str, Callable[[object], object]]] = {
         "spectral_centroid_hz": round_hz,

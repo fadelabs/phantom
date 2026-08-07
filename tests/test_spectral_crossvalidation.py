@@ -75,7 +75,7 @@ class TestOctaveBandEnergy:
         result = analyze_spectrum(_make_audio(samples, sr))
         bands = result.octave_band_energy_db
 
-        assert bands["125_hz"] > bands["4000_hz"] + 20
+        assert bands.band_125_hz > bands.band_4000_hz + 20
 
 
 class TestSpectralCentroid:
