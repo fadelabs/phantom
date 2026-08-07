@@ -26,14 +26,14 @@ from scipy.fft import fft, ifft
 
 from phantom.audio import AudioData
 from phantom.exceptions import AnalysisError
-from phantom._bands import BandKeyedModel
+from phantom._bands import FlatMapModel
 from phantom._resample import align_sample_rates
 from phantom._rounding import RoundedModel, round_dict, round_ms, round_ratio
 from phantom._settings import AnalysisSettings, analysis_settings
 from phantom._utils import guarded_mono, is_near_silent, wrap_errors
 
 
-class PerBandCorrelation(BandKeyedModel):
+class PerBandCorrelation(FlatMapModel):
     """Typed per-band L/R correlation map (C.2).
 
     Fields mirror ``PHASE_BANDS``; each field's name is already the

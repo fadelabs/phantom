@@ -13,14 +13,17 @@ Near-silent audio returns an empty problems list with clean=True (per D-12).
 
 from __future__ import annotations
 
+from typing import Optional
+
 import numpy as np
 import essentia.standard as es
 import scipy.signal as sig
 from scipy.fft import rfft, rfftfreq
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from phantom.audio import AudioData
+from phantom._bands import FlatMapModel
 from phantom._settings import AnalysisSettings, analysis_settings
 from phantom._utils import guarded_mono, wrap_errors
 
@@ -36,13 +39,64 @@ _SEVERITY_SORT_ORDER = {"dealbreaker": 0, "significant": 1, "moderate": 2, "mino
 # ---------------------------------------------------------------------------
 
 
+class ProblemDetails(FlatMapModel):
+    """Typed per-problem detail fields (C.2).
+
+    Declares every key the built-in detectors write (one field per
+    detector); fields serialize under their own names with unset fields
+    dropped, so ``model_dump()`` output is byte-identical to the raw dicts
+    this replaces -- including partial detail sets (e.g. mono dc_offset
+    carries no ``channel``). Unknown keys pass through as extras (matching
+    the band maps' policy) so forward-compatible detail vocabulary from
+    callers or future detectors is never dropped at serialization.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    # PROB-01 clipping
+    clipped_samples: Optional[int] = None
+    clipped_percent: Optional[float] = None
+    # PROB-02 dc offset (channel present only for stereo)
+    dc_offset: Optional[float] = None
+    channel: Optional[str] = None
+    # PROB-03 inter-sample peaks
+    true_peak_dbtp: Optional[float] = None
+    sample_peak_dbfs: Optional[float] = None
+    overshoot_db: Optional[float] = None
+    # PROB-04/05 noise floor + SNR (share values). Declared in the SNR
+    # detector's construction order so the serialized key order matches the
+    # raw dicts exactly; the noise-floor item carries only noise_floor_dbfs.
+    snr_db: Optional[float] = None
+    signal_rms_dbfs: Optional[float] = None
+    noise_floor_dbfs: Optional[float] = None
+    quality: Optional[str] = None
+    # PROB-06 hum
+    primary_frequency_hz: Optional[float] = None
+    primary_salience: Optional[float] = None
+    num_components: Optional[int] = None
+    frequencies_hz: Optional[list[float]] = None
+    # PROB-07/08/09 band excess
+    band_energy_db: Optional[float] = None
+    overall_energy_db: Optional[float] = None
+    excess_db: Optional[float] = None
+    # PROB-10 resonances
+    num_resonances: Optional[int] = None
+    resonances: Optional[list[dict[str, float]]] = None
+    # PROB-13 lossy codec
+    shelf_drop_db: Optional[float] = None
+    energy_14_16khz_db: Optional[float] = None
+    energy_16_20khz_db: Optional[float] = None
+    # batch sample-rate mismatch (inject_sample_rate_mismatch)
+    sample_rates: Optional[dict[str, int]] = None
+
+
 class ProblemItem(BaseModel):
     """A single detected audio problem."""
 
     type: str
     severity: str
     message: str
-    details: dict  # Varies per problem type -- kept as untyped dict per research A2
+    details: ProblemDetails
 
 
 class ProblemSummary(BaseModel):

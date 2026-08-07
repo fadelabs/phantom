@@ -130,8 +130,8 @@ class TestClipping:
         audio = _make_audio(samples, sr)
         result = detect_problems(audio)
         clipping = [p for p in result.problems if p.type == "clipping"][0]
-        assert clipping.details["clipped_samples"] > 0
-        assert clipping.details["clipped_percent"] > 0
+        assert clipping.details.clipped_samples > 0
+        assert clipping.details.clipped_percent > 0
 
     def test_clean_signal_no_clipping(self, mono_sine_440hz):
         """Clean sine at amp 0.5 -> no clipping problem."""
@@ -173,7 +173,7 @@ class TestDCOffset:
         audio = _make_audio(samples, sr)
         result = detect_problems(audio)
         dc = [p for p in result.problems if p.type == "dc_offset"][0]
-        assert dc.details["dc_offset"] == pytest.approx(0.05, abs=0.01)
+        assert dc.details.dc_offset == pytest.approx(0.05, abs=0.01)
 
     def test_dc_offset_below_threshold_no_detection(self):
         """DC offset of 1e-4 (below 5e-4 threshold) -> no dc_offset problem (S-WR-03)."""
@@ -301,7 +301,7 @@ class TestInterSamplePeaks:
         result = detect_problems(audio)
         isp = [p for p in result.problems if p.type == "inter_sample_peak"]
         assert len(isp) > 0
-        assert isp[0].details["true_peak_dbtp"] == pytest.approx(
+        assert isp[0].details.true_peak_dbtp == pytest.approx(
             expected_dbtp, abs=1e-9
         )
 
@@ -534,7 +534,7 @@ class TestHum:
         result = detect_problems(audio)
         hum = [p for p in result.problems if p.type == "hum"][0]
         assert "primary_frequency_hz" in hum.details
-        assert hum.details["primary_frequency_hz"] == pytest.approx(60.0, abs=5.0)
+        assert hum.details.primary_frequency_hz == pytest.approx(60.0, abs=5.0)
 
     def test_clean_sine_no_hum(self, mono_sine_440hz):
         """Clean 440Hz sine -> no hum problem."""
@@ -816,8 +816,8 @@ class TestResonantPeaks:
         res = [p for p in result.problems if p.type == "resonant_peak"]
         assert len(res) == 1
         assert res[0].severity == "significant"
-        assert res[0].details["num_resonances"] >= 1
-        resonances = res[0].details["resonances"]
+        assert res[0].details.num_resonances >= 1
+        resonances = res[0].details.resonances
         assert len(resonances) >= 1
         # First resonance should be near 120 Hz
         assert abs(resonances[0]["frequency_hz"] - 120) < 20
@@ -870,7 +870,7 @@ class TestLossyCodec:
         lossy = [p for p in result.problems if p.type == "lossy_codec"]
         assert len(lossy) == 1
         assert lossy[0].severity == "dealbreaker"
-        assert lossy[0].details["shelf_drop_db"] >= 15
+        assert lossy[0].details.shelf_drop_db >= 15
 
     def test_no_lossy_on_full_bandwidth(self, white_noise_1s):
         """Full-bandwidth white noise -> no lossy_codec problem."""
@@ -1039,7 +1039,7 @@ class TestDetectBandExcess:
         )
         assert len(result) == 1
         for key in ("band_energy_db", "overall_energy_db", "excess_db"):
-            val = result[0].details[key]
+            val = getattr(result[0].details, key)
             assert val == round(val, 1), f"{key} not rounded to 1dp: {val}"
 
     def test_detect_problems_uses_parametric_for_sibilance(self, sibilant_signal):
@@ -1282,7 +1282,9 @@ class TestInjectSampleRateMismatch:
         expected_detail = {"a.wav": 44100, "b.wav": 96000}
         item = result.problems[0]
         assert item.message == f"Sample rate mismatch across stems: {expected_detail}"
-        assert item.details == {"sample_rates": expected_detail}
+        # Typed access + byte-identical serialized shape (C.2).
+        assert item.details.sample_rates == expected_detail
+        assert item.details.model_dump() == {"sample_rates": expected_detail}
 
     def test_preserves_existing_problems_after_mismatch(self):
         """Existing problems are preserved and follow the prepended mismatch item."""

@@ -111,3 +111,75 @@ class TestFrequencyDeviationMap:
                 "rating": "unmeasurable",
             }
         }
+
+
+class TestProblemDetails:
+    def test_dump_omits_unset_keys_and_keeps_order(self) -> None:
+        from phantom.problems import ProblemItem
+
+        item = ProblemItem(
+            type="snr",
+            severity="minor",
+            message="snr low",
+            details={
+                "snr_db": 55.3,
+                "signal_rms_dbfs": -20.1,
+                "noise_floor_dbfs": -75.4,
+                "quality": "acceptable",
+            },
+        )
+        dumped = item.model_dump()
+        assert list(dumped["details"]) == [
+            "snr_db",
+            "signal_rms_dbfs",
+            "noise_floor_dbfs",
+            "quality",
+        ]
+        assert dumped["details"] == {
+            "snr_db": 55.3,
+            "signal_rms_dbfs": -20.1,
+            "noise_floor_dbfs": -75.4,
+            "quality": "acceptable",
+        }
+
+    def test_partial_details_accepted(self) -> None:
+        from phantom.problems import ProblemItem
+
+        # Mono dc_offset carries no channel; construction with a partial
+        # detail dict is the norm.
+        item = ProblemItem(
+            type="dc_offset",
+            severity="minor",
+            message="dc",
+            details={"dc_offset": 0.05},
+        )
+        assert item.details.dc_offset == 0.05
+        assert item.details.channel is None
+        assert item.model_dump()["details"] == {"dc_offset": 0.05}
+
+    def test_unknown_key_passes_through(self) -> None:
+        from phantom.problems import ProblemItem
+
+        # Forward-compatible detail vocabulary passes through as extras.
+        item = ProblemItem(
+            type="clipping",
+            severity="dealbreaker",
+            message="x",
+            details={"clipped_samples": 5, "cluster": "main"},
+        )
+        assert item.details.clipped_samples == 5
+        assert item.details.cluster == "main"
+        assert item.model_dump()["details"] == {
+            "clipped_samples": 5,
+            "cluster": "main",
+        }
+
+    def test_typed_attribute_access_on_detected_problem(self) -> None:
+        from phantom.problems import ProblemDetails
+
+        d = ProblemDetails.model_validate(
+            {"clipped_samples": 5, "clipped_percent": 0.5}
+        )
+        assert d.clipped_samples == 5
+        assert d.clipped_percent == 0.5
+        assert d.snr_db is None

@@ -27,7 +27,7 @@ from phantom._utils import (
     wrap_errors,
 )
 from phantom.audio import AudioData, load_audio
-from phantom.problems import ProblemItem, ProblemsResult
+from phantom.problems import ProblemItem, ProblemDetails, ProblemsResult
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -83,13 +83,14 @@ class Recipe:
     Attributes:
         problem_type: The ProblemItem.type this recipe addresses.
         description: Human-readable description of the corrective action.
-        build_chain: Callable that takes a ProblemItem.details dict and
-            returns a list of Pedalboard plugin instances.
+        build_chain: Callable that takes a ProblemItem.details
+            (ProblemDetails, typed per-problem detail fields, C.2) and returns
+            a list of Pedalboard plugin instances.
     """
 
     problem_type: str
     description: str
-    build_chain: Callable[[dict], list]
+    build_chain: Callable[[ProblemDetails], list]
 
 
 # ---------------------------------------------------------------------------
@@ -97,7 +98,7 @@ class Recipe:
 # ---------------------------------------------------------------------------
 
 
-def _recipe_mud(details: dict) -> list:
+def _recipe_mud(details: ProblemDetails) -> list:
     """Mud: HPF at 80Hz + low-shelf cut at 300Hz."""
     import pedalboard as pb
 
@@ -107,7 +108,7 @@ def _recipe_mud(details: dict) -> list:
     ]
 
 
-def _recipe_harshness(details: dict) -> list:
+def _recipe_harshness(details: ProblemDetails) -> list:
     """Harshness: parametric cut at 3kHz."""
     import pedalboard as pb
 
@@ -116,7 +117,7 @@ def _recipe_harshness(details: dict) -> list:
     ]
 
 
-def _recipe_hum(details: dict) -> list:
+def _recipe_hum(details: ProblemDetails) -> list:
     """Hum: deep notch at each detected harmonic frequency."""
     import pedalboard as pb
 
@@ -127,7 +128,7 @@ def _recipe_hum(details: dict) -> list:
     ]
 
 
-def _recipe_sibilance(details: dict) -> list:
+def _recipe_sibilance(details: ProblemDetails) -> list:
     """Sibilance: parametric cut at 7kHz."""
     import pedalboard as pb
 
@@ -136,7 +137,7 @@ def _recipe_sibilance(details: dict) -> list:
     ]
 
 
-def _recipe_dc_offset(details: dict) -> list:
+def _recipe_dc_offset(details: ProblemDetails) -> list:
     """DC offset: subsonic HPF at 5Hz removes DC component."""
     import pedalboard as pb
 
@@ -145,7 +146,7 @@ def _recipe_dc_offset(details: dict) -> list:
     ]
 
 
-def _recipe_resonant_peak(details: dict) -> list:
+def _recipe_resonant_peak(details: ProblemDetails) -> list:
     """Resonant peak: parametric cut at each detected resonance."""
     import pedalboard as pb
 

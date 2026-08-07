@@ -37,16 +37,19 @@ OCTAVE_BAND_KEY_PAIRS: tuple[tuple[str, str], ...] = tuple(
 )
 
 
-class BandKeyedModel(BaseModel):
+class FlatMapModel(BaseModel):
     """Base for typed per-band maps that serialize as flat dicts (C.2).
 
-    Subclasses declare one typed field per band. The plain model serializer
-    emits ``{serialized_key: value}`` over the ``alias`` of each set field,
-    dropping unset (None) fields and merging ``extra`` entries, so
-    ``model_dump()`` of the owning result model is byte-identical to the raw
-    string-keyed dicts these models replace -- including partial maps (a band
-    filtered out at low sample rates) and non-canonical keys (custom profiles
-    with their own band vocabulary pass through as extras).
+    Subclasses declare one typed field per serialized key (band maps alias
+    their fields to the "250_hz" vocabulary; ProblemDetails fields use the
+    bare problem keys). The plain model serializer emits
+    ``{serialized_key: value}`` for each set field, dropping unset (None)
+    fields and merging ``extra`` entries, so ``model_dump()`` of the owning
+    result model is byte-identical to the raw string-keyed dicts these
+    models replace -- including partial maps (a band filtered out at low
+    sample rates) and non-canonical keys (custom profile band vocabularies
+    pass through as extras). Subclasses may override ``extra`` (details
+    forbids unknown keys).
 
     Dict-style read methods (``keys``/``values``/``items``/``get``,
     ``in``/``iter``/``len``) keep existing consumers working; subscripting is
@@ -110,7 +113,7 @@ def _reduce_value(value: Any) -> Any:
     return value.model_dump() if isinstance(value, BaseModel) else value
 
 
-def octave_band_map_model(name: str, value_type: type) -> type[BandKeyedModel]:
+def octave_band_map_model(name: str, value_type: type) -> type[FlatMapModel]:
     """Build a typed octave-band map model with the canonical-key aliases.
 
     Every map is the same shape -- one field per octave band, each carrying
@@ -118,14 +121,14 @@ def octave_band_map_model(name: str, value_type: type) -> type[BandKeyedModel]:
     vocabulary is defined once (``OCTAVE_BAND_KEY_PAIRS``) and reused for
     every value type: float dB energies (spectral), DeviationResult
     (comparisons), MetricDiff (matching). Serialization behavior is
-    identical across all of them (see :class:`BandKeyedModel`).
+    identical across all of them (see :class:`FlatMapModel`).
 
     Args:
         name: Model class name (for reprs and error messages).
         value_type: Per-band value model (``float`` for scalar dB maps).
 
     Returns:
-        A generated ``BandKeyedModel`` subclass with the given class name.
+        A generated ``FlatMapModel`` subclass with the given class name.
     """
     fields = {
         field_name: (
@@ -134,7 +137,7 @@ def octave_band_map_model(name: str, value_type: type) -> type[BandKeyedModel]:
         )
         for field_name, key in OCTAVE_BAND_KEY_PAIRS
     }
-    return create_model(name, __base__=BandKeyedModel, **fields)
+    return create_model(name, __base__=FlatMapModel, **fields)
 
 
 OctaveBandEnergyDb = octave_band_map_model("OctaveBandEnergyDb", float)
