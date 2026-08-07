@@ -10,6 +10,7 @@ import pytest
 from unittest.mock import patch, MagicMock
 
 from phantom.audio import AudioData
+from phantom.facade import ANALYSIS_TYPES, AnalysisSpec
 from phantom.comparison import (
     _check_mono_below,
     _normalize_band_energies,
@@ -617,31 +618,48 @@ class TestReferenceComparisonUnionBands:
         audio_a = _make_audio(samples_a, sr)
         audio_b = _make_audio(samples_b, sr)
 
-        # Both should produce the same standard bands, so patch one to have an extra
-        with patch("phantom.comparison.analyze_spectrum") as mock_spec:
-            bands_a = {"500_hz": -10.0, "1000_hz": -12.0, "extra_hz": -15.0}
-            bands_b = {"500_hz": -11.0, "1000_hz": -13.0}
-            mock_spec.side_effect = [
-                SpectralResult(
-                    octave_band_energy_db=bands_a, spectral_centroid_hz=500.0
-                ),
-                SpectralResult(
-                    octave_band_energy_db=bands_b, spectral_centroid_hz=500.0
-                ),
-            ]
-            with (
-                patch("phantom.comparison.analyze_loudness") as mock_loud,
-                patch("phantom.comparison.analyze_dynamics") as mock_dyn,
-                patch("phantom.comparison.analyze_stereo") as mock_st,
-            ):
-                mock_loud.return_value = LoudnessResult(
-                    integrated_lufs=-14.0, true_peak_dbtp=-1.0, loudness_range_lu=6.0
-                )
-                mock_dyn.return_value = DynamicsResult(
-                    rms_dbfs=-18.0, crest_factor_db=10.0, dynamic_range_db=20.0
-                )
-                mock_st.return_value = StereoResult(correlation=1.0, stereo_width=0.5)
-                result = compare_to_reference(audio_a, audio_b)
+        # compare_to_reference resolves its analyzers from the facade registry
+        # (cache_key AND fn from the same row), so patch the registry rows for
+        # the four reused dimensions with fakes -- one with an extra band.
+        bands_a = {"500_hz": -10.0, "1000_hz": -12.0, "extra_hz": -15.0}
+        bands_b = {"500_hz": -11.0, "1000_hz": -13.0}
+        mock_spectral = MagicMock()
+        mock_spectral.side_effect = [
+            SpectralResult(octave_band_energy_db=bands_a, spectral_centroid_hz=500.0),
+            SpectralResult(octave_band_energy_db=bands_b, spectral_centroid_hz=500.0),
+        ]
+        mock_loudness = MagicMock(
+            return_value=LoudnessResult(
+                integrated_lufs=-14.0, true_peak_dbtp=-1.0, loudness_range_lu=6.0
+            )
+        )
+        mock_dynamics = MagicMock(
+            return_value=DynamicsResult(
+                rms_dbfs=-18.0, crest_factor_db=10.0, dynamic_range_db=20.0
+            )
+        )
+        mock_stereo = MagicMock(
+            return_value=StereoResult(correlation=1.0, stereo_width=0.5)
+        )
+
+        def _fake_spec(key, fn):
+            real = ANALYSIS_TYPES[key]
+            return AnalysisSpec(
+                key=key,
+                fn=fn,
+                title=real.title,
+                cache_key=real.cache_key,
+                description=real.description,
+            )
+
+        fake_types = {
+            "spectral": _fake_spec("spectral", mock_spectral),
+            "loudness": _fake_spec("loudness", mock_loudness),
+            "dynamics": _fake_spec("dynamics", mock_dynamics),
+            "stereo": _fake_spec("stereo", mock_stereo),
+        }
+        with patch("phantom.comparison.ANALYSIS_TYPES", fake_types):
+            result = compare_to_reference(audio_a, audio_b)
 
         freq = result.frequency
         assert "500_hz" in freq
