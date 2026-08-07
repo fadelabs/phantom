@@ -8,15 +8,12 @@ import sys
 import rich_click as click
 from rich.panel import Panel
 
-from phantom import (
-    load_audio,
-    analyze_spectrum,
-    analyze_loudness,
-    analyze_dynamics,
-    analyze_stereo,
-    analyze_phase,
-    detect_problems,
-    PhantomError,
+from phantom import load_audio, PhantomError
+from phantom.facade import (
+    ANALYSIS_TYPES,
+    BatchDiagnosticResult,
+    StemDiagnosticResult,
+    run_analyses,
 )
 from phantom.cli._formatting import (
     get_console,
@@ -33,32 +30,17 @@ from phantom.problems import inject_sample_rate_mismatch
 # Analysis dispatcher
 # ---------------------------------------------------------------------------
 
-# Maps flag name -> (analysis function, display title)
-_ANALYSIS_TYPES: dict[str, tuple] = {
-    "spectral": (analyze_spectrum, "Spectral Analysis"),
-    "loudness": (analyze_loudness, "Loudness Analysis"),
-    "dynamics": (analyze_dynamics, "Dynamics Analysis"),
-    "stereo": (analyze_stereo, "Stereo Field Analysis"),
-    "phase": (analyze_phase, "Phase Coherence Analysis"),
-    "problems": (detect_problems, "Problem Detection"),
-}
-
 
 def _run_selected_analyses(audio, enabled: list[str]) -> dict:
     """Run only the enabled analysis types and return results dict.
 
-    Each analyzer is routed through the shared ``analysis_cache`` via
-    ``_cached_analysis`` (P-01). The cache key is the analyzer's ``__name__``
-    (e.g. ``analyze_spectrum``), which matches the keys used by the MCP
-    composite tools and ``compare_*`` tools, so CLI and server share entries.
+    Delegates to ``phantom.facade.run_analyses``, which routes each analyzer
+    through the shared ``analysis_cache`` under the registry's canonical cache
+    keys (P-01). The keys (e.g. ``analyze_spectrum``) match those used by the
+    MCP composite tools and ``compare_*`` tools, so CLI and server share
+    entries.
     """
-    from phantom._cache import _cached_analysis
-
-    results: dict = {}
-    for name in enabled:
-        fn, _title = _ANALYSIS_TYPES[name]
-        results[name] = _cached_analysis(audio, fn.__name__, fn)
-    return results
+    return run_analyses(audio, enabled)
 
 
 def _enabled_analyses(
@@ -75,7 +57,7 @@ def _enabled_analyses(
     """
     run_all = not any([spectrum, loudness, dynamics, stereo, phase, problems])
     if run_all:
-        return list(_ANALYSIS_TYPES.keys())
+        return list(ANALYSIS_TYPES)
 
     enabled: list[str] = []
     if spectrum:
@@ -121,21 +103,21 @@ def _render_results(results: dict, console) -> None:
             if octave_bands is not None:
                 render_spectral_chart(octave_bands, console)
         else:
-            _title = _ANALYSIS_TYPES[name][1]
-            render_analysis_table(_title, result.model_dump(), console)
+            render_analysis_table(
+                ANALYSIS_TYPES[name].title, result.model_dump(), console
+            )
 
 
 def _build_json_payload(audio, file_path: str, results: dict) -> dict:
     """Build a JSON-serializable dict for a single file analysis."""
-    payload: dict = {
-        "file": os.path.basename(file_path),
-        "duration_seconds": audio.duration,
-        "sample_rate": audio.sample_rate,
-        "channels": audio.num_channels,
-    }
-    for name, result in results.items():
-        payload[name] = result.model_dump()
-    return payload
+    payload = StemDiagnosticResult(
+        file=os.path.basename(file_path),
+        duration_seconds=audio.duration,
+        sample_rate=audio.sample_rate,
+        channels=audio.num_channels,
+        **results,
+    )
+    return payload.model_dump(exclude_none=True)
 
 
 # ---------------------------------------------------------------------------
@@ -309,23 +291,22 @@ def _output_batch_json(
                 "error": data["error"],
                 "error_type": data["error_type"],
             }
-        else:
-            audio = data["audio"]
-            results = data["results"]
-            stem_payload: dict = {
-                "file": stem_name,
-                "duration_seconds": audio.duration,
-                "sample_rate": audio.sample_rate,
-                "channels": audio.num_channels,
-            }
-            for name, result in results.items():
-                stem_payload[name] = result.model_dump()
-            stems[stem_name] = stem_payload
+            continue
 
-    batch_payload = {
-        "stems": stems,
-        "stem_count": len(files),
-    }
+        audio = data["audio"]
+        results = data["results"]
+        stems[stem_name] = StemDiagnosticResult(
+            file=stem_name,
+            duration_seconds=audio.duration,
+            sample_rate=audio.sample_rate,
+            channels=audio.num_channels,
+            **results,
+        ).model_dump(exclude_none=True)
+
+    batch_payload = BatchDiagnosticResult(
+        stems=stems,
+        stem_count=len(files),
+    ).model_dump()
     output_json(batch_payload)
 
 

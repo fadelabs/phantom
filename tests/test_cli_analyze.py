@@ -298,9 +298,10 @@ def test_analyze_batch_json_mismatch(runner, make_wav):
 def test_analyze_cli_populates_cache(mono_sine_440hz, make_wav):
     """The analyze CLI routes analyzers through the shared analysis cache (P-01).
 
-    _run_selected_analyses keys the cache via each analyzer's __name__, matching
-    the keys used by the MCP composite/compare tools (see the server-side
-    test_full_diagnostic_populates_cache twin). Running it must populate
+    _run_selected_analyses keys the cache via the facade registry's cache_key,
+    matching the keys used by the MCP composite/compare tools (see the
+    server-side test_full_diagnostic_populates_cache twin). Running it must
+    populate
     analysis_cache under those shared key names so a later compare_* / server
     call on the same bytes reuses the work.
     """
