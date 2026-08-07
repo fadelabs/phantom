@@ -13,21 +13,21 @@ import sys
 
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel
 
 from phantom._utils import _get_env_int
 from phantom.audio import load_audio
 from phantom.exceptions import PhantomError
-from phantom.spectral import analyze_spectrum as _analyze_spectrum, SpectralResult
-from phantom.loudness import analyze_loudness as _analyze_loudness, LoudnessResult
-from phantom.dynamics import analyze_dynamics as _analyze_dynamics, DynamicsResult
-from phantom.stereo import analyze_stereo as _analyze_stereo, StereoResult
-from phantom.phase import analyze_phase as _analyze_phase, PhaseResult
+from phantom.facade import BatchDiagnosticResult, StemDiagnosticResult, run_analyses
+from phantom.spectral import analyze_spectrum as _analyze_spectrum
+from phantom.loudness import analyze_loudness as _analyze_loudness
+from phantom.dynamics import analyze_dynamics as _analyze_dynamics
+from phantom.stereo import analyze_stereo as _analyze_stereo
+from phantom.phase import analyze_phase as _analyze_phase
 from phantom.phase import compare_phase as _compare_phase
 from phantom.problems import (
     detect_problems as _detect_problems,
     inject_sample_rate_mismatch,
-    ProblemsResult,
 )
 from phantom.masking import analyze_masking as _analyze_masking
 from phantom.masking import (
@@ -50,33 +50,6 @@ from phantom.processing import (
 # ---------------------------------------------------------------------------
 # Composite response models
 # ---------------------------------------------------------------------------
-
-
-class StemDiagnosticResult(BaseModel):
-    """Typed response for full_diagnostic and batch_diagnostic tools."""
-
-    file: str
-    duration_seconds: float
-    sample_rate: int
-    channels: int
-    spectral: SpectralResult
-    loudness: LoudnessResult
-    dynamics: DynamicsResult
-    stereo: StereoResult
-    phase: PhaseResult
-    problems: ProblemsResult
-
-    @field_validator("duration_seconds", mode="before")
-    @classmethod
-    def _round_duration(cls, v: float) -> float:
-        return round(v, 3) if v is not None else v
-
-
-class BatchDiagnosticResult(BaseModel):
-    """Typed response for the batch_diagnostic server tool."""
-
-    stems: dict[str, StemDiagnosticResult | dict]  # dict for error stems
-    stem_count: int
 
 
 class MultiStemMaskingResult(BaseModel):
@@ -339,25 +312,12 @@ def apply_processing(
 def _run_full_analysis(audio) -> dict:
     """Run all six analysis types on an AudioData object.
 
-    Returns a dict with keys: spectral, loudness, dynamics, stereo,
-    phase, problems. Values are Pydantic model instances (not dumped dicts).
-    Caller adds file-level metadata (file, duration, sample_rate, channels).
-
-    Each analyzer is routed through the shared ``analysis_cache`` via
-    ``_cached_analysis`` (P-01), so a subsequent ``compare_to_profile`` /
-    ``compare_to_reference`` on the same audio content reuses these results.
-    The cache keys match those used by the ``compare_*`` tools exactly.
+    Delegates to ``phantom.facade.run_analyses``, which routes every analyzer
+    through the shared ``analysis_cache`` under the registry's canonical cache
+    keys (P-01). Returns ``{dimension_key: Pydantic model}``; caller adds
+    file-level metadata (file, duration, sample_rate, channels).
     """
-    from phantom._cache import _cached_analysis
-
-    return {
-        "spectral": _cached_analysis(audio, "analyze_spectrum", _analyze_spectrum),
-        "loudness": _cached_analysis(audio, "analyze_loudness", _analyze_loudness),
-        "dynamics": _cached_analysis(audio, "analyze_dynamics", _analyze_dynamics),
-        "stereo": _cached_analysis(audio, "analyze_stereo", _analyze_stereo),
-        "phase": _cached_analysis(audio, "analyze_phase", _analyze_phase),
-        "problems": _cached_analysis(audio, "detect_problems", _detect_problems),
-    }
+    return run_analyses(audio)
 
 
 @mcp.tool
