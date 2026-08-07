@@ -16,7 +16,6 @@ import essentia.standard as es
 
 from phantom._bands import (  # re-exported for backward compatibility (B.6)
     OCTAVE_CENTERS,  # noqa: F401 -- tests import it from phantom.spectral
-    OCTAVE_EDGES,  # noqa: F401 -- tests import it from phantom.spectral
     _BAND_LABELS,
     _octave_band_energies,
 )
