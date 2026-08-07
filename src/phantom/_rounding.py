@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+from functools import partial
+from typing import Callable, ClassVar
+
+from pydantic import BaseModel, model_validator
+
 
 def round_db(v: float | None, dp: int = 2) -> float | None:
     """Round a dB value. Returns None unchanged."""
@@ -36,3 +41,42 @@ def round_pct(v: float | None, dp: int = 1) -> float | None:
 def round_db_dict(v: dict[str, float] | None, dp: int = 2) -> dict[str, float] | None:
     """Round all values in a dict of dB values. Returns None unchanged."""
     return {k: round(val, dp) for k, val in v.items()} if v is not None else v
+
+
+class RoundedModel(BaseModel):
+    """Base model that applies per-field rounding on validation (B.3).
+
+    Subclasses declare ``_ROUND_FIELDS``: ``{field_name: rounding callable}``.
+    A ``mode="before"`` model validator applies each callable to the incoming
+    value before field validation, replacing the repeated
+    ``@field_validator`` boilerplate that used to wrap every helper in this
+    module (23 decorators across src). The callables are the same ones the
+    decorators called, so emitted values are numerically identical.
+
+    A field whose incoming value is present-but-``None`` passes through
+    unchanged (the helpers are None-tolerant anyway); the field's own
+    validation (type coercion, required) is untouched. ``model_copy`` does not
+    revalidate, exactly as before.
+    """
+
+    _ROUND_FIELDS: ClassVar[dict[str, Callable[[object], object]]] = {}
+
+    @model_validator(mode="before")
+    @classmethod
+    def _apply_declared_rounding(cls, values):
+        """Round each declared field that is present and not None."""
+        if not isinstance(values, dict):
+            return values
+        spec = cls._ROUND_FIELDS
+        if not spec:
+            return values
+        # New dict: never mutate caller-owned input.
+        updated = dict(values)
+        for field, fn in spec.items():
+            if field in updated and updated[field] is not None:
+                updated[field] = fn(updated[field])
+        return updated
+
+
+# Round to 3 decimals: used by facade's StemDiagnosticResult.duration_seconds.
+round_duration = partial(round, ndigits=3)

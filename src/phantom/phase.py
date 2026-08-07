@@ -18,39 +18,39 @@ from __future__ import annotations
 
 from typing import Optional
 
+from functools import partial
+
 import numpy as np
 import scipy.signal as sig
-from pydantic import BaseModel, field_validator
 from scipy.fft import fft, ifft
 
 from phantom.audio import AudioData
 from phantom.exceptions import AnalysisError
 from phantom._resample import align_sample_rates
-from phantom._rounding import round_ms, round_ratio
-from phantom._utils import _get_env_float, is_near_silent, wrap_errors
+from phantom._rounding import RoundedModel, round_db_dict, round_ms, round_ratio
+from phantom._utils import (
+    _get_env_float,
+    guarded_mono,
+    is_near_silent,
+    wrap_errors,
+)
 
 
-class PhaseResult(BaseModel):
+class PhaseResult(RoundedModel):
     """Result of phase coherence analysis."""
 
     phase_correlation: Optional[float] = None
     per_band_correlation: Optional[dict[str, float]] = None
     polarity_inverted: Optional[bool] = None
 
-    @field_validator("phase_correlation", mode="before")
-    @classmethod
-    def _round_corr(cls, v: float | None) -> float | None:
-        return round_ratio(v)
-
-    @field_validator("per_band_correlation", mode="before")
-    @classmethod
-    def _round_band_corr(cls, v: dict[str, float] | None) -> dict[str, float] | None:
-        if v is None:
-            return v
-        return {k: round(val, 4) for k, val in v.items()}
+    _ROUND_FIELDS = {
+        "phase_correlation": round_ratio,
+        # Per-band correlations round to 4dp (4th-order bandpass precision).
+        "per_band_correlation": partial(round_db_dict, dp=4),
+    }
 
 
-class PhaseCompareResult(BaseModel):
+class PhaseCompareResult(RoundedModel):
     """Result of cross-file phase comparison."""
 
     delay_samples: Optional[int] = None
@@ -58,15 +58,10 @@ class PhaseCompareResult(BaseModel):
     correlation: Optional[float] = None
     polarity_inverted: Optional[bool] = None
 
-    @field_validator("delay_ms", mode="before")
-    @classmethod
-    def _round_ms(cls, v: float | None) -> float | None:
-        return round_ms(v)
-
-    @field_validator("correlation", mode="before")
-    @classmethod
-    def _round_corr(cls, v: float | None) -> float | None:
-        return round_ratio(v)
+    _ROUND_FIELDS = {
+        "delay_ms": round_ms,
+        "correlation": round_ratio,
+    }
 
 
 # Frequency bands for per-band phase correlation (PHAS-02).
@@ -180,15 +175,13 @@ def analyze_phase(audio: AudioData) -> PhaseResult:
     Raises:
         AnalysisError: If audio has 0 samples or analysis fails.
     """
-    # Empty-samples guard
+    # Empty-samples guard (the stereo branch below checks channels individually)
     if audio.num_samples == 0:
         raise AnalysisError("Phase analysis failed: audio has 0 samples")
 
-    # Mono guard (D-03): deterministic defaults
+    # Mono guard (D-03): deterministic defaults after the empty/silence guards.
     if audio.num_channels == 1:
-        mono = audio.mono
-        # Near-silence guard for mono
-        if is_near_silent(mono):
+        if guarded_mono(audio, "Phase analysis failed") is None:
             return _silent_phase_result()
         nyq = audio.sample_rate / 2.0
         band_defaults = {
@@ -201,7 +194,8 @@ def analyze_phase(audio: AudioData) -> PhaseResult:
         )
 
     # Stereo: near-silence guard checks individual channels, not mono mix
-    # (out-of-phase stereo has zero mono mix but non-silent channels)
+    # (out-of-phase stereo has zero mono mix but non-silent channels). The
+    # per-channel check cannot use the (mono) memoized is_near_silent.
     left = audio.left
     right = audio.right
     if is_near_silent(left) and is_near_silent(right):
@@ -265,8 +259,8 @@ def compare_phase(audio1: AudioData, audio2: AudioData) -> PhaseCompareResult:
     if len(mono1) == 0 or len(mono2) == 0:
         raise AnalysisError("Phase comparison failed: audio has 0 samples")
 
-    # Near-silence guard
-    if is_near_silent(mono1) or is_near_silent(mono2):
+    # Near-silence guard (memoized per audio, A.7)
+    if audio1.is_near_silent or audio2.is_near_silent:
         return _silent_compare_result()
 
     # Truncate to shorter signal

@@ -15,6 +15,7 @@ import numpy as np
 from scipy.signal import resample_poly
 
 from phantom.audio import AudioData
+from phantom.exceptions import AnalysisError
 
 logger = logging.getLogger(__name__)
 
@@ -34,13 +35,16 @@ def resample_to_match(audio: AudioData, target_sr: int) -> AudioData:
         the original object when no resampling is needed.
 
     Raises:
-        ValueError: If *target_sr* < *audio.sample_rate* (downsampling).
+        AnalysisError: If *target_sr* < *audio.sample_rate* (downsampling).
+            PhantomError (not a bare ValueError, B.9) so callers without the
+            analyzer @wrap_errors decorator can still catch it; the message is
+            unchanged.
     """
     if target_sr == audio.sample_rate:
         return audio
 
     if target_sr < audio.sample_rate:
-        raise ValueError(
+        raise AnalysisError(
             f"target_sr must be >= audio sample rate "
             f"({target_sr} < {audio.sample_rate})"
         )

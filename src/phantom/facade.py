@@ -49,9 +49,10 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Callable
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict
 
 from phantom._cache import _cached_analysis
+from phantom._rounding import RoundedModel, round_duration
 from phantom.audio import AudioData
 from phantom.dynamics import analyze_dynamics, DynamicsResult
 from phantom.loudness import analyze_loudness, LoudnessResult
@@ -212,7 +213,7 @@ def run_analyses(
 # ---------------------------------------------------------------------------
 
 
-class StemDiagnosticResult(BaseModel):
+class StemDiagnosticResult(RoundedModel):
     """Typed per-stem payload for the server composite tools.
 
     All six dimensions are required: ``full_diagnostic`` and ``batch_diagnostic``
@@ -239,10 +240,7 @@ class StemDiagnosticResult(BaseModel):
     phase: PhaseResult
     problems: ProblemsResult
 
-    @field_validator("duration_seconds", mode="before")
-    @classmethod
-    def _round_duration(cls, v: float) -> float:
-        return round(v, 3) if v is not None else v
+    _ROUND_FIELDS = {"duration_seconds": round_duration}
 
 
 class BatchDiagnosticResult(BaseModel):

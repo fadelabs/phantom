@@ -12,14 +12,12 @@ from __future__ import annotations
 import itertools
 
 import numpy as np
-from pydantic import BaseModel, field_validator
 
 from phantom.audio import AudioData
-from phantom.exceptions import AnalysisError
 from phantom._resample import align_sample_rates, resample_to_match
-from phantom._rounding import round_ratio
-from phantom._utils import is_near_silent, wrap_errors
-from phantom.spectral import _BAND_LABELS, _octave_band_energies
+from phantom._bands import _BAND_LABELS, _octave_band_energies
+from phantom._rounding import RoundedModel, round_ratio
+from phantom._utils import guarded_mono, wrap_errors
 
 # Severity thresholds for per-band overlap classification.
 _SEVERITY_HIGH = 0.6
@@ -52,33 +50,27 @@ _FLOOR_DB = 40.0
 # ---------------------------------------------------------------------------
 
 
-class MaskingBand(BaseModel):
+class MaskingBand(RoundedModel):
     """Per-band masking analysis result."""
 
     band: str
     severity: str
     overlap_score: float
 
-    @field_validator("overlap_score", mode="before")
-    @classmethod
-    def _round_score(cls, v: float) -> float | None:
-        return round_ratio(v)
+    _ROUND_FIELDS = {"overlap_score": round_ratio}
 
 
-class MaskingResult(BaseModel):
+class MaskingResult(RoundedModel):
     """Result of pairwise masking analysis."""
 
     bands: list[MaskingBand] = []
     overall_severity: str = "none"
     overall_score: float = 0.0
 
-    @field_validator("overall_score", mode="before")
-    @classmethod
-    def _round_score(cls, v: float) -> float | None:
-        return round_ratio(v)
+    _ROUND_FIELDS = {"overall_score": round_ratio}
 
 
-class MaskingPair(BaseModel):
+class MaskingPair(RoundedModel):
     """A single stem pair in the masking matrix."""
 
     stem_a: str
@@ -87,13 +79,10 @@ class MaskingPair(BaseModel):
     overall_score: float
     bands: list[MaskingBand]
 
-    @field_validator("overall_score", mode="before")
-    @classmethod
-    def _round_score(cls, v: float) -> float | None:
-        return round_ratio(v)
+    _ROUND_FIELDS = {"overall_score": round_ratio}
 
 
-class MaskingMatrixResult(BaseModel):
+class MaskingMatrixResult(RoundedModel):
     """Result of multi-stem masking matrix analysis."""
 
     pairs: list[MaskingPair] = []
@@ -139,9 +128,10 @@ def _no_masking_result() -> MaskingResult:
 def _compute_band_energies(mono: np.ndarray, sample_rate: int) -> np.ndarray:
     """Compute average energy per octave band using Essentia FrequencyBands.
 
-    Delegates to the shared ``spectral._octave_band_energies`` helper so the
+    Delegates to the shared ``_bands._octave_band_energies`` helper so the
     4096/2048 Hann + ``FrequencyBands(OCTAVE_EDGES)`` loop lives in one place
-    (P-09). Numerically identical to the former inline implementation.
+    (P-09, promoted to a public module in B.6). Numerically identical to the
+    former inline implementation.
 
     Args:
         mono: 1D float32 numpy array of audio samples.
@@ -227,16 +217,10 @@ def analyze_masking(audio_a: AudioData, audio_b: AudioData) -> MaskingResult:
     # Auto-resample on sample rate mismatch
     audio_a, audio_b = align_sample_rates(audio_a, audio_b)
 
-    # Mono mixdown
-    mono_a = audio_a.mono
-    mono_b = audio_b.mono
-
-    # Empty samples guard
-    if len(mono_a) == 0 or len(mono_b) == 0:
-        raise AnalysisError("Masking analysis failed: audio has 0 samples")
-
-    # Near-silence guard
-    if is_near_silent(mono_a) or is_near_silent(mono_b):
+    # Empty/silence guards (B.2) on both inputs.
+    mono_a = guarded_mono(audio_a, "Masking analysis failed")
+    mono_b = guarded_mono(audio_b, "Masking analysis failed")
+    if mono_a is None or mono_b is None:
         return _no_masking_result()
 
     # Compute per-band energies for both stems
@@ -289,10 +273,9 @@ def analyze_masking_matrix(stems: list[AudioData]) -> MaskingMatrixResult:
     energies: list[np.ndarray | None] = []
     for stem in stems:
         aligned = resample_to_match(stem, target_sr)  # identity if already at target
-        mono = aligned.mono
-        if len(mono) == 0:
-            raise AnalysisError("Masking analysis failed: audio has 0 samples")
-        if is_near_silent(mono):
+        # Empty/silence guards (B.2); the aligned copy is dropped right after.
+        mono = guarded_mono(aligned, "Masking analysis failed")
+        if mono is None:
             energies.append(None)  # marker for silent stems
         else:
             energies.append(_compute_band_energies(mono, aligned.sample_rate))

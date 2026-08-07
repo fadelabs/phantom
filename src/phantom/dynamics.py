@@ -15,15 +15,13 @@ from typing import Optional
 
 import numpy as np
 import essentia.standard as es
-from pydantic import BaseModel, field_validator
 
 from phantom.audio import AudioData
-from phantom.exceptions import AnalysisError
-from phantom._rounding import round_db, round_ratio
-from phantom._utils import is_near_silent, _block_rms_db, wrap_errors
+from phantom._rounding import RoundedModel, round_db, round_ratio
+from phantom._utils import guarded_mono, wrap_errors
 
 
-class DynamicsResult(BaseModel):
+class DynamicsResult(RoundedModel):
     """Result of dynamics analysis."""
 
     rms_dbfs: Optional[float] = None
@@ -34,22 +32,14 @@ class DynamicsResult(BaseModel):
     dynamic_complexity: Optional[float] = None
     loudness_db: Optional[float] = None
 
-    @field_validator(
-        "rms_dbfs",
-        "peak_dbfs",
-        "crest_factor_db",
-        "dynamic_range_db",
-        "loudness_db",
-        mode="before",
-    )
-    @classmethod
-    def _round_db(cls, v: float | None) -> float | None:
-        return round_db(v)
-
-    @field_validator("dynamic_complexity", mode="before")
-    @classmethod
-    def _round_ratio(cls, v: float | None) -> float | None:
-        return round_ratio(v)
+    _ROUND_FIELDS = {
+        "rms_dbfs": round_db,
+        "peak_dbfs": round_db,
+        "crest_factor_db": round_db,
+        "dynamic_range_db": round_db,
+        "loudness_db": round_db,
+        "dynamic_complexity": round_ratio,
+    }
 
 
 def _silent_dynamics_result() -> DynamicsResult:
@@ -80,14 +70,9 @@ def analyze_dynamics(audio: AudioData) -> DynamicsResult:
     Raises:
         AnalysisError: If analysis fails or audio has 0 samples.
     """
-    mono = audio.mono
-
-    # Empty-samples guard
-    if len(mono) == 0:
-        raise AnalysisError("Dynamics analysis failed: audio has 0 samples")
-
-    # Near-silence guard
-    if is_near_silent(mono):
+    # Empty/silence guards (B.2): mono, or None when near-silent.
+    mono = guarded_mono(audio, "Dynamics analysis failed")
+    if mono is None:
         return _silent_dynamics_result()
 
     # -- RMS level (DYN-01) --
@@ -103,7 +88,9 @@ def analyze_dynamics(audio: AudioData) -> DynamicsResult:
     crest_factor_is_low = bool(crest_factor_db < 6.0)
 
     # -- Dynamic range (DYN-04) --
-    block_rms_db = _block_rms_db(mono)
+    # Memoized on AudioData (A.2): also consumed by detect_problems'
+    # noise-floor/SNR detectors, so the block loop runs at most once.
+    block_rms_db = audio.block_rms_db
     if len(block_rms_db) >= 2:
         dynamic_range_db = float(
             np.percentile(block_rms_db, 95) - np.percentile(block_rms_db, 5)
