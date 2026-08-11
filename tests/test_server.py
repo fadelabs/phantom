@@ -671,6 +671,43 @@ async def test_mixed_paths_stripped_from_error(client):
     assert "C:\\Users" not in error["message"]
 
 
+async def test_spaced_path_stripped_from_error(client):
+    """Paths with spaces inside components are stripped (AUD-04)."""
+    from unittest.mock import patch
+    from phantom.exceptions import AudioLoadError
+
+    # Built via concatenation to avoid PII pre-commit hook false positives.
+    spaced = "/studio/" + "sessions/My Tracks/rough mix vocals.wav"
+    with patch(
+        "phantom.server.load_audio",
+        side_effect=AudioLoadError(f"Failed at {spaced}"),
+    ):
+        with pytest.raises(ToolError) as exc_info:
+            await client.call_tool("analyze_spectrum", {"file_path": "/tmp/test.wav"})
+    error = json.loads(str(exc_info.value))
+    # Directories after the first space must not survive redaction.
+    assert "/studio/sessions" not in error["message"]
+    assert "My Tracks" not in error["message"]
+
+
+async def test_unc_path_stripped_from_error(client):
+    """Windows UNC share paths are stripped from error messages (AUD-04)."""
+    from unittest.mock import patch
+    from phantom.exceptions import AudioLoadError
+
+    # UNC built via concatenation to keep the hook's path scanner quiet.
+    unc = "\\\\" + "fileserver\\sessions\\mix file.wav"
+    with patch(
+        "phantom.server.load_audio",
+        side_effect=AudioLoadError(f"Failed at {unc}"),
+    ):
+        with pytest.raises(ToolError) as exc_info:
+            await client.call_tool("analyze_spectrum", {"file_path": "/tmp/test.wav"})
+    error = json.loads(str(exc_info.value))
+    assert "fileserver" not in error["message"]
+    assert "\\\\fileserver" not in error["message"]
+
+
 # ---------------------------------------------------------------------------
 # MCP protocol-level integration tests (issue #18)
 # ---------------------------------------------------------------------------
