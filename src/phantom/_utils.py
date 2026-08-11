@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import functools
+import math
 import os
 import stat
 import tempfile
@@ -105,7 +106,10 @@ def check_duration_size(
                 )
         else:
             effective_max_duration = DEFAULT_MAX_DURATION
-    if effective_max_duration <= 0:
+    # Non-finite limits (NaN/Inf from "nan"/"inf" env values or an inf
+    # parameter) would silently disable the cap, so they are rejected here
+    # (AUD-08).
+    if not math.isfinite(effective_max_duration) or effective_max_duration <= 0:
         raise AudioLoadError(
             f"max_duration must be a positive number, got {effective_max_duration}. "
             f"Check PHANTOM_MAX_DURATION env var or max_duration parameter."
@@ -133,7 +137,7 @@ def check_duration_size(
                 )
         else:
             effective_max_size = DEFAULT_MAX_FILE_SIZE
-    if effective_max_size <= 0:
+    if not math.isfinite(effective_max_size) or effective_max_size <= 0:
         raise AudioLoadError(
             f"max_file_size must be a positive number, got {effective_max_size}. "
             f"Check PHANTOM_MAX_FILE_SIZE env var or max_file_size parameter."
@@ -281,9 +285,14 @@ def _get_env_float(name: str, default: float) -> float:
     env_val = os.environ.get(name)
     if env_val is not None and env_val.strip():
         try:
-            return float(env_val)
+            value = float(env_val)
         except ValueError as exc:
             raise AnalysisError(f"{name} must be a number, got: '{env_val}'") from exc
+        # NaN/Inf parse successfully but would silently disable the knob
+        # they configure (AUD-08), so they are rejected like malformed input.
+        if not math.isfinite(value):
+            raise AnalysisError(f"{name} must be a number, got: '{env_val}'")
+        return value
     return default
 
 

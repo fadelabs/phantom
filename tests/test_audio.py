@@ -598,6 +598,13 @@ class TestInputValidationEdgeCases:
         with pytest.raises(AudioLoadError, match="positive"):
             load_audio(path, max_file_size=0)
 
+    def test_inf_max_duration_rejected(self, wav_file_factory, mono_sine_440hz):
+        """load_audio rejects an inf max_duration param instead of disabling the cap."""
+        samples, sr = mono_sine_440hz
+        path = wav_file_factory(samples, sr)
+        with pytest.raises(AudioLoadError, match="positive"):
+            load_audio(path, max_duration=float("inf"))
+
     # -- Malformed env vars (SC-10) --
 
     def test_env_max_duration_zero_rejected(
@@ -615,6 +622,17 @@ class TestInputValidationEdgeCases:
     ):
         """PHANTOM_MAX_DURATION='-1' raises AudioLoadError matching 'positive'."""
         monkeypatch.setenv("PHANTOM_MAX_DURATION", "-1")
+        samples, sr = mono_sine_440hz
+        path = wav_file_factory(samples, sr)
+        with pytest.raises(AudioLoadError, match="positive"):
+            load_audio(path)
+
+    @pytest.mark.parametrize("bad_value", ["nan", "inf", "-inf"])
+    def test_env_max_duration_non_finite_rejected(
+        self, wav_file_factory, mono_sine_440hz, monkeypatch, bad_value
+    ):
+        """PHANTOM_MAX_DURATION=nan/inf raises AudioLoadError, not a disabled cap."""
+        monkeypatch.setenv("PHANTOM_MAX_DURATION", bad_value)
         samples, sr = mono_sine_440hz
         path = wav_file_factory(samples, sr)
         with pytest.raises(AudioLoadError, match="positive"):

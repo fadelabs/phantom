@@ -472,6 +472,13 @@ class TestGetEnvHelpers:
         with pytest.raises(AnalysisError, match="must be a number"):
             _get_env_float("PHANTOM_PHAT_WINDOW_S", 10.0)
 
+    @pytest.mark.parametrize("bad_value", ["nan", "inf", "-inf", "1e400"])
+    def test_get_env_float_raises_on_non_finite(self, monkeypatch, bad_value) -> None:
+        """Non-finite values are rejected instead of silently disabling the knob."""
+        monkeypatch.setenv("PHANTOM_PHAT_WINDOW_S", bad_value)
+        with pytest.raises(AnalysisError, match="must be a number"):
+            _get_env_float("PHANTOM_PHAT_WINDOW_S", 10.0)
+
     def test_get_env_float_returns_default_on_empty(self, monkeypatch) -> None:
         """Returns default when env var is empty string."""
         monkeypatch.setenv("PHANTOM_PHAT_WINDOW_S", "")
