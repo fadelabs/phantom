@@ -192,6 +192,21 @@ class TestAudioDataValidation:
                 num_samples=100,
             )
 
+    def test_rejects_overflow_magnitude_samples(self):
+        """AudioData rejects samples whose magnitude can overflow analysis (AUD-01)."""
+        from phantom.exceptions import AnalysisError
+
+        bad = np.zeros((100, 1), dtype=np.float32)
+        bad[50, 0] = 1e20  # finite, but far beyond the analysable range
+        with pytest.raises(AnalysisError, match="magnitude"):
+            AudioData(
+                samples=bad,
+                sample_rate=44100,
+                num_channels=1,
+                duration=100 / 44100,
+                num_samples=100,
+            )
+
 
 class TestMemoizedDerivatives:
     """Memoized block_rms_db and is_near_silent (A.2, A.7).
@@ -383,6 +398,23 @@ class TestLoadAudio:
             fh.write(struct.pack("<f", bad_value))
 
         with pytest.raises(AudioLoadError, match="non-finite"):
+            load_audio(str(path))
+
+    def test_rejects_overflow_magnitude_samples(self, tmp_path):
+        """A float WAV with extreme-but-finite samples is rejected (AUD-01).
+
+        Magnitudes near float32's ceiling overflow the analysis engine's
+        internal accumulators, which hangs HumDetector exactly like NaN
+        input; the guard must catch finite values in that range.
+        """
+        sr = 44100
+        n = 4410
+        path = tmp_path / "loud.wav"
+        samples = (
+            1e20 * np.sin(2 * np.pi * 440 * np.linspace(0, 0.1, n, endpoint=False))
+        ).astype(np.float32)
+        sf.write(str(path), samples, sr, subtype="FLOAT")
+        with pytest.raises(AudioLoadError, match="magnitude"):
             load_audio(str(path))
 
     def test_decoded_size_cap_rejected(

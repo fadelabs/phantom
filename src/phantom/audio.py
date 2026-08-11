@@ -34,6 +34,14 @@ from phantom._utils import (
 MIN_SAMPLE_RATE = 8000  # 8 kHz -- telephone quality floor
 MAX_SAMPLE_RATE = 384000  # 384 kHz -- DSD/high-res ceiling
 
+# Magnitude ceiling for sample values. essentia's float32 accumulators
+# overflow when squared samples approach float32 max, which makes
+# HumDetector hang exactly like NaN input; a probe verified that 1e17
+# amplitude completes while 1e19+ spins forever, so the hang onset sits
+# near |x| ~ 1e18. The 1e15 ceiling sits well below that onset and is
+# astronomically beyond any real audio (digital full scale is 1.0).
+MAX_ANALYZABLE_AMPLITUDE = 1e15
+
 # Formats that users commonly attempt but libsndfile cannot read
 _UNSUPPORTED_EXTENSIONS = {".mp3", ".aac", ".m4a", ".wma"}
 
@@ -82,13 +90,22 @@ class AudioData(BaseModel):
                 f"samples has {self.samples.shape[1]} columns but "
                 f"num_channels is {self.num_channels}"
             )
-        # The analyzers assume finite samples: NaN/Inf corrupt every
-        # measurement and hang essentia's HumDetector in an uninterruptible
-        # C++ loop, so they are rejected at the model boundary (load_audio
-        # issues a load-specific error before constructing this model).
+        # The analyzers assume finite samples within a representable
+        # magnitude: NaN/Inf corrupt every measurement, and magnitude
+        # overflow in essentia's float32 accumulators hangs HumDetector in
+        # an uninterruptible C++ loop (same failure as NaN input), so both
+        # are rejected at the model boundary (load_audio issues load-specific
+        # errors before constructing this model).
         if not np.isfinite(self.samples).all():
             raise AnalysisError(
                 "samples must contain only finite values (no NaN or Infinity)"
+            )
+        peak = float(np.max(np.abs(self.samples))) if self.samples.size else 0.0
+        if peak > MAX_ANALYZABLE_AMPLITUDE:
+            raise AnalysisError(
+                "samples must not exceed the supported magnitude range "
+                f"(peak {peak:.3g} > {MAX_ANALYZABLE_AMPLITUDE:.3g}, far beyond "
+                "digital full scale)"
             )
         return self
 
@@ -256,10 +273,11 @@ def load_audio(
             data = snd.read(dtype="float32", always_2d=True)
             sample_rate = snd.samplerate
 
-            # Step 6.5: Finite-sample guard (AUD-01/02). Float-format files
-            # can carry NaN/Inf samples; downstream analysis would emit
-            # non-finite values and hang essentia's HumDetector, so such
-            # files are rejected here with a load-specific error (the
+            # Step 6.5: Finite-sample and magnitude guard (AUD-01/02).
+            # Float-format files can carry NaN/Inf samples, and float32
+            # values near the format's ceiling overflow essentia's internal
+            # accumulators — both hang HumDetector and corrupt measurements,
+            # so such files are rejected here with a load-specific error (the
             # AudioData validator below raises AnalysisError, which would
             # surface as a generic analysis failure instead).
             if not np.isfinite(data).all():
@@ -267,6 +285,13 @@ def load_audio(
                     "Audio file contains non-finite samples (NaN or Infinity). "
                     "The file may be corrupt — re-export it from its source "
                     "application."
+                )
+            peak = float(np.max(np.abs(data))) if data.size else 0.0
+            if peak > MAX_ANALYZABLE_AMPLITUDE:
+                raise AudioLoadError(
+                    "Audio file contains samples with magnitude far beyond "
+                    f"digital full scale (peak {peak:.3g}). Normalize the "
+                    "file's level and re-export it."
                 )
     finally:
         os.close(fd)
