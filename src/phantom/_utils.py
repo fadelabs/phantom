@@ -28,6 +28,10 @@ SILENCE_THRESHOLD_DB = -80.0
 # Decode-safety defaults (shared by load_audio and separate_stems).
 DEFAULT_MAX_DURATION = 900.0  # 15 minutes
 DEFAULT_MAX_FILE_SIZE = 500_000_000  # 500 MB
+# Cap on the decoded float32 footprint (frames x channels x 4 bytes). The
+# duration and file-size caps alone permit decodes up to ~2.8 GB (900 s at
+# 384 kHz stereo), so the decoded array itself is bounded (AUD-03).
+DEFAULT_MAX_DECODED_BYTES = 1_000_000_000  # 1 GB
 
 
 def enforce_decode_limits(
@@ -36,6 +40,7 @@ def enforce_decode_limits(
     info=None,
     max_duration: float | None = None,
     max_file_size: int | None = None,
+    max_decoded_bytes: int | None = None,
 ):
     """Reject over-long or oversized audio before it is decoded (SEC-03).
 
@@ -77,6 +82,7 @@ def enforce_decode_limits(
         max_duration=max_duration,
         max_file_size=max_file_size,
     )
+    check_decoded_size(info.frames, info.channels, max_decoded_bytes=max_decoded_bytes)
     return info
 
 
@@ -147,6 +153,52 @@ def check_duration_size(
             f"Audio file is {file_size / 1_000_000:.1f} MB, "
             f"which exceeds the {effective_max_size / 1_000_000:.0f} MB limit. "
             f"Set PHANTOM_MAX_FILE_SIZE to increase the limit."
+        )
+
+
+def check_decoded_size(
+    frames: int,
+    channels: int,
+    *,
+    max_decoded_bytes: int | None = None,
+) -> None:
+    """Reject decodes whose float32 footprint exceeds the decoded-bytes cap.
+
+    The duration and file-size caps still permit multi-GB decodes (15 min at
+    384 kHz stereo is ~2.8 GB of float32), so the decoded array itself is
+    bounded (AUD-03). *max_decoded_bytes* precedence: param >
+    PHANTOM_MAX_DECODED_BYTES > DEFAULT_MAX_DECODED_BYTES.
+
+    Raises:
+        AudioLoadError: If the decoded footprint would exceed the cap, or the
+            cap value is malformed.
+    """
+    decoded_bytes = frames * channels * 4  # float32 decode
+
+    effective_max = max_decoded_bytes
+    if effective_max is None:
+        env_val = os.environ.get("PHANTOM_MAX_DECODED_BYTES")
+        if env_val is not None and env_val.strip():
+            try:
+                effective_max = int(env_val)
+            except ValueError:
+                raise AudioLoadError(
+                    "PHANTOM_MAX_DECODED_BYTES must be an integer (bytes), "
+                    f"got: '{env_val}'"
+                )
+        else:
+            effective_max = DEFAULT_MAX_DECODED_BYTES
+    if not math.isfinite(effective_max) or effective_max <= 0:
+        raise AudioLoadError(
+            f"max_decoded_bytes must be a positive number, got {effective_max}. "
+            "Check PHANTOM_MAX_DECODED_BYTES env var or max_decoded_bytes parameter."
+        )
+    if decoded_bytes > effective_max:
+        raise AudioLoadError(
+            f"Audio file would decode to {decoded_bytes / 1_000_000:.1f} MB, "
+            f"which exceeds the {effective_max / 1_000_000:.0f} MB decoded-size "
+            "limit. Set PHANTOM_MAX_DECODED_BYTES to increase the limit, "
+            "or trim the file."
         )
 
 

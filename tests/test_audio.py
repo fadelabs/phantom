@@ -385,6 +385,43 @@ class TestLoadAudio:
         with pytest.raises(AudioLoadError, match="non-finite"):
             load_audio(str(path))
 
+    def test_decoded_size_cap_rejected(
+        self, wav_file_factory, mono_sine_440hz, monkeypatch
+    ):
+        """A file whose decoded footprint exceeds PHANTOM_MAX_DECODED_BYTES is rejected."""
+        monkeypatch.setenv("PHANTOM_MAX_DECODED_BYTES", "1000")  # 1 KB << 176 KB
+        samples, sr = mono_sine_440hz
+        path = wav_file_factory(samples, sr)
+        with pytest.raises(AudioLoadError, match="decoded-size"):
+            load_audio(path)
+
+    def test_decoded_size_param_rejected(self, wav_file_factory, mono_sine_440hz):
+        """max_decoded_bytes parameter overrides the env/default decoded cap."""
+        samples, sr = mono_sine_440hz
+        path = wav_file_factory(samples, sr)
+        with pytest.raises(AudioLoadError, match="decoded-size"):
+            load_audio(path, max_decoded_bytes=1000)
+
+    def test_decoded_size_malformed_env(
+        self, wav_file_factory, mono_sine_440hz, monkeypatch
+    ):
+        """PHANTOM_MAX_DECODED_BYTES=abc raises AudioLoadError matching the var name."""
+        monkeypatch.setenv("PHANTOM_MAX_DECODED_BYTES", "abc")
+        samples, sr = mono_sine_440hz
+        path = wav_file_factory(samples, sr)
+        with pytest.raises(AudioLoadError, match="PHANTOM_MAX_DECODED_BYTES"):
+            load_audio(path)
+
+    def test_decoded_size_large_cap_allows(
+        self, wav_file_factory, mono_sine_440hz, monkeypatch
+    ):
+        """A generous decoded cap does not reject ordinary files."""
+        monkeypatch.setenv("PHANTOM_MAX_DECODED_BYTES", "1000000000")
+        samples, sr = mono_sine_440hz
+        path = wav_file_factory(samples, sr)
+        result = load_audio(path)
+        assert result.num_samples == len(samples)
+
 
 # ── Edge case tests (D-13) ─────────────────────────────────────────────
 

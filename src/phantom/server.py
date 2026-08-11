@@ -195,6 +195,89 @@ def _make_reference_tool(name: str, fn, description: str):
     return wrapper
 
 
+def _peek_aggregate_decoded_bytes(file_paths: list[str]) -> int:
+    """Sum header-declared decoded float32 bytes across files (AUD-03).
+
+    Reads only file headers (sf.info, no decode). Files whose header cannot
+    be read contribute zero and defer to load_audio for a precise error.
+    """
+    import soundfile as sf
+
+    total = 0
+    for p in file_paths:
+        try:
+            info = sf.info(p)
+        except Exception:
+            continue
+        total += info.frames * info.channels * 4
+    return total
+
+
+def _validate_batch_inputs(file_paths: list[str]) -> list[str]:
+    """Validate a batch request: size, non-empty, uniqueness, aggregate size.
+
+    Returns the normalized paths. Raises ToolError with the standard error
+    schema on the first rejection.
+    """
+    MAX_BATCH = 50
+    if len(file_paths) > MAX_BATCH:
+        raise ToolError(
+            json.dumps(
+                {
+                    "error_type": "ValidationError",
+                    "message": (
+                        f"Too many files: {len(file_paths)}. Maximum batch size "
+                        f"is {MAX_BATCH}."
+                    ),
+                    "context": {
+                        "file_count": len(file_paths),
+                        "max_batch": MAX_BATCH,
+                    },
+                }
+            )
+        )
+    if not file_paths:
+        raise ToolError(
+            json.dumps(
+                {
+                    "error_type": "ValidationError",
+                    "message": "At least 1 file path required.",
+                    "context": {},
+                }
+            )
+        )
+    normalized_paths = [os.path.normpath(p) for p in file_paths]
+    if len(set(normalized_paths)) != len(normalized_paths):
+        raise ToolError(
+            json.dumps(
+                {
+                    "error_type": "ValidationError",
+                    "message": "Duplicate file paths (after normalization) are not supported.",
+                    "context": {},
+                }
+            )
+        )
+    # Aggregate work guard (AUD-03): the per-file caps bound each decode,
+    # but a full batch at the caps would still decode ~100 GB total.
+    max_aggregate = _get_env_int("PHANTOM_MAX_AGGREGATE_BYTES", 4_000_000_000)
+    total_decoded = _peek_aggregate_decoded_bytes(file_paths)
+    if total_decoded > max_aggregate:
+        raise ToolError(
+            json.dumps(
+                {
+                    "error_type": "ValidationError",
+                    "message": (
+                        f"Combined stem size (~{total_decoded // 1_000_000} MB decoded) "
+                        "exceeds the aggregate limit. Reduce the number of files "
+                        "or trim them."
+                    ),
+                    "context": {"max_aggregate_bytes": max_aggregate},
+                }
+            )
+        )
+    return normalized_paths
+
+
 _GENERATED_TOOLS: list[tuple[str, str, Callable, str]] = [
     (spec.cache_key, "unary", spec.fn, spec.description)
     for spec in ANALYSIS_TYPES.values()
@@ -337,41 +420,7 @@ def full_diagnostic(file_path: str) -> dict:
 @_phantom_tool
 def batch_diagnostic(file_paths: list[str]) -> dict:
     """Run full diagnostic on multiple stems. Flags sample rate mismatches as dealbreaker severity."""
-    MAX_BATCH = 50
-    if len(file_paths) > MAX_BATCH:
-        raise ToolError(
-            json.dumps(
-                {
-                    "error_type": "ValidationError",
-                    "message": f"Too many files: {len(file_paths)}. Maximum batch size is {MAX_BATCH}.",
-                    "context": {
-                        "file_count": len(file_paths),
-                        "max_batch": MAX_BATCH,
-                    },
-                }
-            )
-        )
-    if not file_paths:
-        raise ToolError(
-            json.dumps(
-                {
-                    "error_type": "ValidationError",
-                    "message": "At least 1 file path required.",
-                    "context": {},
-                }
-            )
-        )
-    normalized_paths = [os.path.normpath(p) for p in file_paths]
-    if len(set(normalized_paths)) != len(normalized_paths):
-        raise ToolError(
-            json.dumps(
-                {
-                    "error_type": "ValidationError",
-                    "message": "Duplicate file paths (after normalization) are not supported.",
-                    "context": {},
-                }
-            )
-        )
+    normalized_paths = _validate_batch_inputs(file_paths)
 
     results: dict[str, StemDiagnosticResult | dict] = {}
     sample_rates = {}

@@ -24,6 +24,7 @@ from phantom.exceptions import AnalysisError, AudioLoadError
 from phantom._utils import (
     SILENCE_THRESHOLD_DB,
     _block_rms_db,
+    check_decoded_size,
     check_duration_size,
     open_validated_input,
     validate_input_path,
@@ -166,6 +167,7 @@ def load_audio(
     path: str,
     max_duration: float | None = None,
     max_file_size: int | None = None,
+    max_decoded_bytes: int | None = None,
 ) -> AudioData:
     """Load an audio file and return an AudioData instance.
 
@@ -180,6 +182,9 @@ def load_audio(
             this parameter > PHANTOM_MAX_DURATION env var > 900s default.
         max_file_size: Maximum allowed file size in bytes. Precedence:
             this parameter > PHANTOM_MAX_FILE_SIZE env var > 500_000_000 default.
+        max_decoded_bytes: Maximum decoded float32 footprint in bytes (frames
+            x channels x 4). Precedence: this parameter >
+            PHANTOM_MAX_DECODED_BYTES env var > 1_000_000_000 default.
 
     Returns:
         AudioData with the loaded samples and metadata.
@@ -230,6 +235,14 @@ def load_audio(
                 os.fstat(fd).st_size,
                 max_duration=max_duration,
                 max_file_size=max_file_size,
+            )
+
+            # Step 4.5: Decoded-size guard (AUD-03). The duration/size caps
+            # still permit multi-GB decodes (900 s x 384 kHz x stereo x
+            # float32 ~= 2.8 GB), so the decoded footprint is capped here,
+            # before any read.
+            check_decoded_size(
+                snd.frames, snd.channels, max_decoded_bytes=max_decoded_bytes
             )
 
             # Step 5: Channel count check (existing)

@@ -64,10 +64,16 @@ ENV_VARS: tuple[EnvVar, ...] = (
         "Maximum audio file size in bytes.",
     ),
     EnvVar(
+        "PHANTOM_MAX_DECODED_BYTES",
+        "int",
+        "1000000000",
+        "Maximum decoded float32 footprint per audio file in bytes.",
+    ),
+    EnvVar(
         "PHANTOM_MAX_AGGREGATE_BYTES",
         "int",
         "4000000000",
-        "Combined decoded-size cap for multi-stem tools.",
+        "Combined decoded-size cap for multi-file tools.",
     ),
     EnvVar(
         "PHANTOM_MASKING_TOP_N",
