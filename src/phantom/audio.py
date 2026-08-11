@@ -81,6 +81,14 @@ class AudioData(BaseModel):
                 f"samples has {self.samples.shape[1]} columns but "
                 f"num_channels is {self.num_channels}"
             )
+        # The analyzers assume finite samples: NaN/Inf corrupt every
+        # measurement and hang essentia's HumDetector in an uninterruptible
+        # C++ loop, so they are rejected at the model boundary (load_audio
+        # issues a load-specific error before constructing this model).
+        if not np.isfinite(self.samples).all():
+            raise AnalysisError(
+                "samples must contain only finite values (no NaN or Infinity)"
+            )
         return self
 
     @property
@@ -234,6 +242,19 @@ def load_audio(
             # Step 6: Load audio as float32 via the held descriptor
             data = snd.read(dtype="float32", always_2d=True)
             sample_rate = snd.samplerate
+
+            # Step 6.5: Finite-sample guard (AUD-01/02). Float-format files
+            # can carry NaN/Inf samples; downstream analysis would emit
+            # non-finite values and hang essentia's HumDetector, so such
+            # files are rejected here with a load-specific error (the
+            # AudioData validator below raises AnalysisError, which would
+            # surface as a generic analysis failure instead).
+            if not np.isfinite(data).all():
+                raise AudioLoadError(
+                    "Audio file contains non-finite samples (NaN or Infinity). "
+                    "The file may be corrupt — re-export it from its source "
+                    "application."
+                )
     finally:
         os.close(fd)
 

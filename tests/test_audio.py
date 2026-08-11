@@ -3,10 +3,12 @@
 All audio is generated synthetically in-memory -- no WAV files in repo.
 """
 
+import struct
 from pathlib import Path
 
 import numpy as np
 import pytest
+import soundfile as sf
 
 from phantom.audio import AudioData, load_audio
 from phantom.exceptions import AudioLoadError, PathSecurityError
@@ -174,6 +176,21 @@ class TestAudioDataValidation:
             num_samples=len(samples),
         )
         assert ad.file_path is None
+
+    def test_rejects_non_finite_samples(self):
+        """AudioData rejects samples containing NaN/Inf (AUD-01)."""
+        from phantom.exceptions import AnalysisError
+
+        bad = np.zeros((100, 1), dtype=np.float32)
+        bad[50, 0] = float("nan")
+        with pytest.raises(AnalysisError, match="finite"):
+            AudioData(
+                samples=bad,
+                sample_rate=44100,
+                num_channels=1,
+                duration=100 / 44100,
+                num_samples=100,
+            )
 
 
 class TestMemoizedDerivatives:
@@ -346,6 +363,27 @@ class TestLoadAudio:
         assert result.samples.dtype == np.float32
         assert result.samples.max() <= 1.0
         assert result.samples.min() >= -1.0
+
+    @pytest.mark.parametrize("bad_value", [float("nan"), float("inf"), float("-inf")])
+    def test_rejects_non_finite_samples(self, tmp_path, bad_value):
+        """A float WAV containing NaN/Inf samples is rejected, not analyzed.
+
+        soundfile sanitizes NaN to zero on write, so the corrupt sample is
+        injected byte-wise into the float32 data region after writing.
+        """
+        sr = 44100
+        n = 4410
+        path = tmp_path / "corrupt.wav"
+        samples = (
+            0.5 * np.sin(2 * np.pi * 440 * np.linspace(0, 0.1, n, endpoint=False))
+        ).astype(np.float32)
+        sf.write(str(path), samples, sr, subtype="FLOAT")
+        with open(path, "r+b") as fh:
+            fh.seek(44 + 4 * 1000)  # data region starts at header offset 44
+            fh.write(struct.pack("<f", bad_value))
+
+        with pytest.raises(AudioLoadError, match="non-finite"):
+            load_audio(str(path))
 
 
 # ── Edge case tests (D-13) ─────────────────────────────────────────────

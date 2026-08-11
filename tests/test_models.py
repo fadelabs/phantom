@@ -33,8 +33,53 @@ from phantom.comparison import (
     MatchAdjustments,
     _rate_deviation,
 )
-from phantom._rounding import round_hz, round_ratio
+from phantom._rounding import (
+    round_db,
+    round_db_dict,
+    round_dict,
+    round_hz,
+    round_list,
+    round_ms,
+    round_pct,
+    round_ratio,
+    round_ratio_list,
+)
 from phantom.separation import SeparationResult
+
+
+# ---------------------------------------------------------------------------
+# Non-finite rounding (AUD-02): NaN/Inf must map to None so serialization
+# never emits the non-standard JSON tokens NaN/Infinity.
+# ---------------------------------------------------------------------------
+
+
+def test_rounding_helpers_map_non_finite_to_none():
+    """Scalar rounding helpers map NaN/±Inf to None, finite values unchanged."""
+    for fn in (round_db, round_hz, round_ratio, round_ms, round_pct):
+        assert fn(float("nan")) is None
+        assert fn(float("inf")) is None
+        assert fn(float("-inf")) is None
+    assert round_db(None) is None
+    # Finite values round exactly as before.
+    assert round_db(1.23456) == 1.23
+    assert round_hz(1.23456) == 1.2
+    assert round_ratio(1.23456) == 1.2346
+    assert round_ms(1.23456) == 1.23
+    assert round_pct(1.23) == 1.2
+
+
+def test_rounding_helpers_map_non_finite_items_to_none():
+    """List/dict rounding helpers map non-finite items to None."""
+    assert round_ratio_list([1.0, float("nan"), float("inf")], dp=2) == [
+        1.0,
+        None,
+        None,
+    ]
+    assert round_list([float("-inf"), 2.5]) == [None, 2.5]
+    assert round_db_dict({"a": 1.2345, "b": float("nan")}) == {"a": 1.23, "b": None}
+    assert round_dict({"x": float("-inf"), "y": 0.5}) == {"x": None, "y": 0.5}
+    assert round_ratio_list(None) is None
+    assert round_db_dict(None) is None
 
 
 # ---------------------------------------------------------------------------

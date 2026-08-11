@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 from functools import partial
 from typing import ClassVar
@@ -9,39 +10,70 @@ from typing import ClassVar
 from pydantic import BaseModel, model_validator
 
 
+def _finite(v: float | None) -> float | None:
+    """Pass through None and finite values; map NaN/±Inf to None.
+
+    Non-finite measurements must never reach serialization, where they would
+    emit the non-standard JSON tokens NaN/Infinity (AUD-02). None is the
+    established "unmeasurable" representation (cf. dynamics.py's isfinite
+    guards). Values that are finite pass through numerically unchanged.
+    """
+    if v is None or math.isfinite(v):
+        return v
+    return None
+
+
 def round_db(v: float | None, dp: int = 2) -> float | None:
-    """Round a dB value. Returns None unchanged."""
+    """Round a dB value. Returns None unchanged (non-finite maps to None)."""
+    v = _finite(v)
     return round(v, dp) if v is not None else v
 
 
 def round_hz(v: float | None, dp: int = 1) -> float | None:
-    """Round a Hz value. Returns None unchanged."""
+    """Round a Hz value. Returns None unchanged (non-finite maps to None)."""
+    v = _finite(v)
     return round(v, dp) if v is not None else v
 
 
 def round_ratio(v: float | None, dp: int = 4) -> float | None:
-    """Round a dimensionless ratio. Returns None unchanged."""
+    """Round a dimensionless ratio. Returns None unchanged (non-finite maps to None)."""
+    v = _finite(v)
     return round(v, dp) if v is not None else v
 
 
 def round_ratio_list(v: list[float] | None, dp: int = 4) -> list[float] | None:
-    """Round a list of dimensionless ratios. Returns None unchanged."""
-    return [round(x, dp) for x in v] if v is not None else v
+    """Round a list of dimensionless ratios. Returns None unchanged.
+
+    Non-finite items map to None.
+    """
+    if v is None:
+        return v
+    return [round(x, dp) if x is not None and math.isfinite(x) else None for x in v]
 
 
 def round_ms(v: float | None, dp: int = 2) -> float | None:
-    """Round a milliseconds value. Returns None unchanged."""
+    """Round a milliseconds value. Returns None unchanged (non-finite maps to None)."""
+    v = _finite(v)
     return round(v, dp) if v is not None else v
 
 
 def round_pct(v: float | None, dp: int = 1) -> float | None:
-    """Round a percentage value. Returns None unchanged."""
+    """Round a percentage value. Returns None unchanged (non-finite maps to None)."""
+    v = _finite(v)
     return round(v, dp) if v is not None else v
 
 
 def round_db_dict(v: dict[str, float] | None, dp: int = 2) -> dict[str, float] | None:
-    """Round all values in a dict of dB values. Returns None unchanged."""
-    return {k: round(val, dp) for k, val in v.items()} if v is not None else v
+    """Round all values in a dict of dB values. Returns None unchanged.
+
+    Non-finite values map to None.
+    """
+    if v is None:
+        return v
+    return {
+        k: (round(val, dp) if val is not None and math.isfinite(val) else None)
+        for k, val in v.items()
+    }
 
 
 def round_list(v: list[float] | None, dp: int = 4) -> list[float] | None:
@@ -49,9 +81,11 @@ def round_list(v: list[float] | None, dp: int = 4) -> list[float] | None:
 
     The unit-neutral primitive: use for values with no dB/ratio semantics
     (e.g. RangeDeviationResult.target_range), so unit-typed helpers are not
-    borrowed for the wrong units (review F8).
+    borrowed for the wrong units (review F8). Non-finite items map to None.
     """
-    return [round(x, dp) for x in v] if v is not None else v
+    if v is None:
+        return v
+    return [round(x, dp) if x is not None and math.isfinite(x) else None for x in v]
 
 
 def round_dict(v: dict[str, float] | None, dp: int = 2) -> dict[str, float] | None:
@@ -60,8 +94,14 @@ def round_dict(v: dict[str, float] | None, dp: int = 2) -> dict[str, float] | No
     The unit-neutral primitive: use for values with no dB semantics (e.g.
     PhaseResult.per_band_correlation, unit-neutral correlation coefficients),
     so round_db_dict is not borrowed for the wrong unit (review F8).
+    Non-finite values map to None.
     """
-    return {k: round(val, dp) for k, val in v.items()} if v is not None else v
+    if v is None:
+        return v
+    return {
+        k: (round(val, dp) if val is not None and math.isfinite(val) else None)
+        for k, val in v.items()
+    }
 
 
 class RoundedModel(BaseModel):
