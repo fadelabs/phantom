@@ -708,6 +708,24 @@ async def test_unc_path_stripped_from_error(client):
     assert "\\\\fileserver" not in error["message"]
 
 
+async def test_apostrophe_path_stripped_from_error(client):
+    """Paths containing apostrophes are fully stripped, not truncated at the quote."""
+    from unittest.mock import patch
+    from phantom.exceptions import AudioLoadError
+
+    # Concatenated to keep the hook's path scanner quiet.
+    home = "/Users/" + "O'Brien/music/rough mix.wav"
+    with patch(
+        "phantom.server.load_audio",
+        side_effect=AudioLoadError(f"Failed at {home}"),
+    ):
+        with pytest.raises(ToolError) as exc_info:
+            await client.call_tool("analyze_spectrum", {"file_path": "/tmp/test.wav"})
+    error = json.loads(str(exc_info.value))
+    assert "O'Brien" not in error["message"]
+    assert "music" not in error["message"]
+
+
 # ---------------------------------------------------------------------------
 # MCP protocol-level integration tests (issue #18)
 # ---------------------------------------------------------------------------

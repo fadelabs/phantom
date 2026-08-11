@@ -60,9 +60,10 @@ class MultiStemMaskingResult(BaseModel):
 
 
 # Regex pattern for stripping file paths (Unix, Windows drive-letter, and
-# UNC) from error messages. Segments may contain spaces; the match runs to
-# the last path separator so only the basename remains visible.
-_PATH_REGEX = re.compile(r"(?:[A-Za-z]:\\[^\"']+\\|\\\\[^\"']+\\|/[^\"']+/)+")
+# UNC) from error messages. Segments may contain spaces, apostrophes, and
+# punctuation (but not quotes or newlines); the match runs to the last path
+# separator so only the basename remains visible.
+_PATH_REGEX = re.compile(r"(?:[A-Za-z]:\\[^\"\n]+\\|\\\\[^\"\n]+\\|/[^\"\n]+/)+")
 
 
 def _to_tool_error(exc: Exception, context: dict | None = None) -> ToolError:
