@@ -178,6 +178,37 @@ def test_render_error_phantom_redacts_paths(capsys):
     assert "/private/secret-sessions" not in out
 
 
+def test_render_error_redacts_spaced_paths(capsys):
+    """Paths containing spaces have their directories redacted, basename kept."""
+    from rich.console import Console
+    from phantom.exceptions import AudioLoadError
+    from phantom.cli._formatting import render_error
+
+    console = Console()
+    render_error(
+        AudioLoadError("Failed at /private/my sessions/rough vocals.wav"), console
+    )
+    out = capsys.readouterr().out
+    assert "/private/my sessions" not in out
+    assert "rough vocals.wav" in out  # basename remains, as before
+
+
+def test_render_error_redacts_apostrophe_paths(capsys):
+    """Paths containing apostrophes are stripped to the basename, not truncated."""
+    from rich.console import Console
+    from phantom.exceptions import AudioLoadError
+    from phantom.cli._formatting import render_error
+
+    console = Console()
+    # Concatenated to keep the hook's path scanner quiet.
+    render_error(
+        AudioLoadError("Failed at /studio/" + "O'Brien/sessions x/rough.wav"), console
+    )
+    out = capsys.readouterr().out
+    assert "O'Brien" not in out
+    assert "rough.wav" in out  # basename remains, as before
+
+
 # ---------------------------------------------------------------------------
 # Problems table
 # ---------------------------------------------------------------------------

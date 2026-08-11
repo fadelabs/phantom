@@ -3,10 +3,12 @@
 All audio is generated synthetically in-memory -- no WAV files in repo.
 """
 
+import struct
 from pathlib import Path
 
 import numpy as np
 import pytest
+import soundfile as sf
 
 from phantom.audio import AudioData, load_audio
 from phantom.exceptions import AudioLoadError, PathSecurityError
@@ -174,6 +176,36 @@ class TestAudioDataValidation:
             num_samples=len(samples),
         )
         assert ad.file_path is None
+
+    def test_rejects_non_finite_samples(self):
+        """AudioData rejects samples containing NaN/Inf (AUD-01)."""
+        from phantom.exceptions import AnalysisError
+
+        bad = np.zeros((100, 1), dtype=np.float32)
+        bad[50, 0] = float("nan")
+        with pytest.raises(AnalysisError, match="finite"):
+            AudioData(
+                samples=bad,
+                sample_rate=44100,
+                num_channels=1,
+                duration=100 / 44100,
+                num_samples=100,
+            )
+
+    def test_rejects_overflow_magnitude_samples(self):
+        """AudioData rejects samples whose magnitude can overflow analysis (AUD-01)."""
+        from phantom.exceptions import AnalysisError
+
+        bad = np.zeros((100, 1), dtype=np.float32)
+        bad[50, 0] = 1e20  # finite, but far beyond the analysable range
+        with pytest.raises(AnalysisError, match="magnitude"):
+            AudioData(
+                samples=bad,
+                sample_rate=44100,
+                num_channels=1,
+                duration=100 / 44100,
+                num_samples=100,
+            )
 
 
 class TestMemoizedDerivatives:
@@ -346,6 +378,81 @@ class TestLoadAudio:
         assert result.samples.dtype == np.float32
         assert result.samples.max() <= 1.0
         assert result.samples.min() >= -1.0
+
+    @pytest.mark.parametrize("bad_value", [float("nan"), float("inf"), float("-inf")])
+    def test_rejects_non_finite_samples(self, tmp_path, bad_value):
+        """A float WAV containing NaN/Inf samples is rejected, not analyzed.
+
+        soundfile sanitizes NaN to zero on write, so the corrupt sample is
+        injected byte-wise into the float32 data region after writing.
+        """
+        sr = 44100
+        n = 4410
+        path = tmp_path / "corrupt.wav"
+        samples = (
+            0.5 * np.sin(2 * np.pi * 440 * np.linspace(0, 0.1, n, endpoint=False))
+        ).astype(np.float32)
+        sf.write(str(path), samples, sr, subtype="FLOAT")
+        with open(path, "r+b") as fh:
+            fh.seek(44 + 4 * 1000)  # data region starts at header offset 44
+            fh.write(struct.pack("<f", bad_value))
+
+        with pytest.raises(AudioLoadError, match="non-finite"):
+            load_audio(str(path))
+
+    def test_rejects_overflow_magnitude_samples(self, tmp_path):
+        """A float WAV with extreme-but-finite samples is rejected (AUD-01).
+
+        Magnitudes near float32's ceiling overflow the analysis engine's
+        internal accumulators, which hangs HumDetector exactly like NaN
+        input; the guard must catch finite values in that range.
+        """
+        sr = 44100
+        n = 4410
+        path = tmp_path / "loud.wav"
+        samples = (
+            1e20 * np.sin(2 * np.pi * 440 * np.linspace(0, 0.1, n, endpoint=False))
+        ).astype(np.float32)
+        sf.write(str(path), samples, sr, subtype="FLOAT")
+        with pytest.raises(AudioLoadError, match="magnitude"):
+            load_audio(str(path))
+
+    def test_decoded_size_cap_rejected(
+        self, wav_file_factory, mono_sine_440hz, monkeypatch
+    ):
+        """A file whose decoded footprint exceeds PHANTOM_MAX_DECODED_BYTES is rejected."""
+        monkeypatch.setenv("PHANTOM_MAX_DECODED_BYTES", "1000")  # 1 KB << 176 KB
+        samples, sr = mono_sine_440hz
+        path = wav_file_factory(samples, sr)
+        with pytest.raises(AudioLoadError, match="decoded-size"):
+            load_audio(path)
+
+    def test_decoded_size_param_rejected(self, wav_file_factory, mono_sine_440hz):
+        """max_decoded_bytes parameter overrides the env/default decoded cap."""
+        samples, sr = mono_sine_440hz
+        path = wav_file_factory(samples, sr)
+        with pytest.raises(AudioLoadError, match="decoded-size"):
+            load_audio(path, max_decoded_bytes=1000)
+
+    def test_decoded_size_malformed_env(
+        self, wav_file_factory, mono_sine_440hz, monkeypatch
+    ):
+        """PHANTOM_MAX_DECODED_BYTES=abc raises AudioLoadError matching the var name."""
+        monkeypatch.setenv("PHANTOM_MAX_DECODED_BYTES", "abc")
+        samples, sr = mono_sine_440hz
+        path = wav_file_factory(samples, sr)
+        with pytest.raises(AudioLoadError, match="PHANTOM_MAX_DECODED_BYTES"):
+            load_audio(path)
+
+    def test_decoded_size_large_cap_allows(
+        self, wav_file_factory, mono_sine_440hz, monkeypatch
+    ):
+        """A generous decoded cap does not reject ordinary files."""
+        monkeypatch.setenv("PHANTOM_MAX_DECODED_BYTES", "1000000000")
+        samples, sr = mono_sine_440hz
+        path = wav_file_factory(samples, sr)
+        result = load_audio(path)
+        assert result.num_samples == len(samples)
 
 
 # ── Edge case tests (D-13) ─────────────────────────────────────────────
@@ -560,6 +667,13 @@ class TestInputValidationEdgeCases:
         with pytest.raises(AudioLoadError, match="positive"):
             load_audio(path, max_file_size=0)
 
+    def test_inf_max_duration_rejected(self, wav_file_factory, mono_sine_440hz):
+        """load_audio rejects an inf max_duration param instead of disabling the cap."""
+        samples, sr = mono_sine_440hz
+        path = wav_file_factory(samples, sr)
+        with pytest.raises(AudioLoadError, match="positive"):
+            load_audio(path, max_duration=float("inf"))
+
     # -- Malformed env vars (SC-10) --
 
     def test_env_max_duration_zero_rejected(
@@ -577,6 +691,17 @@ class TestInputValidationEdgeCases:
     ):
         """PHANTOM_MAX_DURATION='-1' raises AudioLoadError matching 'positive'."""
         monkeypatch.setenv("PHANTOM_MAX_DURATION", "-1")
+        samples, sr = mono_sine_440hz
+        path = wav_file_factory(samples, sr)
+        with pytest.raises(AudioLoadError, match="positive"):
+            load_audio(path)
+
+    @pytest.mark.parametrize("bad_value", ["nan", "inf", "-inf"])
+    def test_env_max_duration_non_finite_rejected(
+        self, wav_file_factory, mono_sine_440hz, monkeypatch, bad_value
+    ):
+        """PHANTOM_MAX_DURATION=nan/inf raises AudioLoadError, not a disabled cap."""
+        monkeypatch.setenv("PHANTOM_MAX_DURATION", bad_value)
         samples, sr = mono_sine_440hz
         path = wav_file_factory(samples, sr)
         with pytest.raises(AudioLoadError, match="positive"):
