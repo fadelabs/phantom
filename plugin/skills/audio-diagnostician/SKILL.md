@@ -23,7 +23,7 @@ The diagnostic's job is to find problems BEFORE they waste mixing time. Phase is
 **Non-negotiable rules (repeated at end as final checklist):**
 1. Check phase before anything else — phase problems masquerade as tonal problems
 2. Interpret every measurement in instrument context — drums at 15 dB crest factor is normal, vocals at 15 dB is uncompressed
-3. Genre context matters — lo-fi at -55 dBFS noise with rolled-off highs is aesthetic, not a problem
+3. Genre context matters — lo-fi at -55 dBFS noise with rolled-off highs is aesthetic, not a problem. For genres that tolerate a higher floor (lo-fi, ambient), raise the noise-floor thresholds — `PHANTOM_NOISE_FLOOR_MODERATE_DB` (default -50) and `PHANTOM_NOISE_FLOOR_MINOR_DB` (default -60) — so aesthetic floors report clean instead of flagging
 4. Never assume stem provenance — mono in stereo containers is normal, don't speculate on AI separation
 
 ## Step 1: Gather Stems
@@ -45,11 +45,11 @@ Call `batch_diagnostic` with every stem path in one shot.
 | Check | Condition | Severity | Action |
 |-------|-----------|----------|--------|
 | Sample rate mismatch | Different rates between stems | **Dealbreaker** | Stop. Flag which stems mismatch. Convert to highest rate. |
-| Silent stems | Integrated LUFS below -70 or None | **Dealbreaker** | Likely export mistake. Ask user before including. |
+| Silent stems | RMS below -80 dBFS (the silence threshold — `analyze_loudness` returns None) | **Dealbreaker** | Likely export mistake. Ask user before including. |
 | Bit depth mix | 16/24/32 mixed | **Flag** | Note highest depth for session-architect. 32→16 without dither = quantization noise. |
 | Duration mismatch | Stems differ by > few seconds | **Flag** | Different export sections or excess head/tail silence. |
 | Loudness spread | > 20 LU between loudest and quietest | **Flag** | Gain staging problem. Multi-session recording or inconsistent preamp. |
-| Pre-printed effects | Crest factor < 6 on naturally dynamic source, OR spectral tilt doesn't match instrument type, OR flat loudness contour over time | **Flag** | Distinguish musician's tone (pedal compression, amp distortion, instrument through effects at tracking) from post-production processing. A bass through a compressor pedal = the player's sound, not a problem. Ask about the signal chain before flagging. Printed EQ narrows later options; printed compression on top of more compression destroys transients; printed reverb cannot be removed. |
+| Pre-printed effects | Crest factor below the analyzer's over-compression threshold (default 6 dB, `PHANTOM_CREST_FACTOR_LOW_DB`) on a naturally dynamic source, OR spectral tilt doesn't match instrument type, OR flat loudness contour over time | **Flag** | Distinguish musician's tone (pedal compression, amp distortion, instrument through effects at tracking) from post-production processing. A bass through a compressor pedal = the player's sound, not a problem. Ask about the signal chain before flagging. Printed EQ narrows later options; printed compression on top of more compression destroys transients; printed reverb cannot be removed. |
 | Timing drift | Transient misalignment between stems > 5 ms | **Significant** | Measure using `compare_phase` time-delay value between stems sharing transient events. For non-transient stems, cross-correlate against the reference stem (usually drums). Drift > 5 ms = separate sessions or DAW latency offset. Nudge to align. |
 
 **Bit depth note:** 16-bit = ~96 dB dynamic range, 24-bit = ~144 dB. 16-bit stems with noise floor above -70 dBFS may be quantization-limited — flag as re-export candidates.
@@ -91,25 +91,28 @@ Review `detect_problems` results. Four severity tiers — dealbreakers first. **
 **Intent check:** Before flagging unconventional measurements (distorted vocals, transient-free drums, deliberately clipped signals), consider whether the measurement reflects a creative choice. If the result could be intentional, mark as **Possible** and ask before escalating.
 
 **Dealbreaker** (fix before mixing):
-- True peak > 0 dBTP (baked clipping)
+- Clipping — samples at or above ±1.0 (`PHANTOM_CLIPPING_THRESHOLD`, default 1.0). Baked at the ceiling; can't be un-clipped
+- Lossy codec artifacts — spectral shelf drop above `PHANTOM_LOSSY_SHELF_DROP_DB` (default 20 dB); the discarded content can't be recovered
 - Sample rate mismatch
 - Severe phase/polarity inversion between related stems
 
 **Significant** (address before building mix — report with **playback context**: headphone listeners hear noise at -52 dBFS; club/PA playback masks it under ambient noise):
-- True peak > -1 dBTP (tight headroom)
-- Noise floor -60 to -50 dBFS — gate during silence or spectral de-noise. **Cumulative math:** Calculate per-section, not total stem count. If verse has 4 active stems at -58 dBFS → -52 dBFS floor; chorus with 12 stems at -58 → -47 dBFS. Report worst-case section. **Verification:** After reduction, noise floor should drop to -60 dBFS or below. A/B with original — if you hear "underwater" artifacts or loss of air/breath, the reduction was too aggressive.
-- Noise floor above -50 dBFS — dedicated noise reduction required. Within lo-fi/tape genres, distinguish **aesthetic noise** (tape hiss, vinyl crackle — keep, it's the texture) from **technical noise** (60 Hz hum, ground loop buzz, digital artifacts — always remove regardless of genre).
-- DC offset — remove with DC offset tool or HPF at 5-20 Hz
-- Mains hum at 50/60 Hz — notch at fundamental + harmonics (50/100/150/200 or 60/120/180/240 Hz). The loudest harmonic is often 2× mains frequency.
-- Lossy codec artifacts detected
+- True peak > -1 dBTP (tight headroom) — the ISP detector rates peaks above this significant (`PHANTOM_ISP_SEVERE_DBTP`, default -1.0)
+- Poor SNR — below `PHANTOM_SNR_POOR_DB` (default 50 dB); dedicated noise reduction required before mixing
+- Mains hum at 50/60 Hz (± 5 Hz) — notch at fundamental + harmonics (50/100/150/200 or 60/120/180/240 Hz). The loudest harmonic is often 2× mains frequency. Within lo-fi/tape genres, distinguish **aesthetic noise** (tape hiss, vinyl crackle — keep, it's the texture) from **technical noise** (60 Hz hum, ground loop buzz, digital artifacts — always remove regardless of genre)
+- Room resonances at specific frequencies — the resonant-peak detector (`PHANTOM_RESONANCE_MEDIAN_FLOOR_DB` default -40, `PHANTOM_RESONANCE_PROMINENCE_DB` default 12)
 
 **Moderate** (address during mixing):
-- Sibilance 4-10 kHz (male 3-6 kHz, female 6-8 kHz) — de-esser or dynamic EQ, 3-6 dB reduction
+- Noise floor at or above -50 dBFS — noise reduction required (`PHANTOM_NOISE_FLOOR_MODERATE_DB`, default -50)
+- Sibilance 5-10 kHz — de-esser or dynamic EQ, 3-6 dB reduction (de-esser targeting guidance by voice: male 3-6 kHz, female 6-8 kHz)
 - Mud 200-500 Hz across stems — HPF everything except kick/bass, complementary EQ between conflicting pairs
-- Harshness 2-5 kHz
-- Room resonances at specific frequencies
+- Harshness 2-4 kHz
 
-**Minor** (optional): spectral imbalances, minor noise bursts, low-level clicks.
+**Minor** (optional):
+- Noise floor -60 to -50 dBFS — acceptable but not professional-grade; gate during silence or spectral de-noise. **Cumulative math:** Calculate per-section, not total stem count. If verse has 4 active stems at -58 dBFS → -52 dBFS floor; chorus with 12 stems at -58 → -47 dBFS. Report worst-case section. **Verification:** After reduction, noise floor should drop to -60 dBFS or below. A/B with original — if you hear "underwater" artifacts or loss of air/breath, the reduction was too aggressive (`PHANTOM_NOISE_FLOOR_MINOR_DB`, default -60)
+- SNR 50-60 dB — acceptable but minor
+- DC offset — mean at or above `PHANTOM_DC_OFFSET_THRESHOLD` (default 5e-4); remove with DC offset tool or HPF at 5-20 Hz
+- Spectral imbalances, minor noise bursts, low-level clicks
 
 ## Step 5: Frequency Masking Analysis
 
@@ -179,11 +182,14 @@ For the complete measurement-to-action tables: load [measurement-actions.md](mea
 
 | Measurement | Threshold | Action |
 |-------------|-----------|--------|
-| True peak > 0 dBTP | Dealbreaker | Baked clipping — de-clip or re-export |
-| True peak > -1 dBTP | Significant | Tight headroom — leave for mastering to address |
-| Phase correlation < +0.3 | Problem (center sources) | Check for polarity flip or time offset |
-| Noise floor > -50 dBFS | Significant | Dedicated noise reduction — verify with A/B |
-| SNR < 40 dB | Re-record if possible | Noise reduction cannot recover this cleanly |
+| Clipping | Samples ≥ ±1.0 | Dealbreaker | Baked clipping — de-clip or re-export |
+| Lossy codec | Shelf drop > 20 dB | Dealbreaker | Re-export from session — cannot add back discarded content |
+| True peak | > -1 dBTP | Significant | ISP — tight headroom, leave for mastering to address |
+| SNR | < 50 dB | Significant | Poor — noise reduction cannot recover this cleanly |
+| Noise floor | ≥ -50 dBFS | Moderate | Noise reduction — verify with A/B |
+| Noise floor | -60 to -50 dBFS | Minor | Acceptable but not professional-grade |
+| SNR | 50-60 dB | Minor | Acceptable |
+| Phase correlation | < +0.3 | Problem (center sources) | Check for polarity flip or time offset |
 
 ## Special Scenarios
 
