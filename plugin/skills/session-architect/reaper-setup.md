@@ -2,7 +2,8 @@
 
 > **Requires a Reaper MCP server.** The commands and automation below
 > need a Reaper MCP server connected.
-> See the [setup guide](../../docs/workflows/setup-guide.md) for installation.
+> Run `phantom doctor` (Reaper Integration section) to verify the bridge
+> and Lua scripts are installed, and see the [setup guide](../../docs/workflows/setup-guide.md) for installation.
 > Without it, use this as a reference for manual session setup in Reaper.
 
 Reaper-specific session setup knowledge. Reference when configuring tracks, buses, plugins, and routing in Reaper.
