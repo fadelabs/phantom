@@ -138,6 +138,8 @@ When controlling Ozone 11 through the Reaper MCP, param indices shift depending 
 - **Param indices shift** — if the user adds or removes modules in Ozone, all param indices after that module change. Always re-discover params with `track_fx_get_param_name` after any module change.
 
 ### Radio-ready mastering targets (rock-metal):
+These match the rock-metal profile in Phantom — `load_profile('rock-metal')` and `compare_to_profile` verify against them.
+
 | Parameter | Target |
 |-----------|--------|
 | Integrated LUFS | -10 to -7 |

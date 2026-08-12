@@ -39,7 +39,7 @@ For albums/EPs: listen to 15-30 seconds of every track first. Identify which son
 
 ### 2. Run Diagnostics
 
-Run `detect_problems` and `analyze_loudness` on the mix. Also run `analyze_dynamics` to check crest factor and LRA — these tell you how much dynamic work is needed and whether parallel compression is appropriate (LRA < 4 LU = already over-compressed, skip parallel). Measurement drives the send-back decision.
+Run `detect_problems` and `analyze_loudness` on the mix. Also run `analyze_dynamics` for crest factor and `analyze_loudness` for loudness range (LRA) — together these tell you how much dynamic work is needed and whether parallel compression is appropriate (LRA < 4 LU = already over-compressed, skip parallel). Measurement drives the send-back decision.
 
 ### 3. Send Back or Work With It
 
@@ -50,8 +50,8 @@ Run `detect_problems` and `analyze_loudness` on the mix. Also run `analyze_dynam
 | Vocal buried or overwhelmingly loud | Send back | Balance problem requiring track-level fader moves |
 | Phase correlation < +0.3 on mix bus | Send back | Severe phase cancellation — lead elements will disappear in mono |
 | Baked-in clipping/distortion on mix bus | Send back | Irreversible — can't un-clip a summed stereo file |
-| Noise floor issues (hiss, hum, buzz) | Send back if severe | Individual track noise is cheaper to fix at the stem level |
-| Lossy source detected (MP3/AAC artifacts, spectral shelf above 16 kHz) | Send back | You cannot add back frequency content that a lossy codec discarded — run `analyze_spectrum` and look for a hard spectral cutoff at 16-18 kHz. Mastering a lossy source guarantees inferior results |
+| Noise floor issues (hiss, hum, buzz) | Send back if severe | Individual track noise is cheaper to fix at the stem level. `detect_problems` flags the floor above `PHANTOM_NOISE_FLOOR_MODERATE_DB` (default -50) as moderate and above `PHANTOM_NOISE_FLOOR_MINOR_DB` (default -60) as minor — set them per your release's noise tolerance (lo-fi/vintage material tolerates a higher floor) |
+| Lossy source detected (MP3/AAC artifacts) | Send back | You cannot add back frequency content that a lossy codec discarded — `detect_problems` flags a lossy spectral shelf (PROB-13) when the drop above the high-frequency shelf exceeds `PHANTOM_LOSSY_SHELF_DROP_DB` (default 20 dB); confirm with `analyze_spectrum` and look for a hard spectral cutoff at 16-18 kHz. Mastering a lossy source guarantees inferior results |
 | Single element peaks far above everything | Send back | Limiter can't work properly — it squashes everything to catch one peak |
 | Gentle tonal imbalance (< 2-3 dB EQ) | Work with it | Normal corrective mastering territory |
 | Needs dynamic reshaping/glue | Work with it | Standard broadband compression |
@@ -104,7 +104,7 @@ Glue, not squash. Pulling dynamics together so the mix feels cohesive and punchy
 
 **Type selection:** VCA for transparency. Opto for smooth program-dependent response. Vari-Mu for warmth and harmonic richness alongside control.
 
-**Parallel compression — when to use and when to skip:** Blend a heavily compressed copy at low level to add density to quiet passages without clamping peaks. **Skip parallel compression when the mix is already heavily compressed** (crest factor < 6 dB, LRA < 4 LU) — there are no quiet passages to lift, and you'll just add distortion artifacts. On over-compressed material, consider upward expansion instead: gently restore dynamics by expanding the quieter passages downward, recovering some of the range that was squashed in mixing.
+**Parallel compression — when to use and when to skip:** Blend a heavily compressed copy at low level to add density to quiet passages without clamping peaks. **Skip parallel compression when the mix is already heavily compressed** (crest factor below the analyzer's over-compression threshold — default 6 dB, tunable via `PHANTOM_CREST_FACTOR_LOW_DB` — or LRA < 4 LU) — there are no quiet passages to lift, and you'll just add distortion artifacts. On over-compressed material, consider upward expansion instead: gently restore dynamics by expanding the quieter passages downward, recovering some of the range that was squashed in mixing.
 
 ### 5. Dynamic EQ / Multiband Compression
 
@@ -129,7 +129,7 @@ Shape the final character. Wide Q, gentle boosts — this is creative, not corre
 
 ### 7. Stereo Imaging
 
-**Mono the bass.** Collapse everything below 80-150 Hz to mono. Low-frequency stereo content causes problems on every system (vinyl skips, club subs cancel, headphones lose focus, mono playback loses energy). Exact frequency depends on genre and format — digital: 100-150 Hz for most genres, 60-80 Hz for electronic with deliberately wide bass. Vinyl: always 100 Hz or higher (groove geometry demands it).
+**Mono the bass.** Collapse everything below 80-150 Hz to mono. Low-frequency stereo content causes problems on every system (vinyl skips, club subs cancel, headphones lose focus, mono playback loses energy). Exact frequency depends on genre and format — digital: match the mono-below target in your genre profile (`load_profile` shows it: hip-hop 150 Hz, edm/metal/rock/rock-metal 120 Hz, electronic/pop/lo-fi 100 Hz, ambient 80 Hz), 100-150 Hz when no profile applies. Vinyl: always 100 Hz or higher (groove geometry demands it).
 
 **Verify mono-bass with measurement:** After applying mono-bass, run `analyze_stereo` — expect correlation near +1.0 below your crossover frequency. If you still see spread below target, the processing isn't fully engaged or the crossover slope is too gentle.
 
@@ -173,7 +173,7 @@ Never dither twice. Never dither at same bit depth. Never dither when going up i
 
 ## A/B Reference Methodology
 
-Use `compare_to_reference` for per-dimension deviations. Use `match_to_reference` (if Matchering installed) at 50-70% strength as a starting point.
+Use `compare_to_reference` for per-dimension deviations. Use `match_to_reference` (if installed — `phantom doctor` reports it in Optional Extras) to generate a starting point, then A/B against it level-matched and dial the result back toward your judgment.
 
 **How to A/B effectively:**
 1. Choose references in the same genre and era
@@ -214,9 +214,9 @@ Before delivery — each step is pass/fail with explicit thresholds. If any fail
 
 1. **Headphone QC pass** — headphones reveal clicks, dropouts, and stereo anomalies that monitors mask. Pass: no artifacts heard. Fail: any click, dropout, or stereo anomaly → identify source stage, bypass to confirm, fix.
 2. Run `analyze_loudness` — Pass: integrated LUFS within 1 LU of platform target AND true peak at or below ceiling (-1.0 dBTP digital, -3.0 dBTP vinyl). Fail: adjust limiter threshold/ceiling.
-3. Run `analyze_dynamics` — Pass: crest factor and LRA within genre norms (see format-targets.md). Fail: over-limited (reduce limiter GR) or under-processed (add compression).
+3. Run `analyze_dynamics` and `analyze_loudness` — Pass: crest factor within genre norms (`compare_to_profile` rates it, see format-targets.md for descriptive ranges) and loudness range appropriate for the material. Fail: over-limited (reduce limiter GR) or under-processed (add compression).
 4. Run `analyze_stereo` — Pass: correlation above +0.3, bass mono below target frequency, AND correlation dropped < 0.15 from unprocessed file. Fail on correlation drop: bypass stages one at a time to find the phase-shift culprit.
-5. Run `detect_problems` — Pass: no clipping, no ISPs above ceiling, no introduced artifacts. Fail: identify and fix the offending stage.
+5. Run `detect_problems` — Pass: no clipping, no ISPs above ceiling, no introduced artifacts. The ISP detector flags true-peak overshoot above `PHANTOM_ISP_OVERSHOOT_DB` (default 0.5 dB) and rates peaks above `PHANTOM_ISP_SEVERE_DBTP` (default -1.0 dBTP) significant — tune both to your delivery ceiling. Fail: identify and fix the offending stage.
 6. Run `compare_to_profile` — Pass: deviations from genre norms are intentional and documented. Fail: unintentional deviation → adjust.
 7. **Mono check** — Pass: no element drops > 3 dB in mono. Fail: identify the out-of-phase element, fix in stereo imaging stage.
 8. **Multiple playback check** — if possible, check on at least two systems

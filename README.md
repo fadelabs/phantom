@@ -122,7 +122,7 @@ Then talk to Claude:
 
 **Effects Engineer.** Distortion and saturation taxonomy (tube warmth vs transistor grit vs tape compression), modulation effects, reverb and delay type selection with pre-delay guidance, creative chain recipes (ethereal vocals, massive guitars, Tool-style distortion, lo-fi textures), and effects automation for dynamic transitions.
 
-**Mastering Engineer.** Nine-stage mastering chain in strict order (HPF through dither), send-back criteria (when a mix needs more work, not mastering), platform-specific loudness targeting (Spotify, Apple Music, YouTube, CD, vinyl), reference-based mastering workflow, and format delivery requirements including metadata.
+**Mastering Engineer.** Ten-stage mastering chain in strict order (HPF through dither), send-back criteria (when a mix needs more work, not mastering), platform-specific loudness targeting (Spotify, Apple Music, YouTube, CD, vinyl), reference-based mastering workflow, and format delivery requirements including metadata.
 
 **Session Architect.** Genre-specific session templates, folder/bus hierarchy design, aux channel setup (reverb sends, delay sends, parallel compression), sidechain routing, color coding conventions, automation mode guidance, and render settings per deliverable format.
 
