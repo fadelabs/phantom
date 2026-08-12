@@ -131,13 +131,13 @@ Then talk to Claude:
 | Profile | Target LUFS | Character |
 |---------|-------------|-----------|
 | Pop | -10 to -7 | Polished, vocal-forward, controlled dynamics, 4 kHz presence boost |
-| Rock | -10 to -8 | Wide stereo, prominent guitars, punchy drums |
-| Hip-Hop | -10 to -6 | Heavy low end, crisp highs, compressed dynamics |
-| Electronic | -9 to -6 | Wide stereo, sub-bass emphasis, bright top end |
+| Rock | -12 to -8 | Wide stereo, prominent guitars, punchy drums |
+| Hip-Hop | -10 to -7 | Heavy low end, crisp highs, compressed dynamics |
+| Electronic | -10 to -7 | Wide stereo, sub-bass emphasis, bright top end |
 | EDM | -8 to -5 | Loud, sidechain pumping, wide and bright |
-| Metal | -8 to -5 | Dense, scooped mids, aggressive compression |
-| Rock-Metal | -9 to -6 | Heavy, mid-present, tight low end |
-| Lo-Fi | -16 to -12 | Warm, rolled-off highs, narrow stereo, intentionally quiet |
+| Metal | -10 to -6 | Dense, scooped mids, aggressive compression |
+| Rock-Metal | -10 to -7 | Heavy, mid-present, tight low end |
+| Lo-Fi | -14 to -10 | Warm, rolled-off highs, narrow stereo, intentionally quiet |
 | Ambient | -20 to -14 | Wide, dynamic, gentle spectral curve |
 
 ## Installation
