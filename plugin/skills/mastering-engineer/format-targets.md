@@ -35,17 +35,17 @@ Run `analyze_loudness` after mastering to verify compliance.
 
 Don't master to each platform individually — they normalize regardless. Master to a level that sounds great for the genre.
 
-| Genre | Working LUFS Range | Dynamic Range Priority | Notes |
-|-------|-------------------|----------------------|-------|
-| Acoustic / Jazz / Classical | -12 to -16 LUFS | Maximum — dynamic range IS the music | Minimal processing. A classical piece squashed to -9 has lost its musical meaning. |
-| Country / Singer-Songwriter | -10 to -14 LUFS | High — vocal authenticity valued | More dynamic than pop despite modern production trends. |
-| Rock / Alternative | -9 to -12 LUFS | Moderate — punch matters more than loudness | Drum transient preservation is critical. Over-limiting kills impact. |
-| Pop / R&B | -8 to -10 LUFS | Moderate — competitive loudness expected | Vocal clarity through limiting is the key challenge. |
-| Hip-Hop | -7 to -10 LUFS | Moderate — sub-bass headroom matters | Low-end weight needs harmonic content for small-speaker translation. |
-| Electronic / EDM | -6 to -9 LUFS | Low — source is already compressed | Kick transient vs loudness is the central tension. Limiter attack is critical. |
-| Metal | -7 to -10 LUFS | Moderate — loud sections need quiet contrast | Dense, layered genres still need micro-dynamics for punch. |
+| Genre | Working LUFS Range | Built-in Profile Target | Dynamic Range Priority | Notes |
+|-------|-------------------|-------------------------|----------------------|-------|
+| Acoustic / Jazz / Classical | -12 to -16 LUFS | — (no built-in profile) | Maximum — dynamic range IS the music | Minimal processing. A classical piece squashed to -9 has lost its musical meaning. |
+| Country / Singer-Songwriter | -10 to -14 LUFS | — (no built-in profile) | High — vocal authenticity valued | More dynamic than pop despite modern production trends. |
+| Rock / Alternative | -9 to -12 LUFS | rock: -12 to -8 | Moderate — punch matters more than loudness | Drum transient preservation is critical. Over-limiting kills impact. |
+| Pop / R&B | -8 to -10 LUFS | pop: -10 to -7 | Moderate — competitive loudness expected | Vocal clarity through limiting is the key challenge. |
+| Hip-Hop | -7 to -10 LUFS | hip-hop: -10 to -7 | Moderate — sub-bass headroom matters | Low-end weight needs harmonic content for small-speaker translation. |
+| Electronic / EDM | -6 to -9 LUFS | electronic: -10 to -7, edm: -8 to -5 | Low — source is already compressed | Kick transient vs loudness is the central tension. Limiter attack is critical. |
+| Metal | -7 to -10 LUFS | metal: -10 to -6 | Moderate — loud sections need quiet contrast | Dense, layered genres still need micro-dynamics for punch. |
 
-These are descriptive ranges based on what successful releases measure at — not prescriptive targets. The right loudness serves the music.
+The Working LUFS Range column is descriptive — based on what successful releases measure at, not prescriptive targets. The Built-in Profile Target column is what `compare_to_profile` actually rates against: load it with `load_profile('<name>')` (profiles: ambient, edm, electronic, hip-hop, lo-fi, metal, pop, rock-metal, rock). Where the two differ, the profile is the tool's norm.
 
 ---
 
@@ -70,7 +70,7 @@ Vinyl is the most constrained format. Master separately — do not reuse the dig
 
 | Constraint | Requirement | Why |
 |-----------|-------------|-----|
-| **Mono bass** | Below 80-100 Hz | Out-of-phase bass causes the needle to jump out of the groove |
+| **Mono bass** | Below ~100 Hz | Out-of-phase bass causes the needle to jump out of the groove |
 | **De-essing** | More aggressive than digital | Sibilance causes distortion (stylus can't track rapid HF movements) |
 | **HF rolloff** | LPF at 16-18 kHz | Extreme highs cause tracking problems and add noise |
 | **Short-term LUFS** | Max -9 LUFS | Louder = narrower grooves = more distortion |

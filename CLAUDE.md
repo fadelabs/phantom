@@ -37,7 +37,7 @@ Optional: demucs (stem separation), matchering (reference matching, GPLv3), peda
 - All analysis modules follow: input guard -> analyze -> return Pydantic model
 - Optional dependencies use lazy imports with `DependencyMissingError`
 - `PhantomError` hierarchy with musician-friendly error messages
-- Env var configuration: `PHANTOM_AUDIO_DIR`, `PHANTOM_OUTPUT_DIR`, `PHANTOM_MAX_DURATION`, `PHANTOM_MAX_FILE_SIZE`
+- Env var configuration: 40 `PHANTOM_*` runtime variables covering paths/limits, analysis thresholds, FFT/frame sizes, and behavior flags. The canonical registry is `src/phantom/_config.py` (it also drives `phantom doctor`'s environment table); per-knob defaults resolve in `src/phantom/_settings.py`. Installer-only vars live in `install.sh` / `install.ps1`: `PHANTOM_NO_TELEMETRY` (opt out) and `PHANTOM_BIN` (script-internal)
 
 ### Testing
 

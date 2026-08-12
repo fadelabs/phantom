@@ -142,7 +142,7 @@ Translate diagnostic findings into routing decisions. **When the artist/producer
 | Kick/bass masking (60-100 Hz) | Prewire sidechain: kick → bass on channels 3-4 |
 | Phase issues on multi-mic source | Route close and room mics to a sub-bus for time-alignment processing |
 | Guitar/vocal masking (2-4 kHz) | Route guitars through a bus with sidechain from vocal (subtle ducking) |
-| Over-compressed stems (crest < 6 dB) | Skip compression insert, mark track as "no comp needed" |
+| Over-compressed stems (crest below the analyzer's threshold, default 6 dB via `PHANTOM_CREST_FACTOR_LOW_DB`) | Skip compression insert, mark track as "no comp needed" |
 | Severe noise on specific stems | Insert gate as first plugin on those tracks |
 | Stereo correlation < +0.3 on a stem | Route to a sub-bus with M/S processing for correction |
 

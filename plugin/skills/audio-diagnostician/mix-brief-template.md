@@ -38,7 +38,7 @@ Structured mix brief template. After running diagnostics, fill in this template 
 
 | Pair | Worst Band | Severity | Recommendation |
 |------|-----------|----------|----------------|
-| {stem_a} vs {stem_b} | {frequency band} | {low/medium/high} | {action} |
+| {stem_a} vs {stem_b} | {frequency band} | {low/moderate/high} | {action} |
 
 ## Overall Assessment
 
@@ -58,11 +58,11 @@ Address items in this order:
 
 ## Usage Notes
 
-- Fill values from `batch_diagnostic` and `multi_stem_masking` results
+- Fill values from `batch_diagnostic` and `multi_stem_masking` results; the session-overview rows the tools don't report (bit depth, BPM) come from session knowledge or asking the user
 - List problems in descending severity order within each tier
 - The per-stem summary table should include every stem, even clean ones (mark as "clean")
 - Width values come from `analyze_stereo` (0.0 = mono, higher = wider)
-- Masking map only needs pairs with medium or high severity -- skip low-severity pairs
+- Masking map only needs pairs with moderate or high severity -- skip low-severity pairs
 - The recommended processing order is a priority list, not a rigid sequence
 - If comparing to a genre profile or reference, add a "Reference Comparison" section after the masking map with the key deviations
 - If stems have mismatched bit depths, note each stem's bit depth in the Key Issues column

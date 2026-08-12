@@ -81,21 +81,19 @@ A stem with a centroid far outside its expected range may be mislabeled, heavily
 | Overall correlation | Sustained negative | Possible polarity inversion or excessive M/S processing | Check polarity; sustained near -1 = definite inversion; occasional dips normal with wide stereo |
 | Per-band correlation (low) | < +0.5 below 200 Hz | Low-end phase issues | Make bass mono below 100-150 Hz |
 | Per-band correlation (high) | < +0.3 above 8 kHz | Normal for wide stereo content | Usually acceptable, common with stereo reverbs |
-| Time delay between L/R | > 1 ms | Haas effect or misalignment | Intentional = Haas widening (use with caution). Unintentional = fix alignment |
+| Inter-file delay (`compare_phase`) | > 1 ms between related stems | Haas effect or misalignment | Intentional = Haas widening (use with caution). Unintentional = fix alignment |
 | Polarity inverted | true | One channel is flipped | Flip polarity on the inverted channel |
 
 ## Noise Assessment
 
 | Measurement | Threshold | Rating | Action |
 |-------------|-----------|--------|--------|
-| SNR | > 70 dB | Professional | No treatment needed |
-| SNR | 60-70 dB | Good | Acceptable, gate during silence if needed |
-| SNR | 50-60 dB | Acceptable | Noise reduction recommended, gate aggressively |
-| SNR | 40-50 dB | Poor | Dedicated noise reduction required before mixing |
-| SNR | < 40 dB | Unacceptable | Re-record if possible, heavy NR will introduce artifacts |
-| Noise floor | Below -70 dBFS | Clean | No treatment |
-| Noise floor | -60 to -50 dBFS | Audible in quiet passages | Gate or noise reduction in quiet sections |
-| Noise floor | Above -50 dBFS | Significant noise present | Noise reduction required before mixing |
+| SNR | ≥ 60 dB | Professional | No flag (above `PHANTOM_SNR_PROFESSIONAL_DB`, default 60) |
+| SNR | 50-60 dB | Acceptable | Minor flag — noise reduction recommended, gate aggressively |
+| SNR | < 50 dB | Poor | Significant — dedicated noise reduction required before mixing; re-record if possible, heavy NR will introduce artifacts |
+| Noise floor | Below -60 dBFS | Clean | No flag (below `PHANTOM_NOISE_FLOOR_MINOR_DB`, default -60) |
+| Noise floor | -60 to -50 dBFS | Minor — audible in quiet passages | Gate or noise reduction in quiet sections |
+| Noise floor | Above -50 dBFS | Moderate — significant noise present | Noise reduction required before mixing |
 | Hum detected | 50 Hz fundamental | Mains hum (EU/Australia/most of Asia) | Notch filter at 50, 100, 150, 200 Hz (fundamental + harmonics) |
 | Hum detected | 60 Hz fundamental | Mains hum (US/Canada/most of S. America) | Notch filter at 60, 120, 180, 240 Hz (fundamental + harmonics) |
 
@@ -115,7 +113,7 @@ Note on mains hum: the dominant hum frequency is often the *double* of the mains
 | Integrated LUFS | -14 to -10 | Mastered track | Normal range for mastered music |
 | Integrated LUFS | -20 to -14 | Mix (pre-mastering) | Good level for a mix, leaves mastering headroom |
 | Integrated LUFS | < -24 | Any | Very quiet -- check if this is intentional (ambient/classical) |
-| True peak | > 0 dBTP | Any | Hard clipping -- dealbreaker. Samples are baked at the ceiling. |
+| True peak | > 0 dBTP | Any | Hard clipping -- samples baked at the ceiling are a dealbreaker; true-peak excess alone is flagged significant above -1 dBTP |
 | True peak | -1 to 0 dBTP | Any | Exceeds EBU R128 and streaming platform limits (-1 dBTP). Significant -- limits mastering options and may distort during lossy encoding. |
 | True peak | -3 to -1 dBTP | Mix | Workable headroom, but tight for mastering |
 | True peak | < -3 dBTP | Mix | Good headroom for mastering |
@@ -129,8 +127,7 @@ Use this to assign the correct severity tier to any detected problem:
 
 | Condition | Severity | Rationale |
 |-----------|----------|-----------|
-| Cannot be fixed in mixing (baked-in clipping, format mismatch) | Dealbreaker | Must be resolved at source before mixing begins |
-| Exceeds distribution standards (true peak > -1 dBTP, lossy artifacts) | Significant | Limits mastering options and platform delivery |
-| Degrades the entire mix if not addressed (noise, DC offset, hum) | Significant | Fix early -- these affect every processing step downstream |
-| Affects specific mix decisions (sibilance, resonances, mud) | Moderate | Address as part of the mixing process |
-| Audible only on close inspection or in solo | Minor | Fix if time allows, won't make or break the mix |
+| Cannot be fixed in mixing (baked-in clipping, lossy codec artifacts, sample-rate mismatch) | Dealbreaker | Must be resolved at source before mixing begins |
+| Exceeds distribution standards (true peak > -1 dBTP), poor SNR, mains hum, resonant peaks | Significant | Limits mastering options and platform delivery |
+| Noise floor ≥ -50 dBFS, sibilance, harshness, mud | Moderate | Fix during mixing -- these affect specific mix decisions |
+| Noise floor -60 to -50 dBFS, acceptable SNR (50-60 dB), DC offset | Minor | Audible on close inspection; fix if time allows -- won't make or break the mix |

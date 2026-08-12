@@ -2,7 +2,7 @@
 
 Compound operation recipes for creating Reaper sessions from Phantom analysis results. Each recipe starts with a Phantom measurement trigger and describes step-by-step outcomes to achieve in Reaper. Steps describe what to do, not which API to call -- Claude adapts to whichever Reaper MCP server is connected.
 
-> **Requires a Reaper MCP server.** See the [setup guide](../../docs/workflows/setup-guide.md) for installation.
+> **Requires a Reaper MCP server.** Run `phantom doctor` (Reaper Integration section) to verify the bridge and Lua scripts are installed, and see the [setup guide](../../docs/workflows/setup-guide.md) for installation.
 
 ## setup_metal_session
 
@@ -170,7 +170,7 @@ Issues discovered during real sessions. Items marked **Fixed** were resolved in 
 
 ### insert_audio_file track targeting
 **Status:** Fixed.
-The upstream `InsertMedia` raw API call ignores the `track_index` parameter and always inserts on the first track. Phantom's `setup_reaper` command patches the Lua bridge to add an `InsertAudioFile` DSL function that correctly targets specific tracks using `AddMediaItemToTrack` + `PCM_Source_CreateFromFile` + `SetMediaItemTake_Source` in a single Lua call.
+The upstream `InsertMedia` raw API call ignores the `track_index` parameter and always inserts on the first track. The Lua bridge that `phantom setup-reaper` installs (version-pinned from the fadelabs/reaper-mcp repo, copied verbatim) adds an `InsertAudioFile` DSL function that correctly targets specific tracks using `AddMediaItemToTrack` + `PCM_Source_CreateFromFile` + `SetMediaItemTake_Source` in a single Lua call.
 
 ### insert_track name parameter
 **Status:** Fixed (arg-order bug corrected).
