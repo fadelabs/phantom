@@ -2,7 +2,7 @@
 
 Compound operation recipes for creative effects processing in Reaper. These recipes apply the effects-engineer's creative chain knowledge to Reaper's routing and plugin system. Steps describe what to do, not which API to call -- Claude adapts to whichever Reaper MCP server is connected.
 
-> **Requires a Reaper MCP server.** See the [setup guide](../../docs/workflows/setup-guide.md) for installation.
+> **Requires a Reaper MCP server.** Run `phantom doctor` (Reaper Integration section) to verify the bridge and Lua scripts are installed, and see the [setup guide](../../docs/workflows/setup-guide.md) for installation.
 
 ## parallel_distortion_bus
 
