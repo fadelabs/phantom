@@ -10,19 +10,19 @@ Near-silent audio returns None for all values (per LOUD-05).
 
 from __future__ import annotations
 
-from typing import Optional
+from collections.abc import Callable
+from typing import ClassVar, Optional
 
 import numpy as np
 import essentia.standard as es
-from pydantic import BaseModel, field_validator
 
 from phantom.audio import AudioData
-from phantom.exceptions import AnalysisError
-from phantom._rounding import round_db
-from phantom._utils import is_near_silent, wrap_errors
+from phantom._rounding import RoundedModel, round_db
+from phantom._settings import AnalysisSettings
+from phantom._utils import guarded_mono, wrap_errors
 
 
-class LufsStats(BaseModel):
+class LufsStats(RoundedModel):
     """Summary statistics for a LUFS time series.
 
     Replaces unbounded float arrays with a fixed-size payload (9 fields)
@@ -40,12 +40,16 @@ class LufsStats(BaseModel):
     p75: float
     p95: float
 
-    @field_validator(
-        "min", "max", "mean", "p5", "p25", "p50", "p75", "p95", mode="before"
-    )
-    @classmethod
-    def _round_db(cls, v: float) -> float:
-        return round(v, 2) if v is not None else v
+    _ROUND_FIELDS: ClassVar[dict[str, Callable[[object], object]]] = {
+        "min": round_db,
+        "max": round_db,
+        "mean": round_db,
+        "p5": round_db,
+        "p25": round_db,
+        "p50": round_db,
+        "p75": round_db,
+        "p95": round_db,
+    }
 
     @classmethod
     def from_array(cls, values: list[float] | None) -> LufsStats | None:
@@ -70,7 +74,7 @@ class LufsStats(BaseModel):
         )
 
 
-class LoudnessResult(BaseModel):
+class LoudnessResult(RoundedModel):
     """Result of EBU R128 loudness analysis."""
 
     integrated_lufs: Optional[float] = None
@@ -79,12 +83,11 @@ class LoudnessResult(BaseModel):
     short_term_lufs: Optional[LufsStats] = None
     momentary_lufs: Optional[LufsStats] = None
 
-    @field_validator(
-        "integrated_lufs", "true_peak_dbtp", "loudness_range_lu", mode="before"
-    )
-    @classmethod
-    def _round_db(cls, v: float | None) -> float | None:
-        return round_db(v)
+    _ROUND_FIELDS: ClassVar[dict[str, Callable[[object], object]]] = {
+        "integrated_lufs": round_db,
+        "true_peak_dbtp": round_db,
+        "loudness_range_lu": round_db,
+    }
 
 
 def _silent_loudness_result() -> LoudnessResult:
@@ -93,8 +96,15 @@ def _silent_loudness_result() -> LoudnessResult:
 
 
 @wrap_errors("Loudness analysis failed")
-def analyze_loudness(audio: AudioData) -> LoudnessResult:
+def analyze_loudness(
+    audio: AudioData, settings: AnalysisSettings | None = None
+) -> LoudnessResult:
     """Analyze loudness characteristics of an audio signal.
+
+    *settings* is accepted for facade signature uniformity (C.1) and unused:
+    the EBU R128 / ITU-R BS.1770 descriptors are standard-defined, not
+    tunable.
+
 
     Computes five EBU R128 / ITU-R BS.1770-4 loudness descriptors from
     the mono mixdown of the input:
@@ -114,15 +124,11 @@ def analyze_loudness(audio: AudioData) -> LoudnessResult:
     Raises:
         AnalysisError: If Essentia algorithms fail.
     """
-    mono = audio.mono
     sample_rate = audio.sample_rate
 
-    # Empty-samples guard
-    if len(mono) == 0:
-        raise AnalysisError("Loudness analysis failed: audio has 0 samples")
-
-    # Near-silence guard
-    if is_near_silent(mono):
+    # Empty/silence guards (B.2): mono, or None when near-silent.
+    mono = guarded_mono(audio, "Loudness analysis failed")
+    if mono is None:
         return _silent_loudness_result()
 
     # -- EBU R128 loudness (LOUD-01, LOUD-03, LOUD-04) --

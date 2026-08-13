@@ -2,13 +2,13 @@
 
 Compound operation recipes for mastering workflows in Reaper, driven by Phantom analysis measurements and reference comparisons. Each recipe starts with a Phantom measurement trigger and describes step-by-step outcomes. Steps describe what to do, not which API to call -- Claude adapts to whichever Reaper MCP server is connected.
 
-> **Requires a Reaper MCP server.** See the [setup guide](../../docs/workflows/setup-guide.md) for installation.
+> **Requires a Reaper MCP server.** Run `phantom doctor` (Reaper Integration section) to verify the bridge and Lua scripts are installed, and see the [setup guide](../../docs/workflows/setup-guide.md) for installation.
 
 ## mastering_chain_streaming
 
 **Trigger:** Mix bounce ready for mastering. `compare_to_profile` deviations show how the mix compares to a genre target. `analyze_loudness` shows current LUFS. Target delivery: Spotify (-14 LUFS), Apple Music (-16 LUFS), YouTube (-14 LUFS), Tidal (-14 LUFS).
 
-**Goal:** Build a streaming-optimized mastering chain following the mastering-engineer's complete chain methodology (stages 1-9 from SKILL.md).
+**Goal:** Build a streaming-optimized mastering chain following the mastering-engineer's ten-stage chain methodology from SKILL.md. De-noising (stage 3) and saturation (stage 8) are skipped unless `detect_problems` shows noise or the target needs harmonics.
 
 **Undo Safety:** Create a Reaper undo point before starting.
 
@@ -16,12 +16,12 @@ Compound operation recipes for mastering workflows in Reaper, driven by Phantom 
 1. Create a dedicated mastering track or use the MIX BUS output
 2. Insert **ReaEQ** (stage 1: high-pass at 20-30 Hz to remove sub-rumble -- this content is inaudible but wastes headroom and causes the limiter to react to energy you can't hear)
 3. Insert **ReaEQ** (stage 2: corrective/subtractive EQ -- address `compare_to_profile` frequency deviations with gentle cuts, narrow Q for problem frequencies, wider Q for broad tonal issues)
-4. Insert **ReaComp** (stage 3: broadband compression -- ratio 1.5-2:1, slow attack 30 ms, auto release, 1-3 dB gain reduction for glue. VCA-style for transparency. If hitting more than 3 dB, the mix needs more compression in the mix stage, not the master)
-5. Insert **ReaXcomp** (stage 4: multiband compression -- target problem bands identified by `compare_to_profile` deviations, gentle ratios. Place crossover frequencies between instruments' frequency ranges, not through them)
-6. Insert **ReaEQ** (stage 5: tonal/additive EQ -- broad gentle boosts to match genre target curve from `compare_to_profile`. Air shelf above 10 kHz if needed, warmth at 100-200 Hz. Keep boosts under 2 dB)
-7. Configure stereo imaging if needed (stage 6: narrow the low end below the genre's mono-below frequency, widen highs if `analyze_stereo` shows narrow imaging. Check that correlation stays above +0.3)
-8. Insert **ReaLimit** (stage 8: brickwall limiter -- set ceiling to -1.0 dBTP for streaming. Never 0 dBTP -- inter-sample peaks can exceed the ceiling. Set threshold to achieve target LUFS)
-9. Apply dither if delivering 16-bit (stage 9 -- always the last stage, nothing after dither)
+4. Insert **ReaComp** (stage 4: broadband compression -- ratio 1.5-2:1, slow attack 30 ms, auto release, 1-3 dB gain reduction for glue. VCA-style for transparency. If hitting more than 3 dB, the mix needs more compression in the mix stage, not the master)
+5. Insert **ReaXcomp** (stage 5: multiband compression -- target problem bands identified by `compare_to_profile` deviations, gentle ratios. Place crossover frequencies between instruments' frequency ranges, not through them)
+6. Insert **ReaEQ** (stage 6: tonal/additive EQ -- broad gentle boosts to match genre target curve from `compare_to_profile`. Air shelf above 10 kHz if needed, warmth at 100-200 Hz. Keep boosts under 2 dB)
+7. Configure stereo imaging if needed (stage 7: narrow the low end below the genre profile's mono-below frequency -- `load_profile` shows it, e.g. hip-hop 150 Hz, edm/metal/rock/rock-metal 120 Hz, electronic/pop/lo-fi 100 Hz, ambient 80 Hz -- widen highs if `analyze_stereo` shows narrow imaging. Check that correlation stays above +0.3)
+8. Insert **ReaLimit** (stage 9: brickwall limiter -- set ceiling to -1.0 dBTP for streaming. Never 0 dBTP -- inter-sample peaks can exceed the ceiling. Set threshold to achieve target LUFS)
+9. Apply dither if delivering 16-bit (stage 10 -- always the last stage, nothing after dither)
 
 **LUFS targets:**
 | Platform | Target LUFS | Ceiling |
@@ -35,9 +35,9 @@ Compound operation recipes for mastering workflows in Reaper, driven by Phantom 
 
 **Expected time:** ~2-3 seconds (10-15 Reaper MCP calls, or fewer with TwelveTake's compound tool)
 
-**Measurement verification after:** Run `analyze_loudness` on the mastered output. Integrated LUFS should be within 0.5 LU of target. True peak should be below -1.0 dBTP. Run `compare_to_profile` to verify deviations decreased.
+**Measurement verification after:** Run `analyze_loudness` on the mastered output. Integrated LUFS should be within 1 LU of target (the same band `compare_to_profile` uses). True peak should be below -1.0 dBTP. Run `compare_to_profile` to verify deviations decreased.
 
-**See also:** `/phantom:mastering-engineer` complete mastering chain (stages 1-9), [ozone-guide.md](ozone-guide.md) for Ozone alternative, [format-targets.md](format-targets.md) for platform-specific delivery specs.
+**See also:** `/phantom:mastering-engineer` complete mastering chain (ten stages), [ozone-guide.md](ozone-guide.md) for Ozone alternative, [format-targets.md](format-targets.md) for platform-specific delivery specs.
 
 ---
 
@@ -56,8 +56,8 @@ Compound operation recipes for mastering workflows in Reaper, driven by Phantom 
 4. Insert **ReaComp** -- broadband compression, ratio 1.5-2:1, 1-3 dB gain reduction for glue
 5. Insert **ReaXcomp** -- multiband compression for problem frequencies
 6. Insert **ReaEQ** -- tonal/additive EQ. Be cautious with high-frequency boosts above 15 kHz -- excessive high-frequency content can cause sibilance artifacts during vinyl cutting
-7. Configure stereo imaging -- keep stereo width narrow below 300 Hz (mono below this frequency prevents groove cancellation. The cutting needle must track both channels simultaneously, and wide low-frequency content creates opposing groove movements that the stylus can't follow)
-8. Insert **ReaLimit** -- ceiling at -0.5 dBTP (more headroom than streaming to account for vinyl pressing variability)
+7. Configure stereo imaging -- mono the low end below ~100 Hz (vinyl requires mono bass: the cutting needle must track both channels simultaneously, and out-of-phase low-frequency content creates opposing groove movements the stylus can't follow)
+8. Insert **ReaLimit** -- ceiling at -3.0 dBTP (matches the vinyl ceiling in [SKILL.md](SKILL.md) and [format-targets.md](format-targets.md); the cutting lathe needs extra headroom for the electromechanical translation)
 9. Target LUFS: -12 to -14 LUFS (vinyl has less dynamic range than digital but still more than streaming-loudness targets)
 10. Apply dither if delivering 16-bit
 
@@ -65,6 +65,6 @@ Compound operation recipes for mastering workflows in Reaper, driven by Phantom 
 
 **Expected time:** ~2-3 seconds (10-15 Reaper MCP calls, or fewer with TwelveTake's compound tool)
 
-**Measurement verification after:** Run `analyze_loudness` -- verify LUFS is within -12 to -14 LUFS range. Run `analyze_stereo` -- verify low-end is mono-correlated below 300 Hz (correlation should be > +0.9 in the sub band). Run `analyze_spectrum` -- verify no excessive sub-bass below 30 Hz or extreme high-frequency content above 15 kHz.
+**Measurement verification after:** Run `analyze_loudness` -- verify LUFS is within -12 to -14 LUFS range. Run `analyze_stereo` -- verify low-end is mono-correlated below ~100 Hz (correlation should stay above +0.95 in the sub band, the same bar `compare_to_profile` uses for bass mono). Run `analyze_spectrum` -- verify no excessive sub-bass below 30 Hz or extreme high-frequency content above 15 kHz.
 
 **See also:** `/phantom:mastering-engineer` loudness targeting and reference-based mastering sections, [format-targets.md](format-targets.md) for vinyl delivery specs.

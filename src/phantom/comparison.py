@@ -3,14 +3,23 @@
 from __future__ import annotations
 
 import os
-from typing import Optional
+from collections.abc import Callable
+from functools import partial
+from typing import ClassVar, Optional
 
 import numpy as np
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel
 
-from phantom._rounding import round_db, round_hz, round_ratio
+from phantom._bands import octave_band_map_model
+from phantom._rounding import (
+    RoundedModel,
+    round_db,
+    round_hz,
+    round_list,
+    round_ratio,
+)
 from phantom._utils import (
-    is_near_silent,
+    guarded_mono,
     validate_input_path,
     validate_output_path,
     wrap_errors,
@@ -21,12 +30,11 @@ from phantom.audio import AudioData, load_audio
 # ``_cached_analysis`` from this module (see tests/test_comparison.py). The
 # canonical definition now lives in phantom._cache (P-01).
 from phantom._cache import _cached_analysis
-from phantom.dynamics import analyze_dynamics
 from phantom.exceptions import AnalysisError, AudioLoadError, DependencyMissingError
+from phantom.facade import ANALYSIS_TYPES
 from phantom.loudness import analyze_loudness
 from phantom._profiles import ReferenceProfile
 from phantom.spectral import analyze_spectrum
-from phantom.stereo import analyze_stereo
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -65,7 +73,7 @@ class DeviationResult(BaseModel):
     rating: str = "unmeasurable"
 
 
-class RangeDeviationResult(BaseModel):
+class RangeDeviationResult(RoundedModel):
     """Deviation of a measured value from a target range."""
 
     value: Optional[float] = None
@@ -73,15 +81,14 @@ class RangeDeviationResult(BaseModel):
     deviation: Optional[float] = None
     rating: str = "unmeasurable"
 
-    @field_validator("target_range", mode="before")
-    @classmethod
-    def _round_range(cls, v):
-        if v is None:
-            return v
-        return [round(x, 2) for x in v]
+    # Unit-neutral list rounding: target_range is a LUFS/dB bound pair, not a
+    # list of ratios (review F8).
+    _ROUND_FIELDS: ClassVar[dict[str, Callable[[object], object]]] = {
+        "target_range": partial(round_list, dp=2)
+    }
 
 
-class MonoBelowResult(BaseModel):
+class MonoBelowResult(RoundedModel):
     """Result of mono-below frequency check."""
 
     mono_below_hz: float
@@ -89,15 +96,10 @@ class MonoBelowResult(BaseModel):
     has_stereo_bass: bool
     rating: str
 
-    @field_validator("mono_below_hz", mode="before")
-    @classmethod
-    def _round_hz(cls, v):
-        return round_hz(v)
-
-    @field_validator("bass_correlation", mode="before")
-    @classmethod
-    def _round_corr(cls, v):
-        return round_ratio(v)
+    _ROUND_FIELDS: ClassVar[dict[str, Callable[[object], object]]] = {
+        "mono_below_hz": round_hz,
+        "bass_correlation": round_ratio,
+    }
 
 
 class LoudnessProfileComparisonSection(BaseModel):
@@ -131,33 +133,41 @@ class StereoReferenceComparisonSection(BaseModel):
     stereo_width: DeviationResult
 
 
-class MetricDiff(BaseModel):
+class MetricDiff(RoundedModel):
     before: Optional[float] = None
     after: Optional[float] = None
     change: Optional[float] = None
 
-    @field_validator("before", "after", "change", mode="before")
-    @classmethod
-    def _round(cls, v):
-        return round_db(v)
+    _ROUND_FIELDS: ClassVar[dict[str, Callable[[object], object]]] = {
+        "before": round_db,
+        "after": round_db,
+        "change": round_db,
+    }
+
+
+# Typed per-band value maps (C.2): the keys stay the "250_hz" octave-band
+# vocabulary; each band holds a DeviationResult (comparisons) or MetricDiff
+# (matching) model instead of an unreadable string-keyed dict.
+FrequencyDeviationMap = octave_band_map_model("FrequencyDeviationMap", DeviationResult)
+SpectralChangeMap = octave_band_map_model("SpectralChangeMap", MetricDiff)
 
 
 class MatchAdjustments(BaseModel):
     integrated_lufs: MetricDiff
     true_peak_dbtp: MetricDiff
-    spectral_change_db: dict[str, MetricDiff]
+    spectral_change_db: SpectralChangeMap
 
 
 class ProfileComparisonResult(BaseModel):
     loudness: Optional[LoudnessProfileComparisonSection] = None
-    frequency: Optional[dict[str, DeviationResult]] = None
+    frequency: Optional[FrequencyDeviationMap] = None
     dynamics: Optional[DynamicsComparisonSection] = None
     stereo: Optional[StereoProfileComparisonSection] = None
 
 
 class ReferenceComparisonResult(BaseModel):
     loudness: Optional[LoudnessReferenceComparisonSection] = None
-    frequency: Optional[dict[str, DeviationResult]] = None
+    frequency: Optional[FrequencyDeviationMap] = None
     dynamics: Optional[DynamicsReferenceComparisonSection] = None
     stereo: Optional[StereoReferenceComparisonSection] = None
 
@@ -350,18 +360,22 @@ def compare_to_profile(
     Raises:
         AnalysisError: If audio has 0 samples or analysis fails.
     """
-    mono = audio.mono
-
-    if len(mono) == 0:
-        raise AnalysisError("Comparison analysis failed: audio has 0 samples")
-
-    if is_near_silent(mono):
+    # Empty/silence guards (B.2): mono, or None when near-silent.
+    mono = guarded_mono(audio, "Comparison analysis failed")
+    if mono is None:
         return _silent_comparison_result()
 
-    spectrum = _cached_analysis(audio, "analyze_spectrum", analyze_spectrum)
-    loudness = _cached_analysis(audio, "analyze_loudness", analyze_loudness)
-    dynamics = _cached_analysis(audio, "analyze_dynamics", analyze_dynamics)
-    stereo = _cached_analysis(audio, "analyze_stereo", analyze_stereo)
+    # Cache key AND analyzer come from the same registry row, so they cannot
+    # diverge (a renamed analyzer goes through the registry's fn, not the
+    # module-level import below).
+    spectral_spec = ANALYSIS_TYPES["spectral"]
+    loudness_spec = ANALYSIS_TYPES["loudness"]
+    dynamics_spec = ANALYSIS_TYPES["dynamics"]
+    stereo_spec = ANALYSIS_TYPES["stereo"]
+    spectrum = _cached_analysis(audio, spectral_spec.cache_key, spectral_spec.fn)
+    loudness = _cached_analysis(audio, loudness_spec.cache_key, loudness_spec.fn)
+    dynamics = _cached_analysis(audio, dynamics_spec.cache_key, dynamics_spec.fn)
+    stereo = _cached_analysis(audio, stereo_spec.cache_key, stereo_spec.fn)
 
     # Loudness
     if loudness.integrated_lufs is not None:
@@ -448,23 +462,26 @@ def compare_to_reference(
     Raises:
         AnalysisError: If either audio has 0 samples or analysis fails.
     """
-    mono = audio.mono
-    ref_mono = ref_audio.mono
-
-    if len(mono) == 0 or len(ref_mono) == 0:
-        raise AnalysisError("Comparison analysis failed: audio has 0 samples")
-
-    if is_near_silent(mono) or is_near_silent(ref_mono):
+    # Empty/silence guards (B.2) on both inputs.
+    mono = guarded_mono(audio, "Comparison analysis failed")
+    ref_mono = guarded_mono(ref_audio, "Comparison analysis failed")
+    if mono is None or ref_mono is None:
         return ReferenceComparisonResult()
 
-    spectrum_a = _cached_analysis(audio, "analyze_spectrum", analyze_spectrum)
-    spectrum_b = _cached_analysis(ref_audio, "analyze_spectrum", analyze_spectrum)
-    loudness_a = _cached_analysis(audio, "analyze_loudness", analyze_loudness)
-    loudness_b = _cached_analysis(ref_audio, "analyze_loudness", analyze_loudness)
-    dynamics_a = _cached_analysis(audio, "analyze_dynamics", analyze_dynamics)
-    dynamics_b = _cached_analysis(ref_audio, "analyze_dynamics", analyze_dynamics)
-    stereo_a = _cached_analysis(audio, "analyze_stereo", analyze_stereo)
-    stereo_b = _cached_analysis(ref_audio, "analyze_stereo", analyze_stereo)
+    # Cache key AND analyzer come from the same registry row (see the
+    # compare_to_profile twin above).
+    spectral_spec = ANALYSIS_TYPES["spectral"]
+    loudness_spec = ANALYSIS_TYPES["loudness"]
+    dynamics_spec = ANALYSIS_TYPES["dynamics"]
+    stereo_spec = ANALYSIS_TYPES["stereo"]
+    spectrum_a = _cached_analysis(audio, spectral_spec.cache_key, spectral_spec.fn)
+    spectrum_b = _cached_analysis(ref_audio, spectral_spec.cache_key, spectral_spec.fn)
+    loudness_a = _cached_analysis(audio, loudness_spec.cache_key, loudness_spec.fn)
+    loudness_b = _cached_analysis(ref_audio, loudness_spec.cache_key, loudness_spec.fn)
+    dynamics_a = _cached_analysis(audio, dynamics_spec.cache_key, dynamics_spec.fn)
+    dynamics_b = _cached_analysis(ref_audio, dynamics_spec.cache_key, dynamics_spec.fn)
+    stereo_a = _cached_analysis(audio, stereo_spec.cache_key, stereo_spec.fn)
+    stereo_b = _cached_analysis(ref_audio, stereo_spec.cache_key, stereo_spec.fn)
 
     # Loudness
     loudness_devs = {}

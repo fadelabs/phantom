@@ -12,26 +12,16 @@ from phantom.phase import (
     analyze_phase,
     compare_phase,
     _gcc_phat_delay,
+    PerBandCorrelation,
     PhaseResult,
     PhaseCompareResult,
 )
+from tests.conftest import _make_audio
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-
-def _make_audio(samples_1d: np.ndarray, sr: int) -> AudioData:
-    """Wrap a 1D mono signal into an AudioData instance."""
-    samples_2d = samples_1d.reshape(-1, 1)
-    return AudioData(
-        samples=samples_2d,
-        sample_rate=sr,
-        num_channels=1,
-        duration=len(samples_1d) / sr,
-        num_samples=len(samples_1d),
-    )
 
 
 def _make_stereo_audio(samples_2d: np.ndarray, sr: int) -> AudioData:
@@ -149,12 +139,13 @@ class TestPerBandCorrelation:
         for band, val in result.per_band_correlation.items():
             assert val < -0.5, f"Band {band} correlation {val} >= -0.5"
 
-    def test_per_band_is_dict(self, in_phase_stereo):
-        """per_band_correlation should be a dict."""
+    def test_per_band_is_typed_map(self, in_phase_stereo):
+        """per_band_correlation is a typed per-band map (C.2)."""
         samples, sr = in_phase_stereo
         audio = _make_stereo_audio(samples, sr)
         result = analyze_phase(audio)
-        assert isinstance(result.per_band_correlation, dict)
+        assert isinstance(result.per_band_correlation, PerBandCorrelation)
+        assert isinstance(result.per_band_correlation.sub, float)
 
     def test_band_keys_are_strings(self, in_phase_stereo):
         """All band keys should be strings."""

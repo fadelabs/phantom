@@ -11,6 +11,7 @@ from phantom._utils import (
     _block_rms_db,
     _get_env_float,
     _get_env_int,
+    guarded_mono,
     open_validated_input,
     validate_input_path,
     validate_output_path,
@@ -74,6 +75,65 @@ class TestBlockRmsDb:
         expected_count = (len(mono) - block_size) // hop + 1
         result = _block_rms_db(mono, block_size=block_size, hop=hop)
         assert len(result) == expected_count
+
+
+class TestGuardedMono:
+    """Tests for the shared empty/silence guard (B.2)."""
+
+    @staticmethod
+    def _audio(samples_1d: np.ndarray, sr: int):
+        from phantom.audio import AudioData
+
+        return AudioData(
+            samples=samples_1d.reshape(-1, 1),
+            sample_rate=sr,
+            num_channels=1,
+            duration=len(samples_1d) / sr,
+            num_samples=len(samples_1d),
+        )
+
+    def test_audible_returns_mono(self):
+        """An audible signal returns the mono mixdown unchanged."""
+        sr = 44100
+        t = np.linspace(0, 1.0, sr, endpoint=False, dtype=np.float32)
+        samples = (0.5 * np.sin(2 * np.pi * 440 * t)).astype(np.float32)
+        audio = self._audio(samples, sr)
+
+        mono = guarded_mono(audio, "Spectral analysis failed")
+        assert mono is not None
+        np.testing.assert_array_equal(mono, audio.mono)
+
+    def test_near_silent_returns_none(self):
+        """A near-silent signal returns None so the caller returns its empty
+        result without running the analysis (D-12)."""
+        sr = 44100
+        # ~-100 dBFS: well below the -80 dBFS silence threshold
+        samples = (np.ones(sr, dtype=np.float32) * 1e-5).astype(np.float32)
+        audio = self._audio(samples, sr)
+
+        assert audio.is_near_silent is True
+        assert guarded_mono(audio, "Spectral analysis failed") is None
+
+    def test_zero_samples_raises_with_label(self):
+        """Zero samples raise AnalysisError carrying the caller's label."""
+        from phantom.exceptions import AnalysisError
+
+        audio = self._audio(np.zeros(0, dtype=np.float32), 44100)
+        with pytest.raises(
+            AnalysisError, match="Spectral analysis failed: audio has 0 samples"
+        ):
+            guarded_mono(audio, "Spectral analysis failed")
+
+    def test_label_round_trips_verbatim(self):
+        """The label is embedded exactly as passed, so per-module messages
+        stay byte-identical to the pre-helper raise sites."""
+        from phantom.exceptions import AnalysisError
+
+        audio = self._audio(np.zeros(0, dtype=np.float32), 44100)
+        with pytest.raises(
+            AnalysisError, match="Masking analysis failed: audio has 0 samples"
+        ):
+            guarded_mono(audio, "Masking analysis failed")
 
 
 class TestValidateInputPath:
@@ -409,6 +469,13 @@ class TestGetEnvHelpers:
     def test_get_env_float_raises_on_invalid(self, monkeypatch) -> None:
         """Raises AnalysisError when env var is not a valid number."""
         monkeypatch.setenv("PHANTOM_PHAT_WINDOW_S", "abc")
+        with pytest.raises(AnalysisError, match="must be a number"):
+            _get_env_float("PHANTOM_PHAT_WINDOW_S", 10.0)
+
+    @pytest.mark.parametrize("bad_value", ["nan", "inf", "-inf", "1e400"])
+    def test_get_env_float_raises_on_non_finite(self, monkeypatch, bad_value) -> None:
+        """Non-finite values are rejected instead of silently disabling the knob."""
+        monkeypatch.setenv("PHANTOM_PHAT_WINDOW_S", bad_value)
         with pytest.raises(AnalysisError, match="must be a number"):
             _get_env_float("PHANTOM_PHAT_WINDOW_S", 10.0)
 

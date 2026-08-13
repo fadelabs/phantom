@@ -16,41 +16,56 @@ Near-silent audio returns None for all values (per D-05).
 
 from __future__ import annotations
 
-from typing import Optional
+from collections.abc import Callable
+from functools import partial
+from typing import ClassVar, Optional
 
 import numpy as np
 import scipy.signal as sig
-from pydantic import BaseModel, field_validator
 from scipy.fft import fft, ifft
 
 from phantom.audio import AudioData
 from phantom.exceptions import AnalysisError
+from phantom._bands import FlatMapModel
 from phantom._resample import align_sample_rates
-from phantom._rounding import round_ms, round_ratio
-from phantom._utils import _get_env_float, is_near_silent, wrap_errors
+from phantom._rounding import RoundedModel, round_dict, round_ms, round_ratio
+from phantom._settings import AnalysisSettings, analysis_settings
+from phantom._utils import guarded_mono, is_near_silent, wrap_errors
 
 
-class PhaseResult(BaseModel):
+class PerBandCorrelation(FlatMapModel):
+    """Typed per-band L/R correlation map (C.2).
+
+    Fields mirror ``PHASE_BANDS``; each field's name is already the
+    serialized key (``"sub"``, ``"low_mid"``, ...), so model_dump() output
+    is byte-identical to the raw dicts this replaces. Bands above Nyquist at
+    the file's sample rate are simply absent (fields stay unset).
+    """
+
+    sub: Optional[float] = None
+    low: Optional[float] = None
+    low_mid: Optional[float] = None
+    mid: Optional[float] = None
+    high: Optional[float] = None
+    air: Optional[float] = None
+
+
+class PhaseResult(RoundedModel):
     """Result of phase coherence analysis."""
 
     phase_correlation: Optional[float] = None
-    per_band_correlation: Optional[dict[str, float]] = None
+    per_band_correlation: Optional[PerBandCorrelation] = None
     polarity_inverted: Optional[bool] = None
 
-    @field_validator("phase_correlation", mode="before")
-    @classmethod
-    def _round_corr(cls, v: float | None) -> float | None:
-        return round_ratio(v)
-
-    @field_validator("per_band_correlation", mode="before")
-    @classmethod
-    def _round_band_corr(cls, v: dict[str, float] | None) -> dict[str, float] | None:
-        if v is None:
-            return v
-        return {k: round(val, 4) for k, val in v.items()}
+    _ROUND_FIELDS: ClassVar[dict[str, Callable[[object], object]]] = {
+        "phase_correlation": round_ratio,
+        # Per-band correlations round to 4dp (4th-order bandpass precision)
+        # before the typed map validates them (review F8).
+        "per_band_correlation": partial(round_dict, dp=4),
+    }
 
 
-class PhaseCompareResult(BaseModel):
+class PhaseCompareResult(RoundedModel):
     """Result of cross-file phase comparison."""
 
     delay_samples: Optional[int] = None
@@ -58,18 +73,14 @@ class PhaseCompareResult(BaseModel):
     correlation: Optional[float] = None
     polarity_inverted: Optional[bool] = None
 
-    @field_validator("delay_ms", mode="before")
-    @classmethod
-    def _round_ms(cls, v: float | None) -> float | None:
-        return round_ms(v)
-
-    @field_validator("correlation", mode="before")
-    @classmethod
-    def _round_corr(cls, v: float | None) -> float | None:
-        return round_ratio(v)
+    _ROUND_FIELDS: ClassVar[dict[str, Callable[[object], object]]] = {
+        "delay_ms": round_ms,
+        "correlation": round_ratio,
+    }
 
 
-# Frequency bands for per-band phase correlation (PHAS-02).
+# Frequency bands for per-band phase correlation (PHAS-02). Keys are also the
+# PerBandCorrelation field names, so the serialized keys stay identical.
 PHASE_BANDS = {
     "sub": (20, 80),
     "low": (80, 250),
@@ -124,6 +135,7 @@ def _gcc_phat_delay(
     sig2: np.ndarray,
     sample_rate: int,
     max_delay_ms: float = 50.0,
+    settings: AnalysisSettings | None = None,
 ) -> tuple[int, float]:
     """Estimate time delay between two signals using GCC-PHAT.
 
@@ -132,9 +144,10 @@ def _gcc_phat_delay(
     """
     # Truncate to configurable window (default 10s) -- only 50ms of
     # cross-correlation is used, and full-length FFT would allocate
-    # multi-GB arrays for long files.
-    phat_window_s = _get_env_float("PHANTOM_PHAT_WINDOW_S", 10.0)
-    max_samples = int(sample_rate * phat_window_s)
+    # multi-GB arrays for long files. The window is AnalysisSettings-
+    # tunable via PHANTOM_PHAT_WINDOW_S (C.1).
+    effective = settings if settings is not None else analysis_settings()
+    max_samples = int(sample_rate * effective.phat_window_s)
     if len(sig1) > max_samples:
         sig1 = sig1[:max_samples]
     if len(sig2) > max_samples:
@@ -155,13 +168,16 @@ def _gcc_phat_delay(
 
 
 @wrap_errors("Phase analysis failed")
-def analyze_phase(audio: AudioData) -> PhaseResult:
+def analyze_phase(
+    audio: AudioData, settings: AnalysisSettings | None = None
+) -> PhaseResult:
     """Analyze phase coherence of a single audio file.
 
     For stereo input, computes:
       - phase_correlation: overall L/R Pearson correlation [-1.0, 1.0]
       - per_band_correlation: dict of per-band L/R correlations
-      - polarity_inverted: True if overall correlation < -0.5
+      - polarity_inverted: True if overall correlation is below the
+        polarity threshold (default -0.5, AnalysisSettings-tunable)
 
     For mono input, returns deterministic defaults (per D-03):
       - phase_correlation: 1.0
@@ -180,15 +196,15 @@ def analyze_phase(audio: AudioData) -> PhaseResult:
     Raises:
         AnalysisError: If audio has 0 samples or analysis fails.
     """
-    # Empty-samples guard
+    effective = settings if settings is not None else analysis_settings()
+
+    # Empty-samples guard (the stereo branch below checks channels individually)
     if audio.num_samples == 0:
         raise AnalysisError("Phase analysis failed: audio has 0 samples")
 
-    # Mono guard (D-03): deterministic defaults
+    # Mono guard (D-03): deterministic defaults after the empty/silence guards.
     if audio.num_channels == 1:
-        mono = audio.mono
-        # Near-silence guard for mono
-        if is_near_silent(mono):
+        if guarded_mono(audio, "Phase analysis failed") is None:
             return _silent_phase_result()
         nyq = audio.sample_rate / 2.0
         band_defaults = {
@@ -201,7 +217,8 @@ def analyze_phase(audio: AudioData) -> PhaseResult:
         )
 
     # Stereo: near-silence guard checks individual channels, not mono mix
-    # (out-of-phase stereo has zero mono mix but non-silent channels)
+    # (out-of-phase stereo has zero mono mix but non-silent channels). The
+    # per-channel check cannot use the (mono) memoized is_near_silent.
     left = audio.left
     right = audio.right
     if is_near_silent(left) and is_near_silent(right):
@@ -219,7 +236,7 @@ def analyze_phase(audio: AudioData) -> PhaseResult:
     band_corr = _per_band_correlation(left, right, audio.sample_rate)
 
     # PHAS-03: Polarity inversion detection
-    polarity_inverted = bool(overall_corr < -0.5)
+    polarity_inverted = bool(overall_corr < effective.polarity_threshold)
 
     return PhaseResult(
         phase_correlation=overall_corr,
@@ -229,14 +246,19 @@ def analyze_phase(audio: AudioData) -> PhaseResult:
 
 
 @wrap_errors("Phase comparison failed")
-def compare_phase(audio1: AudioData, audio2: AudioData) -> PhaseCompareResult:
+def compare_phase(
+    audio1: AudioData,
+    audio2: AudioData,
+    settings: AnalysisSettings | None = None,
+) -> PhaseCompareResult:
     """Compare phase between two audio files.
 
     Computes:
       - delay_samples: time delay in samples (positive = audio2 lags audio1)
       - delay_ms: time delay in milliseconds
       - correlation: cross-file Pearson correlation
-      - polarity_inverted: True if correlation < -0.5
+      - polarity_inverted: True if correlation is below the polarity
+        threshold (default -0.5, AnalysisSettings-tunable)
 
     If inputs have different sample rates, the lower-rate audio is
     automatically upsampled to the higher rate. Length mismatches are
@@ -255,18 +277,15 @@ def compare_phase(audio1: AudioData, audio2: AudioData) -> PhaseCompareResult:
     Raises:
         AnalysisError: If audio has 0 samples or analysis fails.
     """
+    effective = settings if settings is not None else analysis_settings()
+
     # Auto-resample on sample rate mismatch
     audio1, audio2 = align_sample_rates(audio1, audio2)
 
-    mono1 = audio1.mono
-    mono2 = audio2.mono
-
-    # Empty-samples guard
-    if len(mono1) == 0 or len(mono2) == 0:
-        raise AnalysisError("Phase comparison failed: audio has 0 samples")
-
-    # Near-silence guard
-    if is_near_silent(mono1) or is_near_silent(mono2):
+    # Empty/silence guards (B.2): mono per input, or None when near-silent.
+    mono1 = guarded_mono(audio1, "Phase comparison failed")
+    mono2 = guarded_mono(audio2, "Phase comparison failed")
+    if mono1 is None or mono2 is None:
         return _silent_compare_result()
 
     # Truncate to shorter signal
@@ -275,7 +294,9 @@ def compare_phase(audio1: AudioData, audio2: AudioData) -> PhaseCompareResult:
     mono2 = mono2[:min_len]
 
     # PHAS-04: GCC-PHAT delay estimation
-    delay_samples, delay_ms = _gcc_phat_delay(mono1, mono2, audio1.sample_rate)
+    delay_samples, delay_ms = _gcc_phat_delay(
+        mono1, mono2, audio1.sample_rate, settings=effective
+    )
 
     # PHAS-05: Cross-file correlation
     with np.errstate(invalid="ignore"):
@@ -283,7 +304,7 @@ def compare_phase(audio1: AudioData, audio2: AudioData) -> PhaseCompareResult:
     corr = 0.0 if np.isnan(corr_val) else float(corr_val)
 
     # PHAS-06: Cross-file polarity inversion
-    polarity_inverted = bool(corr < -0.5)
+    polarity_inverted = bool(corr < effective.polarity_threshold)
 
     return PhaseCompareResult(
         delay_samples=delay_samples,

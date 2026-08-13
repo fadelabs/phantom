@@ -133,7 +133,7 @@ Specific effect chain recipes for common sound design goals. Each recipe lists t
 
 **Shortcut:** Some reverb plugins have a "reverse" mode that does this in real-time, though printed reverse reverb gives you more editing control.
 
-**Reaper MCP limitation:** Reverse reverb requires rendering steps (reverse item, apply reverb, render, reverse again) that cannot be fully automated through the Reaper MCP bridge. The item manipulation APIs (split, reverse, position) use raw Reaper API calls that fail due to pointer serialization issues in the file-based bridge. Plan to do this step manually in Reaper or build a ReaScript action for it.
+**Reaper MCP note:** This is a multi-step render pipeline. Item manipulation works through the Reaper MCP bridge — `split_item`, `set_item_position`, `set_item_length`, `set_item_volume`, `set_item_mute`, and fades are all resolved within the Lua bridge. There is no reverse-item API, so flipping the clip (and the wet tail) is the one manual step — plan for it, or build a ReaScript action if you do this often.
 
 ## Effect Throws
 

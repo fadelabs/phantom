@@ -37,7 +37,7 @@ Optional: demucs (stem separation), matchering (reference matching, GPLv3), peda
 - All analysis modules follow: input guard -> analyze -> return Pydantic model
 - Optional dependencies use lazy imports with `DependencyMissingError`
 - `PhantomError` hierarchy with musician-friendly error messages
-- Env var configuration: `PHANTOM_AUDIO_DIR`, `PHANTOM_OUTPUT_DIR`, `PHANTOM_MAX_DURATION`, `PHANTOM_MAX_FILE_SIZE`
+- Env var configuration: 40 `PHANTOM_*` runtime variables covering paths/limits, analysis thresholds, FFT/frame sizes, and behavior flags. The canonical registry is `src/phantom/_config.py` (it also drives `phantom doctor`'s environment table); per-knob defaults resolve in `src/phantom/_settings.py`. Installer-only vars live in `install.sh` / `install.ps1`: `PHANTOM_NO_TELEMETRY` (opt out) and `PHANTOM_BIN` (script-internal)
 
 ### Testing
 
@@ -71,9 +71,9 @@ Artist personal information must never appear in commits or public-facing docume
 | `phantom` | `src/phantom/cli/__init__.py` | CLI entry point (click group) |
 | `phantom-mcp` | `src/phantom/server.py` | MCP server entry point |
 
-### MCP Tools (18)
+### MCP Tools (20)
 
-`analyze_spectrum`, `analyze_loudness`, `analyze_dynamics`, `analyze_stereo`, `analyze_phase`, `compare_phase`, `detect_problems`, `analyze_masking`, `analyze_masking_matrix`, `multi_stem_masking`, `compare_to_profile`, `compare_to_reference`, `match_to_reference`, `separate_stems`, `full_diagnostic`, `batch_diagnostic`, `read_live_metrics`, `setup_reaper`
+`analyze_spectrum`, `analyze_loudness`, `analyze_dynamics`, `analyze_stereo`, `analyze_phase`, `compare_phase`, `detect_problems`, `analyze_masking`, `multi_stem_masking`, `compare_to_profile`, `compare_to_reference`, `list_profiles`, `load_profile`, `match_to_reference`, `separate_stems`, `fix_audio`, `apply_processing`, `full_diagnostic`, `batch_diagnostic`, `read_live_metrics`
 
 ### CLI Commands
 

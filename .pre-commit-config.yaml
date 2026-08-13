@@ -1,4 +1,7 @@
-default_install_hook_types: [pre-commit]
+default_install_hook_types: [pre-commit, commit-msg]
+# Hooks that don't declare stages run at pre-commit only, so installing the
+# commit-msg shim doesn't re-run the file checks against the message file.
+default_stages: [pre-commit]
 
 repos:
   # Gitleaks secret scanning (300+ built-in rules)
@@ -31,6 +34,14 @@ repos:
         language: script
         types: [file]
         pass_filenames: false
+
+      # Block AI session links/trailers in commit messages — any assistant,
+      # not just Claude. Co-Authored-By trailers stay allowed.
+      - id: check-ai-session-links
+        name: Block AI session links in commit messages
+        entry: ./scripts/check-ai-session-links.sh
+        language: script
+        stages: [commit-msg]
 
       # Semgrep SAST — same rulesets as the CI security-scan job. Runs via uv
       # (ephemeral, no project dep) and scans src/ when any source file changes.

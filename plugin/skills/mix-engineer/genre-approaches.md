@@ -114,7 +114,7 @@ Run `load_profile` for the target genre to get exact loudness and frequency targ
 
 ## Country
 
-**Run `load_profile('country')` for targets.**
+**There is no built-in country profile — `load_profile('country')` errors.** Use `load_profile('pop')` as a vocal-forward ballpark, or drop a custom `country.json` into your profile directory (`PHANTOM_PROFILES_DIR`) for exact targets.
 
 **Key priorities:** Vocal clarity above all. Every lyric audible. Natural, authentic vocal treatment.
 
@@ -134,7 +134,7 @@ Run `load_profile` for the target genre to get exact loudness and frequency targ
 
 ## Jazz / Acoustic
 
-**Run `load_profile('jazz')` or `load_profile('acoustic')` for targets.**
+**There is no built-in jazz or acoustic profile — those `load_profile` calls error.** Use `load_profile('ambient')` as the natural, dynamic-character ballpark, or add custom `jazz.json` / `acoustic.json` profiles to your profile directory (`PHANTOM_PROFILES_DIR`).
 
 **Key priorities:** Natural balance. Room sound. Minimal processing. Respect the performance.
 

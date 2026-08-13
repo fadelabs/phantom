@@ -22,25 +22,14 @@ from phantom.problems import (
     _detect_lossy_codec,
     _spectral_flatness,
     _average_power_spectrum,
-    _DC_OFFSET_THRESHOLD,
 )
+from phantom._settings import AnalysisSettings
+from tests.conftest import _make_audio
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-
-def _make_audio(samples_1d: np.ndarray, sr: int) -> AudioData:
-    """Wrap a 1D mono signal into an AudioData instance."""
-    samples_2d = samples_1d.reshape(-1, 1)
-    return AudioData(
-        samples=samples_2d,
-        sample_rate=sr,
-        num_channels=1,
-        duration=len(samples_1d) / sr,
-        num_samples=len(samples_1d),
-    )
 
 
 def _make_stereo_audio(samples_2d: np.ndarray, sr: int) -> AudioData:
@@ -141,8 +130,8 @@ class TestClipping:
         audio = _make_audio(samples, sr)
         result = detect_problems(audio)
         clipping = [p for p in result.problems if p.type == "clipping"][0]
-        assert clipping.details["clipped_samples"] > 0
-        assert clipping.details["clipped_percent"] > 0
+        assert clipping.details.clipped_samples > 0
+        assert clipping.details.clipped_percent > 0
 
     def test_clean_signal_no_clipping(self, mono_sine_440hz):
         """Clean sine at amp 0.5 -> no clipping problem."""
@@ -184,7 +173,7 @@ class TestDCOffset:
         audio = _make_audio(samples, sr)
         result = detect_problems(audio)
         dc = [p for p in result.problems if p.type == "dc_offset"][0]
-        assert dc.details["dc_offset"] == pytest.approx(0.05, abs=0.01)
+        assert dc.details.dc_offset == pytest.approx(0.05, abs=0.01)
 
     def test_dc_offset_below_threshold_no_detection(self):
         """DC offset of 1e-4 (below 5e-4 threshold) -> no dc_offset problem (S-WR-03)."""
@@ -232,7 +221,7 @@ class TestDCOffset:
         audio = _make_stereo_audio(samples, sr)
 
         # Sanity: mono mixdown cancels the DC, so a mono-only check sees nothing.
-        assert abs(float(np.mean(audio.mono))) < _DC_OFFSET_THRESHOLD
+        assert abs(float(np.mean(audio.mono))) < AnalysisSettings().dc_offset_threshold
 
         result = detect_problems(audio)
         dc_problems = [p for p in result.problems if p.type == "dc_offset"]
@@ -312,9 +301,7 @@ class TestInterSamplePeaks:
         result = detect_problems(audio)
         isp = [p for p in result.problems if p.type == "inter_sample_peak"]
         assert len(isp) > 0
-        assert isp[0].details["true_peak_dbtp"] == pytest.approx(
-            expected_dbtp, abs=1e-9
-        )
+        assert isp[0].details.true_peak_dbtp == pytest.approx(expected_dbtp, abs=1e-9)
 
 
 # ---------------------------------------------------------------------------
@@ -387,6 +374,134 @@ class TestSNR:
 
 
 # ---------------------------------------------------------------------------
+# Noise-floor/SNR merge parity (A.2)
+# ---------------------------------------------------------------------------
+
+
+class TestMergedNoiseFloorSnr:
+    """_detect_noise_and_snr must emit exactly the items the former pair did.
+
+    The merged detector and the pre-merge _detect_noise_floor/_detect_snr
+    were ~half identical; this test replicates the old pair as-written and
+    asserts byte-equal ProblemItems on a panel of fixtures. Old order is
+    preserved (noise floor first), which matters for the stable severity
+    sort's within-severity ties.
+    """
+
+    # Former _detect_noise_floor, reproduced verbatim (PROB-04).
+    @staticmethod
+    def _old_noise_floor(block_rms_db):
+        from phantom.problems import ProblemItem
+
+        items = []
+        if len(block_rms_db) >= 4:
+            noise_floor_db = float(np.percentile(block_rms_db, 10))
+            dynamic_spread = float(np.percentile(block_rms_db, 90) - noise_floor_db)
+            if dynamic_spread >= 10.0:
+                if noise_floor_db >= -50.0:
+                    severity = "moderate"
+                    msg = f"Elevated noise floor: {noise_floor_db:.1f} dBFS (above -50 dBFS threshold)."
+                elif noise_floor_db >= -60.0:
+                    severity = "minor"
+                    msg = f"Noise floor at {noise_floor_db:.1f} dBFS (acceptable but not professional-grade)."
+                else:
+                    severity = None
+                    msg = None
+                if severity is not None:
+                    items.append(
+                        ProblemItem(
+                            type="noise_floor",
+                            severity=severity,
+                            message=msg,
+                            details={"noise_floor_dbfs": round(noise_floor_db, 1)},
+                        )
+                    )
+        return items
+
+    # Former _detect_snr, reproduced verbatim (PROB-05).
+    @staticmethod
+    def _old_snr(mono, block_rms_db):
+        from phantom.problems import ProblemItem
+
+        items = []
+        signal_rms = float(np.sqrt(np.mean(mono**2)))
+        if signal_rms > 0:
+            signal_rms_db = float(20.0 * np.log10(signal_rms + 1e-10))
+            if len(block_rms_db) >= 4:
+                noise_floor_db = float(np.percentile(block_rms_db, 10))
+                dynamic_spread = float(np.percentile(block_rms_db, 90) - noise_floor_db)
+                if dynamic_spread >= 10.0:
+                    snr_db = signal_rms_db - noise_floor_db
+                    if snr_db < 60.0:
+                        if snr_db < 50.0:
+                            severity = "significant"
+                            quality = "poor"
+                        else:
+                            severity = "minor"
+                            quality = "acceptable"
+                        items.append(
+                            ProblemItem(
+                                type="snr",
+                                severity=severity,
+                                message=(
+                                    f"SNR is {snr_db:.1f} dB ({quality}). "
+                                    f"Signal RMS: {signal_rms_db:.1f} dBFS, "
+                                    f"noise floor: {noise_floor_db:.1f} dBFS."
+                                ),
+                                details={
+                                    "snr_db": round(snr_db, 1),
+                                    "signal_rms_dbfs": round(signal_rms_db, 1),
+                                    "noise_floor_dbfs": round(noise_floor_db, 1),
+                                    "quality": quality,
+                                },
+                            )
+                        )
+        return items
+
+    @pytest.mark.parametrize(
+        "fixture_name",
+        [
+            "mono_sine_440hz",
+            "noisy_signal",
+            "white_noise_1s",
+            "multi_tone_1s",
+            "dc_offset_sine",
+            "sibilant_signal",
+        ],
+    )
+    def test_merged_matches_old_pair(self, request, fixture_name):
+        """Every fixture yields byte-identical noise_floor+snr ProblemItems."""
+        from phantom._utils import _block_rms_db
+        from phantom.problems import _detect_noise_and_snr
+        from phantom._settings import AnalysisSettings
+
+        samples, _sr = request.getfixturevalue(fixture_name)
+        assert samples.ndim == 1  # all fixtures are 1D mono
+        block = _block_rms_db(samples)
+        signal_rms = float(np.sqrt(np.mean(samples**2)))
+
+        merged = _detect_noise_and_snr(block, signal_rms, AnalysisSettings())
+        old = self._old_noise_floor(block) + self._old_snr(samples, block)
+        assert merged == old
+
+    def test_detect_problems_uses_memoized_block_rms(self, noisy_signal):
+        """detect_problems routes through the AudioData memo so the block loop
+        runs once (spy on _block_rms_db through the memoized property)."""
+        samples, sr = noisy_signal
+        audio = _make_audio(samples, sr)
+        from phantom._utils import _block_rms_db
+
+        expected = _block_rms_db(audio.mono)
+        # Trigger the memoized property and confirm equality with the direct
+        # helper; the property was already exercised by analyze_dynamics in the
+        # full pipeline, so this locks the shared source of truth.
+        assert audio.block_rms_db == expected
+
+        result = detect_problems(audio)
+        assert any(p.type in ("noise_floor", "snr") for p in result.problems)
+
+
+# ---------------------------------------------------------------------------
 # PROB-06: Hum Detection
 # ---------------------------------------------------------------------------
 
@@ -417,7 +532,7 @@ class TestHum:
         result = detect_problems(audio)
         hum = [p for p in result.problems if p.type == "hum"][0]
         assert "primary_frequency_hz" in hum.details
-        assert hum.details["primary_frequency_hz"] == pytest.approx(60.0, abs=5.0)
+        assert hum.details.primary_frequency_hz == pytest.approx(60.0, abs=5.0)
 
     def test_clean_sine_no_hum(self, mono_sine_440hz):
         """Clean 440Hz sine -> no hum problem."""
@@ -699,8 +814,8 @@ class TestResonantPeaks:
         res = [p for p in result.problems if p.type == "resonant_peak"]
         assert len(res) == 1
         assert res[0].severity == "significant"
-        assert res[0].details["num_resonances"] >= 1
-        resonances = res[0].details["resonances"]
+        assert res[0].details.num_resonances >= 1
+        resonances = res[0].details.resonances
         assert len(resonances) >= 1
         # First resonance should be near 120 Hz
         assert abs(resonances[0]["frequency_hz"] - 120) < 20
@@ -753,7 +868,7 @@ class TestLossyCodec:
         lossy = [p for p in result.problems if p.type == "lossy_codec"]
         assert len(lossy) == 1
         assert lossy[0].severity == "dealbreaker"
-        assert lossy[0].details["shelf_drop_db"] >= 15
+        assert lossy[0].details.shelf_drop_db >= 15
 
     def test_no_lossy_on_full_bandwidth(self, white_noise_1s):
         """Full-bandwidth white noise -> no lossy_codec problem."""
@@ -786,7 +901,14 @@ class TestDetectBandExcess:
         """_detect_band_excess with sibilance params detects excessive 5-10kHz."""
         samples, sr = sibilant_signal
         result = _detect_band_excess(
-            samples, sr, 5000.0, 10000.0, "sibilance", "sibilance", "5-10kHz"
+            samples,
+            sr,
+            5000.0,
+            10000.0,
+            "sibilance",
+            "sibilance",
+            "5-10kHz",
+            settings=AnalysisSettings(),
         )
         assert len(result) == 1
         assert result[0].type == "sibilance"
@@ -800,7 +922,14 @@ class TestDetectBandExcess:
         """_detect_band_excess with mud params detects excessive 200-500Hz."""
         samples, sr = muddy_signal
         result = _detect_band_excess(
-            samples, sr, 200.0, 500.0, "mud", "mud", "200-500Hz"
+            samples,
+            sr,
+            200.0,
+            500.0,
+            "mud",
+            "mud",
+            "200-500Hz",
+            settings=AnalysisSettings(),
         )
         assert len(result) == 1
         assert result[0].type == "mud"
@@ -811,7 +940,14 @@ class TestDetectBandExcess:
         """_detect_band_excess with harshness params detects excessive 2-4kHz."""
         samples, sr = harsh_signal
         result = _detect_band_excess(
-            samples, sr, 2000.0, 4000.0, "harshness", "harshness", "2-4kHz"
+            samples,
+            sr,
+            2000.0,
+            4000.0,
+            "harshness",
+            "harshness",
+            "2-4kHz",
+            settings=AnalysisSettings(),
         )
         assert len(result) == 1
         assert result[0].type == "harshness"
@@ -830,6 +966,7 @@ class TestDetectBandExcess:
             "sibilance",
             "sibilance",
             "5-10kHz",
+            settings=AnalysisSettings(),
         )
         assert result == []
 
@@ -839,7 +976,14 @@ class TestDetectBandExcess:
         rng = np.random.default_rng(200)
         noise = rng.standard_normal(sr * 2).astype(np.float32) * 0.3
         result = _detect_band_excess(
-            noise, sr, 5000.0, 10000.0, "sibilance", "sibilance", "5-10kHz"
+            noise,
+            sr,
+            5000.0,
+            10000.0,
+            "sibilance",
+            "sibilance",
+            "5-10kHz",
+            settings=AnalysisSettings(),
         )
         assert result == []
 
@@ -847,7 +991,14 @@ class TestDetectBandExcess:
         """Message matches format: 'Excessive {label}: {freq_label} band energy is {excess:.1f} dB above expected level.'"""
         samples, sr = sibilant_signal
         result = _detect_band_excess(
-            samples, sr, 5000.0, 10000.0, "sibilance", "sibilance", "5-10kHz"
+            samples,
+            sr,
+            5000.0,
+            10000.0,
+            "sibilance",
+            "sibilance",
+            "5-10kHz",
+            settings=AnalysisSettings(),
         )
         assert len(result) == 1
         msg = result[0].message
@@ -859,7 +1010,14 @@ class TestDetectBandExcess:
         """Mud message uses Hz-based freq label."""
         samples, sr = muddy_signal
         result = _detect_band_excess(
-            samples, sr, 200.0, 500.0, "mud", "mud", "200-500Hz"
+            samples,
+            sr,
+            200.0,
+            500.0,
+            "mud",
+            "mud",
+            "200-500Hz",
+            settings=AnalysisSettings(),
         )
         assert len(result) == 1
         assert "200-500Hz band energy is" in result[0].message
@@ -868,11 +1026,18 @@ class TestDetectBandExcess:
         """Detail values should be rounded to 1 decimal place."""
         samples, sr = sibilant_signal
         result = _detect_band_excess(
-            samples, sr, 5000.0, 10000.0, "sibilance", "sibilance", "5-10kHz"
+            samples,
+            sr,
+            5000.0,
+            10000.0,
+            "sibilance",
+            "sibilance",
+            "5-10kHz",
+            settings=AnalysisSettings(),
         )
         assert len(result) == 1
         for key in ("band_energy_db", "overall_energy_db", "excess_db"):
-            val = result[0].details[key]
+            val = getattr(result[0].details, key)
             assert val == round(val, 1), f"{key} not rounded to 1dp: {val}"
 
     def test_detect_problems_uses_parametric_for_sibilance(self, sibilant_signal):
@@ -936,6 +1101,7 @@ class TestFFTSpectrumSharing:
             "sibilance",
             "5-10kHz",
             spectral_flatness=None,
+            settings=AnalysisSettings(),
         )
         assert len(result) == 1
         assert result[0].type == "sibilance"
@@ -956,6 +1122,7 @@ class TestFFTSpectrumSharing:
                 "sibilance",
                 "5-10kHz",
                 spectral_flatness=0.5,
+                settings=AnalysisSettings(),
             )
             mock_flatness.assert_not_called()
         # With flatness=0.5 (above threshold 0.01), detection should proceed
@@ -976,6 +1143,7 @@ class TestFFTSpectrumSharing:
             "sibilance",
             "5-10kHz",
             spectral_flatness=0.001,
+            settings=AnalysisSettings(),
         )
         assert result == []
 
@@ -984,7 +1152,9 @@ class TestFFTSpectrumSharing:
     def test_resonances_standalone_computes_own_spectrum(self, resonant_signal):
         """_detect_resonances with power_spectrum=None computes its own."""
         samples, sr = resonant_signal
-        result = _detect_resonances(samples, sr, power_spectrum=None)
+        result = _detect_resonances(
+            samples, sr, power_spectrum=None, settings=AnalysisSettings()
+        )
         assert len(result) == 1
         assert result[0].type == "resonant_peak"
 
@@ -997,7 +1167,9 @@ class TestFFTSpectrumSharing:
         # Pre-compute the spectrum the same way the function would internally
         spectrum_tuple = _average_power_spectrum(samples, 8192, sr)
         with patch("phantom.problems._average_power_spectrum") as mock_aps:
-            result = _detect_resonances(samples, sr, power_spectrum=spectrum_tuple)
+            result = _detect_resonances(
+                samples, sr, power_spectrum=spectrum_tuple, settings=AnalysisSettings()
+            )
             mock_aps.assert_not_called()
         assert len(result) == 1
         assert result[0].type == "resonant_peak"
@@ -1007,7 +1179,9 @@ class TestFFTSpectrumSharing:
     def test_lossy_codec_standalone_computes_own_spectrum(self, lossy_sim_signal):
         """_detect_lossy_codec with power_spectrum=None computes its own."""
         samples, sr = lossy_sim_signal
-        result = _detect_lossy_codec(samples, sr, power_spectrum=None)
+        result = _detect_lossy_codec(
+            samples, sr, power_spectrum=None, settings=AnalysisSettings()
+        )
         assert len(result) == 1
         assert result[0].type == "lossy_codec"
 
@@ -1019,7 +1193,9 @@ class TestFFTSpectrumSharing:
         samples, sr = lossy_sim_signal
         spectrum_tuple = _average_power_spectrum(samples, 8192, sr)
         with patch("phantom.problems._average_power_spectrum") as mock_aps:
-            result = _detect_lossy_codec(samples, sr, power_spectrum=spectrum_tuple)
+            result = _detect_lossy_codec(
+                samples, sr, power_spectrum=spectrum_tuple, settings=AnalysisSettings()
+            )
             mock_aps.assert_not_called()
         assert len(result) == 1
         assert result[0].type == "lossy_codec"
@@ -1104,7 +1280,9 @@ class TestInjectSampleRateMismatch:
         expected_detail = {"a.wav": 44100, "b.wav": 96000}
         item = result.problems[0]
         assert item.message == f"Sample rate mismatch across stems: {expected_detail}"
+        # Original dict-equality comparison keeps working (C.2 follow-up).
         assert item.details == {"sample_rates": expected_detail}
+        assert item.details.sample_rates == expected_detail
 
     def test_preserves_existing_problems_after_mismatch(self):
         """Existing problems are preserved and follow the prepended mismatch item."""

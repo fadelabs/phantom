@@ -17,11 +17,13 @@ from rich.table import Table
 
 from phantom.exceptions import RECOMMENDED_PYTHON, DependencyMissingError, PhantomError
 
-# Local copy of server.py's _PATH_REGEX — strips Unix/Windows absolute paths from
-# error messages so CLI output never leaks internal filesystem layout. Kept as a
-# local copy (rather than importing from phantom.server) to avoid a CLI->server
-# import edge.
-_PATH_REGEX = re.compile(r"([A-Za-z]:\\[^\s:,)]+\\|/[^\s:,)]+/)+")
+# Local copy of server.py's _PATH_REGEX — strips Unix, Windows drive-letter,
+# and UNC absolute paths from error messages so CLI output never leaks internal
+# filesystem layout. Segments may contain spaces, apostrophes, and punctuation
+# (but not quotes or newlines); the match runs to the last path separator so
+# only the basename remains visible. Kept as a local copy (rather than
+# importing from phantom.server) to avoid a CLI->server import edge.
+_PATH_REGEX = re.compile(r"(?:[A-Za-z]:\\[^\"\n]+\\|\\\\[^\"\n]+\\|/[^\"\n]+/)+")
 
 # ---------------------------------------------------------------------------
 # Severity styling (D-06)

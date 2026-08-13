@@ -10,21 +10,20 @@ and numpy for overlap scoring.
 from __future__ import annotations
 
 import itertools
+from collections.abc import Callable
+from typing import ClassVar
 
 import numpy as np
-from pydantic import BaseModel, field_validator
 
 from phantom.audio import AudioData
-from phantom.exceptions import AnalysisError
 from phantom._resample import align_sample_rates, resample_to_match
-from phantom._rounding import round_ratio
-from phantom._utils import is_near_silent, wrap_errors
-from phantom.spectral import _BAND_LABELS, _octave_band_energies
+from phantom._bands import _BAND_LABELS, _octave_band_energies
+from phantom._rounding import RoundedModel, round_ratio
+from phantom._settings import AnalysisSettings, analysis_settings
+from phantom._utils import guarded_mono, wrap_errors
 
-# Severity thresholds for per-band overlap classification.
-_SEVERITY_HIGH = 0.6
-_SEVERITY_MODERATE = 0.3
-_SEVERITY_LOW = 0.1
+# Severity thresholds for per-band overlap classification now live in
+# AnalysisSettings (C.1): severity_high/moderate/low (0.6/0.3/0.1).
 
 # Band weights reflecting musical importance for masking (per D-07).
 # Prime masking zone (250-500 Hz) = 1.0, tapering to extremes.
@@ -43,8 +42,8 @@ BAND_WEIGHTS = np.array(
     ]
 )
 
-# Energy floor: bands more than 40 dB below peak are zeroed (per D-06).
-_FLOOR_DB = 40.0
+# The masking energy floor (bands more than 40 dB below the pair peak are
+# zeroed, per D-06) is AnalysisSettings.masking_floor_db (C.1).
 
 
 # ---------------------------------------------------------------------------
@@ -52,33 +51,31 @@ _FLOOR_DB = 40.0
 # ---------------------------------------------------------------------------
 
 
-class MaskingBand(BaseModel):
+class MaskingBand(RoundedModel):
     """Per-band masking analysis result."""
 
     band: str
     severity: str
     overlap_score: float
 
-    @field_validator("overlap_score", mode="before")
-    @classmethod
-    def _round_score(cls, v: float) -> float | None:
-        return round_ratio(v)
+    _ROUND_FIELDS: ClassVar[dict[str, Callable[[object], object]]] = {
+        "overlap_score": round_ratio
+    }
 
 
-class MaskingResult(BaseModel):
+class MaskingResult(RoundedModel):
     """Result of pairwise masking analysis."""
 
     bands: list[MaskingBand] = []
     overall_severity: str = "none"
     overall_score: float = 0.0
 
-    @field_validator("overall_score", mode="before")
-    @classmethod
-    def _round_score(cls, v: float) -> float | None:
-        return round_ratio(v)
+    _ROUND_FIELDS: ClassVar[dict[str, Callable[[object], object]]] = {
+        "overall_score": round_ratio
+    }
 
 
-class MaskingPair(BaseModel):
+class MaskingPair(RoundedModel):
     """A single stem pair in the masking matrix."""
 
     stem_a: str
@@ -87,13 +84,12 @@ class MaskingPair(BaseModel):
     overall_score: float
     bands: list[MaskingBand]
 
-    @field_validator("overall_score", mode="before")
-    @classmethod
-    def _round_score(cls, v: float) -> float | None:
-        return round_ratio(v)
+    _ROUND_FIELDS: ClassVar[dict[str, Callable[[object], object]]] = {
+        "overall_score": round_ratio
+    }
 
 
-class MaskingMatrixResult(BaseModel):
+class MaskingMatrixResult(RoundedModel):
     """Result of multi-stem masking matrix analysis."""
 
     pairs: list[MaskingPair] = []
@@ -106,20 +102,20 @@ class MaskingMatrixResult(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-def _classify_severity(score: float) -> str:
+def _classify_severity(score: float, settings: AnalysisSettings) -> str:
     """Classify an overlap score into a severity label.
 
-    Thresholds (per D-08):
-      high     >= 0.6
-      moderate >= 0.3
-      low      >= 0.1
-      none     <  0.1
+    Thresholds (per D-08, AnalysisSettings-tunable C.1):
+      high     >= severity_high    (0.6)
+      moderate >= severity_moderate (0.3)
+      low      >= severity_low     (0.1)
+      none     <  severity_low
     """
-    if score >= _SEVERITY_HIGH:
+    if score >= settings.severity_high:
         return "high"
-    if score >= _SEVERITY_MODERATE:
+    if score >= settings.severity_moderate:
         return "moderate"
-    if score >= _SEVERITY_LOW:
+    if score >= settings.severity_low:
         return "low"
     return "none"
 
@@ -136,26 +132,33 @@ def _no_masking_result() -> MaskingResult:
     return MaskingResult(bands=bands, overall_severity="none", overall_score=0.0)
 
 
-def _compute_band_energies(mono: np.ndarray, sample_rate: int) -> np.ndarray:
+def _compute_band_energies(
+    mono: np.ndarray, sample_rate: int, settings: AnalysisSettings
+) -> np.ndarray:
     """Compute average energy per octave band using Essentia FrequencyBands.
 
-    Delegates to the shared ``spectral._octave_band_energies`` helper so the
-    4096/2048 Hann + ``FrequencyBands(OCTAVE_EDGES)`` loop lives in one place
-    (P-09). Numerically identical to the former inline implementation.
+    Delegates to the shared ``_bands._octave_band_energies`` helper so the
+    Hann + ``FrequencyBands(OCTAVE_EDGES)`` loop lives in one place (P-09,
+    promoted to a public module in B.6). Frame/hop sizes come from *settings*
+    (C.1); numerically identical to the former inline implementation at
+    defaults.
 
     Args:
         mono: 1D float32 numpy array of audio samples.
         sample_rate: Sample rate in Hz.
+        settings: Effective analysis settings (the requiring caller resolves
+            them).
 
     Returns:
         1D numpy array of shape (10,) with average energy per octave band.
     """
-    return _octave_band_energies(mono, sample_rate)
+    return _octave_band_energies(mono, sample_rate, settings)
 
 
 def _compute_pairwise_result(
     energies_a: np.ndarray,
     energies_b: np.ndarray,
+    settings: AnalysisSettings,
 ) -> MaskingResult:
     """Compute overlap result from two pre-computed band energy arrays.
 
@@ -174,10 +177,10 @@ def _compute_pairwise_result(
         np.maximum(energies_a, energies_b) + 1e-10
     )
 
-    # Energy floor guard (per D-06): zero out bands more than 40 dB
-    # below the peak band energy across both stems.
+    # Energy floor guard (per D-06): zero out bands more than
+    # masking_floor_db below the peak band energy across both stems.
     peak_energy = max(float(np.max(energies_a)), float(np.max(energies_b)))
-    floor = peak_energy * 10 ** (-_FLOOR_DB / 10)
+    floor = peak_energy * 10 ** (-settings.masking_floor_db / 10)
     for i in range(len(overlap_scores)):
         if max(float(energies_a[i]), float(energies_b[i])) < floor:
             overlap_scores[i] = 0.0
@@ -186,7 +189,7 @@ def _compute_pairwise_result(
     bands = [
         MaskingBand(
             band=label,
-            severity=_classify_severity(float(score)),
+            severity=_classify_severity(float(score), settings),
             overlap_score=float(score),
         )
         for label, score in zip(_BAND_LABELS, overlap_scores)
@@ -194,7 +197,7 @@ def _compute_pairwise_result(
 
     # Weighted overall score
     overall_score = float(np.average(overlap_scores, weights=BAND_WEIGHTS))
-    overall_severity = _classify_severity(overall_score)
+    overall_severity = _classify_severity(overall_score, settings)
 
     return MaskingResult(
         bands=bands,
@@ -204,12 +207,18 @@ def _compute_pairwise_result(
 
 
 @wrap_errors("Masking analysis failed")
-def analyze_masking(audio_a: AudioData, audio_b: AudioData) -> MaskingResult:
+def analyze_masking(
+    audio_a: AudioData,
+    audio_b: AudioData,
+    settings: AnalysisSettings | None = None,
+) -> MaskingResult:
     """Analyze frequency masking between two audio stems.
 
     Computes per-octave-band spectral overlap between two stems and assigns
     severity labels based on the degree of overlap. Returns a MaskingResult
-    with band-level and overall scores.
+    with band-level and overall scores. Severity splits, the energy floor,
+    and the octave-band FFT geometry are AnalysisSettings-tunable (C.1);
+    *settings* defaults to the per-call env resolution.
 
     If inputs have different sample rates, the lower-rate audio is
     automatically upsampled to the higher rate.
@@ -224,36 +233,36 @@ def analyze_masking(audio_a: AudioData, audio_b: AudioData) -> MaskingResult:
     Raises:
         AnalysisError: If audio is empty or analysis fails.
     """
+    effective = settings if settings is not None else analysis_settings()
+
     # Auto-resample on sample rate mismatch
     audio_a, audio_b = align_sample_rates(audio_a, audio_b)
 
-    # Mono mixdown
-    mono_a = audio_a.mono
-    mono_b = audio_b.mono
-
-    # Empty samples guard
-    if len(mono_a) == 0 or len(mono_b) == 0:
-        raise AnalysisError("Masking analysis failed: audio has 0 samples")
-
-    # Near-silence guard
-    if is_near_silent(mono_a) or is_near_silent(mono_b):
+    # Empty/silence guards (B.2) on both inputs.
+    mono_a = guarded_mono(audio_a, "Masking analysis failed")
+    mono_b = guarded_mono(audio_b, "Masking analysis failed")
+    if mono_a is None or mono_b is None:
         return _no_masking_result()
 
     # Compute per-band energies for both stems
-    energies_a = _compute_band_energies(mono_a, audio_a.sample_rate)
-    energies_b = _compute_band_energies(mono_b, audio_b.sample_rate)
+    energies_a = _compute_band_energies(mono_a, audio_a.sample_rate, effective)
+    energies_b = _compute_band_energies(mono_b, audio_b.sample_rate, effective)
 
-    return _compute_pairwise_result(energies_a, energies_b)
+    return _compute_pairwise_result(energies_a, energies_b, effective)
 
 
 @wrap_errors("Masking analysis failed")
-def analyze_masking_matrix(stems: list[AudioData]) -> MaskingMatrixResult:
+def analyze_masking_matrix(
+    stems: list[AudioData], settings: AnalysisSettings | None = None
+) -> MaskingMatrixResult:
     """Analyze frequency masking across all pairs in a multi-stem set.
 
     Returns a MaskingMatrixResult with pairs ranked by overall masking
     severity (worst first), plus stem_count and pair_count metadata (per D-05).
     Pre-computes band energies per stem to avoid redundant Essentia calls
-    (per RESEARCH.md Pitfall 4).
+    (per RESEARCH.md Pitfall 4). Severity splits, the energy floor, and the
+    octave-band FFT geometry are AnalysisSettings-tunable (C.1); *settings*
+    defaults to the per-call env resolution.
 
     If stems have different sample rates, all are automatically upsampled to the
     highest rate. To bound peak memory (P-07), each stem is resampled to the
@@ -272,6 +281,7 @@ def analyze_masking_matrix(stems: list[AudioData]) -> MaskingMatrixResult:
     Raises:
         AnalysisError: If audio is empty or analysis fails.
     """
+    effective = settings if settings is not None else analysis_settings()
     n = len(stems)
 
     # Degenerate case: fewer than 2 stems
@@ -289,13 +299,14 @@ def analyze_masking_matrix(stems: list[AudioData]) -> MaskingMatrixResult:
     energies: list[np.ndarray | None] = []
     for stem in stems:
         aligned = resample_to_match(stem, target_sr)  # identity if already at target
-        mono = aligned.mono
-        if len(mono) == 0:
-            raise AnalysisError("Masking analysis failed: audio has 0 samples")
-        if is_near_silent(mono):
+        # Empty/silence guards (B.2); the aligned copy is dropped right after.
+        mono = guarded_mono(aligned, "Masking analysis failed")
+        if mono is None:
             energies.append(None)  # marker for silent stems
         else:
-            energies.append(_compute_band_energies(mono, aligned.sample_rate))
+            energies.append(
+                _compute_band_energies(mono, aligned.sample_rate, effective)
+            )
         del aligned  # drop the resampled copy before the next iteration
 
     # Iterate all unique pairs
@@ -305,7 +316,7 @@ def analyze_masking_matrix(stems: list[AudioData]) -> MaskingMatrixResult:
             # One or both stems are near-silent — no masking
             result = _no_masking_result()
         else:
-            result = _compute_pairwise_result(energies[i], energies[j])
+            result = _compute_pairwise_result(energies[i], energies[j], effective)
 
         pairs.append(
             MaskingPair(

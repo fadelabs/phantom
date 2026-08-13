@@ -15,23 +15,13 @@ from phantom.masking import (
     MaskingResult,
     MaskingMatrixResult,
 )
+from phantom._settings import AnalysisSettings
+from tests.conftest import _make_audio
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-
-def _make_audio(samples_1d: np.ndarray, sr: int) -> AudioData:
-    """Wrap a 1D mono signal into an AudioData instance."""
-    samples_2d = samples_1d.reshape(-1, 1)
-    return AudioData(
-        samples=samples_2d,
-        sample_rate=sr,
-        num_channels=1,
-        duration=len(samples_1d) / sr,
-        num_samples=len(samples_1d),
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -114,7 +104,7 @@ class TestBandEnergyHelperParity:
         sr = 44100
         rng = np.random.default_rng(42)
         noise = rng.standard_normal(sr).astype(np.float32) * 0.3
-        energies = _compute_band_energies(noise, sr)
+        energies = _compute_band_energies(noise, sr, AnalysisSettings())
         assert energies.shape == self._GOLDEN.shape
         # Tight tolerance for cross-platform float32 ULP wobble (Linux vs macOS Essentia)
         assert np.allclose(energies, self._GOLDEN, rtol=1e-5, atol=1e-9)
@@ -126,8 +116,8 @@ class TestBandEnergyHelperParity:
         sr = 44100
         rng = np.random.default_rng(7)
         noise = rng.standard_normal(sr).astype(np.float32) * 0.3
-        via_masking = _compute_band_energies(noise, sr)
-        via_spectral = spectral._octave_band_energies(noise, sr)
+        via_masking = _compute_band_energies(noise, sr, AnalysisSettings())
+        via_spectral = spectral._octave_band_energies(noise, sr, AnalysisSettings())
         assert np.allclose(via_masking, via_spectral, rtol=0, atol=0)
 
 
@@ -549,14 +539,18 @@ class TestMatrixStreamingParity:
             if is_near_silent(mono):
                 energies.append(None)
             else:
-                energies.append(_compute_band_energies(mono, stem.sample_rate))
+                energies.append(
+                    _compute_band_energies(mono, stem.sample_rate, AnalysisSettings())
+                )
 
         expected = {}
         for i, j in itertools.combinations(range(len(aligned)), 2):
             if energies[i] is None or energies[j] is None:
                 res = _no_masking_result()
             else:
-                res = _compute_pairwise_result(energies[i], energies[j])
+                res = _compute_pairwise_result(
+                    energies[i], energies[j], AnalysisSettings()
+                )
             expected[("stem_%d" % i, "stem_%d" % j)] = res
         return expected
 
@@ -694,7 +688,7 @@ class TestBandEnergiesEdgeCases:
         n_samples = 100
         t = np.linspace(0, n_samples / sr, n_samples, endpoint=False, dtype=np.float32)
         signal = np.sin(2 * np.pi * 440 * t).astype(np.float32)
-        result = _compute_band_energies(signal, sr)
+        result = _compute_band_energies(signal, sr, AnalysisSettings())
         assert result.shape == (10,)
         assert np.all(result == 0.0)
 
@@ -704,7 +698,7 @@ class TestBandEnergiesEdgeCases:
         n_samples = 4095
         t = np.linspace(0, n_samples / sr, n_samples, endpoint=False, dtype=np.float32)
         signal = np.sin(2 * np.pi * 440 * t).astype(np.float32)
-        result = _compute_band_energies(signal, sr)
+        result = _compute_band_energies(signal, sr, AnalysisSettings())
         assert result.shape == (10,)
         assert np.all(result == 0.0)
 
@@ -714,13 +708,13 @@ class TestBandEnergiesEdgeCases:
         n_samples = 4096
         t = np.linspace(0, n_samples / sr, n_samples, endpoint=False, dtype=np.float32)
         signal = (0.5 * np.sin(2 * np.pi * 440 * t)).astype(np.float32)
-        result = _compute_band_energies(signal, sr)
+        result = _compute_band_energies(signal, sr, AnalysisSettings())
         assert result.shape == (10,)
         assert np.sum(result) > 0
 
     def test_empty_audio_returns_zeros(self):
         """0-sample audio returns np.zeros(10)."""
         signal = np.array([], dtype=np.float32)
-        result = _compute_band_energies(signal, 44100)
+        result = _compute_band_energies(signal, 44100, AnalysisSettings())
         assert result.shape == (10,)
         assert np.all(result == 0.0)

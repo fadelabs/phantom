@@ -9,73 +9,31 @@ Uses Essentia's standard-mode algorithms for all spectral feature extraction.
 
 from __future__ import annotations
 
-from typing import Optional
+from collections.abc import Callable
+from typing import ClassVar, Optional
 
 import numpy as np
 import essentia.standard as es
-from pydantic import BaseModel, field_validator
 
+from phantom._bands import (  # re-exported for backward compatibility (B.6)
+    OCTAVE_CENTERS,  # noqa: F401 -- tests import it from phantom.spectral
+    _BAND_LABELS,
+    OctaveBandEnergyDb,
+    _octave_band_energies,
+)
 from phantom.audio import AudioData
-from phantom.exceptions import AnalysisError
-from phantom._rounding import round_db_dict, round_hz, round_ratio, round_ratio_list
-from phantom._utils import is_near_silent, wrap_errors
-
-# Standard octave band center frequencies (Hz).
-OCTAVE_CENTERS = [31.25, 62.5, 125, 250, 500, 1000, 2000, 4000, 8000, 16000]
-
-# Band edge frequencies for octave band analysis.
-# Lower edge = center / sqrt(2), upper edge = center * sqrt(2).
-_SQRT2 = np.sqrt(2)
-OCTAVE_EDGES = [OCTAVE_CENTERS[0] / _SQRT2] + [c * _SQRT2 for c in OCTAVE_CENTERS]
-
-# Band label keys for the output dict.
-_BAND_LABELS = [f"{int(c)}_hz" if c >= 1 else f"{c}_hz" for c in OCTAVE_CENTERS]
+from phantom._rounding import (
+    RoundedModel,
+    round_db_dict,
+    round_hz,
+    round_ratio,
+    round_ratio_list,
+)
+from phantom._settings import AnalysisSettings, analysis_settings
+from phantom._utils import guarded_mono, wrap_errors
 
 
-def _octave_band_energies(mono: np.ndarray, sample_rate: int) -> np.ndarray:
-    """Average linear energy per octave band via Essentia FrequencyBands (P-09).
-
-    Runs a 4096/2048 Hann-windowed FrequencyBands loop over ``OCTAVE_EDGES``
-    and averages the per-frame band energies across all frames. Shared by both
-    ``analyze_spectrum`` (which converts the result to dB) and
-    ``masking._compute_band_energies`` (which consumes the linear energies
-    directly) so the identical loop is not duplicated.
-
-    Args:
-        mono: 1D float32 numpy array of audio samples.
-        sample_rate: Sample rate in Hz.
-
-    Returns:
-        1D numpy array of shape ``(len(OCTAVE_CENTERS),)`` with the average
-        linear energy per octave band. Returns all-zeros when the signal is
-        shorter than one 4096-sample frame (insufficient data to resolve any
-        band — the acoustically correct answer).
-    """
-    frame_size = 4096
-    hop_size = 2048
-
-    # Audio shorter than one FFT frame cannot produce meaningful band energies.
-    if len(mono) < frame_size:
-        return np.zeros(len(OCTAVE_CENTERS))
-
-    windowing = es.Windowing(type="hann", size=frame_size)
-    spectrum = es.Spectrum(size=frame_size)
-    freq_bands = es.FrequencyBands(frequencyBands=OCTAVE_EDGES, sampleRate=sample_rate)
-
-    band_energies_list = []
-    for frame in es.FrameGenerator(mono, frameSize=frame_size, hopSize=hop_size):
-        win = windowing(frame)
-        spec = spectrum(win)
-        bands = freq_bands(spec)
-        band_energies_list.append(bands)
-
-    if not band_energies_list:
-        return np.zeros(len(OCTAVE_CENTERS))
-
-    return np.mean(band_energies_list, axis=0)
-
-
-class SpectralResult(BaseModel):
+class SpectralResult(RoundedModel):
     """Result of spectral analysis."""
 
     spectral_centroid_hz: Optional[float] = None
@@ -83,27 +41,16 @@ class SpectralResult(BaseModel):
     spectral_flatness: Optional[float] = None
     spectral_contrast: Optional[list[float]] = None
     dissonance: Optional[float] = None
-    octave_band_energy_db: Optional[dict[str, float]] = None
+    octave_band_energy_db: Optional[OctaveBandEnergyDb] = None
 
-    @field_validator("spectral_centroid_hz", "spectral_rolloff_hz", mode="before")
-    @classmethod
-    def _round_hz(cls, v: float | None) -> float | None:
-        return round_hz(v)
-
-    @field_validator("spectral_flatness", "dissonance", mode="before")
-    @classmethod
-    def _round_ratio(cls, v: float | None) -> float | None:
-        return round_ratio(v)
-
-    @field_validator("spectral_contrast", mode="before")
-    @classmethod
-    def _round_contrast(cls, v: list[float] | None) -> list[float] | None:
-        return round_ratio_list(v)
-
-    @field_validator("octave_band_energy_db", mode="before")
-    @classmethod
-    def _round_band_db(cls, v: dict[str, float] | None) -> dict[str, float] | None:
-        return round_db_dict(v)
+    _ROUND_FIELDS: ClassVar[dict[str, Callable[[object], object]]] = {
+        "spectral_centroid_hz": round_hz,
+        "spectral_rolloff_hz": round_hz,
+        "spectral_flatness": round_ratio,
+        "dissonance": round_ratio,
+        "spectral_contrast": round_ratio_list,
+        "octave_band_energy_db": round_db_dict,
+    }
 
 
 def _silent_spectral_result() -> SpectralResult:
@@ -112,8 +59,13 @@ def _silent_spectral_result() -> SpectralResult:
 
 
 @wrap_errors("Spectral analysis failed")
-def analyze_spectrum(audio: AudioData) -> SpectralResult:
+def analyze_spectrum(
+    audio: AudioData, settings: AnalysisSettings | None = None
+) -> SpectralResult:
     """Analyze spectral characteristics of an audio signal.
+
+    *settings* carries the tunable frame/hop sizes (C.1) and defaults to
+    the per-call env resolution.
 
     Computes six spectral descriptors from the mono mixdown of the input:
       - spectral_centroid_hz: center of spectral mass (Hz)
@@ -133,20 +85,18 @@ def analyze_spectrum(audio: AudioData) -> SpectralResult:
     Raises:
         AnalysisError: If Essentia algorithms fail.
     """
-    mono = audio.mono
     sample_rate = audio.sample_rate
+    effective = settings if settings is not None else analysis_settings()
 
-    # Empty-samples guard
-    if len(mono) == 0:
-        raise AnalysisError("Spectral analysis failed: audio has 0 samples")
-
-    # Near-silence guard
-    if is_near_silent(mono):
+    # Empty/silence guards (B.2): mono, or None when near-silent.
+    mono = guarded_mono(audio, "Spectral analysis failed")
+    if mono is None:
         return _silent_spectral_result()
 
-    # Spectral features: 2048/1024 (~46ms/~23ms at 44.1kHz) per AES standard for tonal analysis
-    frame_size = 2048
-    hop_size = 1024
+    # Spectral features: 2048/1024 (~46ms/~23ms at 44.1kHz) per AES standard
+    # for tonal analysis; both are AnalysisSettings-tunable (C.1).
+    frame_size = effective.spectral_frame_size
+    hop_size = effective.spectral_hop_size
 
     windowing = es.Windowing(type="hann", size=frame_size)
     spectrum = es.Spectrum(size=frame_size)
@@ -197,8 +147,8 @@ def analyze_spectrum(audio: AudioData) -> SpectralResult:
     mean_contrast = [float(v) for v in np.mean(contrast_array, axis=0)]
 
     # Octave bands: 4096/2048 (~93ms/~46ms) — longer window for low-frequency
-    # resolution. Shared with masking via _octave_band_energies (P-09).
-    avg_bands = _octave_band_energies(mono, sample_rate)
+    # resolution. Shared with masking via _bands._octave_band_energies (B.6).
+    avg_bands = _octave_band_energies(mono, sample_rate, effective)
 
     # Convert to dB
     eps = 1e-10  # log-domain floor to avoid -inf on silence

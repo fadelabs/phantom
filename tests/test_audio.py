@@ -3,10 +3,12 @@
 All audio is generated synthetically in-memory -- no WAV files in repo.
 """
 
+import struct
 from pathlib import Path
 
 import numpy as np
 import pytest
+import soundfile as sf
 
 from phantom.audio import AudioData, load_audio
 from phantom.exceptions import AudioLoadError, PathSecurityError
@@ -135,9 +137,11 @@ class TestAudioDataValidation:
     """Tests for AudioData model validation."""
 
     def test_rejects_1d_samples(self):
-        """AudioData rejects samples with ndim != 2."""
+        """AudioData rejects samples with ndim != 2 as AnalysisError (B.9)."""
+        from phantom.exceptions import AnalysisError
+
         samples_1d = np.zeros(100, dtype=np.float32)
-        with pytest.raises(ValueError):
+        with pytest.raises(AnalysisError, match="samples must be a 2D array"):
             AudioData(
                 samples=samples_1d,
                 sample_rate=44100,
@@ -147,9 +151,11 @@ class TestAudioDataValidation:
             )
 
     def test_rejects_channel_mismatch(self):
-        """AudioData rejects samples where shape[1] != num_channels."""
+        """AudioData rejects shape[1] != num_channels as AnalysisError (B.9)."""
+        from phantom.exceptions import AnalysisError
+
         samples = np.zeros((100, 2), dtype=np.float32)
-        with pytest.raises(ValueError):
+        with pytest.raises(AnalysisError, match="columns but"):
             AudioData(
                 samples=samples,
                 sample_rate=44100,
@@ -170,6 +176,160 @@ class TestAudioDataValidation:
             num_samples=len(samples),
         )
         assert ad.file_path is None
+
+    def test_rejects_non_finite_samples(self):
+        """AudioData rejects samples containing NaN/Inf (AUD-01)."""
+        from phantom.exceptions import AnalysisError
+
+        bad = np.zeros((100, 1), dtype=np.float32)
+        bad[50, 0] = float("nan")
+        with pytest.raises(AnalysisError, match="finite"):
+            AudioData(
+                samples=bad,
+                sample_rate=44100,
+                num_channels=1,
+                duration=100 / 44100,
+                num_samples=100,
+            )
+
+    def test_rejects_overflow_magnitude_samples(self):
+        """AudioData rejects samples whose magnitude can overflow analysis (AUD-01)."""
+        from phantom.exceptions import AnalysisError
+
+        bad = np.zeros((100, 1), dtype=np.float32)
+        bad[50, 0] = 1e20  # finite, but far beyond the analysable range
+        with pytest.raises(AnalysisError, match="magnitude"):
+            AudioData(
+                samples=bad,
+                sample_rate=44100,
+                num_channels=1,
+                duration=100 / 44100,
+                num_samples=100,
+            )
+
+
+class TestMemoizedDerivatives:
+    """Memoized block_rms_db and is_near_silent (A.2, A.7).
+
+    Both delegate to the shared array helpers and are computed at most once
+    per instance. Invalidation story: samples are treated as immutable after
+    construction (the invariant _cache.py relies on for _content_hash), so
+    cached_property derivatives are never invalidated -- mutating samples in
+    place after first access leaves them stale by design, exactly like the
+    existing mono / mono_rms properties. test_stale_after_mutation locks that
+    contract in.
+    """
+
+    def test_block_rms_db_matches_helper(self, mono_sine_440hz):
+        """block_rms_db equals _block_rms_db(audio.mono) element-for-element."""
+        from phantom._utils import _block_rms_db
+
+        samples, sr = mono_sine_440hz
+        ad = AudioData(
+            samples=samples.reshape(-1, 1),
+            sample_rate=sr,
+            num_channels=1,
+            duration=len(samples) / sr,
+            num_samples=len(samples),
+        )
+        assert ad.block_rms_db == _block_rms_db(ad.mono)
+
+    def test_is_near_silent_matches_helper(self, mono_sine_440hz, near_silence):
+        """is_near_silent agrees with the array helper on audible and silent."""
+        from phantom._utils import is_near_silent
+
+        samples, sr = mono_sine_440hz
+        audible = AudioData(
+            samples=samples.reshape(-1, 1),
+            sample_rate=sr,
+            num_channels=1,
+            duration=len(samples) / sr,
+            num_samples=len(samples),
+        )
+        assert audible.is_near_silent == is_near_silent(audible.mono)
+        assert audible.is_near_silent is False
+
+        silent_samples, silent_sr = near_silence
+        silent = AudioData(
+            samples=silent_samples.reshape(-1, 1),
+            sample_rate=silent_sr,
+            num_channels=1,
+            duration=len(silent_samples) / silent_sr,
+            num_samples=len(silent_samples),
+        )
+        assert silent.is_near_silent == is_near_silent(silent.mono)
+        assert silent.is_near_silent is True
+
+    def test_out_of_phase_stereo_mono_silent_but_channels_not(self):
+        """Why stereo/phase paths keep per-channel checks: R = -L cancels in
+        the mono mixdown, so the mono-memoized flag must NOT gate those paths."""
+        from phantom._utils import is_near_silent
+
+        sr = 44100
+        t = np.linspace(0, 1.0, sr, endpoint=False, dtype=np.float32)
+        ch = (0.5 * np.sin(2 * np.pi * 440 * t)).astype(np.float32)
+        ad = AudioData(
+            samples=np.column_stack([ch, -ch]),
+            sample_rate=sr,
+            num_channels=2,
+            duration=1.0,
+            num_samples=sr,
+        )
+        assert ad.is_near_silent is True  # mono mixdown cancels
+        assert not is_near_silent(ad.left)  # but each channel carries energy
+
+    def test_computed_once(self, mono_sine_440hz, monkeypatch):
+        """First access computes; subsequent accesses hit the memo (P-04)."""
+        from phantom._utils import _block_rms_db
+
+        samples, sr = mono_sine_440hz
+        ad = AudioData(
+            samples=samples.reshape(-1, 1),
+            sample_rate=sr,
+            num_channels=1,
+            duration=len(samples) / sr,
+            num_samples=len(samples),
+        )
+
+        calls = {"block": 0}
+
+        def counting_block(mono, *args, **kwargs):
+            calls["block"] += 1
+            return _block_rms_db(mono)
+
+        import phantom.audio as audio_mod
+
+        monkeypatch.setattr(audio_mod, "_block_rms_db", counting_block)
+
+        _ = ad.block_rms_db
+        _ = ad.block_rms_db
+        assert ad.is_near_silent is False
+        assert ad.is_near_silent is False
+        # The property derives from the memoized mono_rms: audio.py no longer
+        # imports the array helper at all (review F4), so no second pass.
+        assert not hasattr(audio_mod, "is_near_silent")
+
+        assert calls == {"block": 1}
+
+    def test_stale_after_mutation(self, mono_sine_440hz):
+        """In-place sample mutation after first access does NOT refresh the
+        memo -- documented stale-by-design contract (samples are never mutated
+        after construction; same as mono/mono_rms/_content_hash)."""
+        samples, sr = mono_sine_440hz
+        ad = AudioData(
+            samples=samples.reshape(-1, 1),
+            sample_rate=sr,
+            num_channels=1,
+            duration=len(samples) / sr,
+            num_samples=len(samples),
+        )
+        audible_rms = ad.block_rms_db
+        audible_silent = ad.is_near_silent
+
+        ad.samples[:] = 0.0  # violates the no-mutation invariant
+
+        assert ad.block_rms_db == audible_rms  # stale, not recomputed
+        assert ad.is_near_silent == audible_silent  # stale, not recomputed
 
 
 # ── load_audio function tests ──────────────────────────────────────────
@@ -218,6 +378,81 @@ class TestLoadAudio:
         assert result.samples.dtype == np.float32
         assert result.samples.max() <= 1.0
         assert result.samples.min() >= -1.0
+
+    @pytest.mark.parametrize("bad_value", [float("nan"), float("inf"), float("-inf")])
+    def test_rejects_non_finite_samples(self, tmp_path, bad_value):
+        """A float WAV containing NaN/Inf samples is rejected, not analyzed.
+
+        soundfile sanitizes NaN to zero on write, so the corrupt sample is
+        injected byte-wise into the float32 data region after writing.
+        """
+        sr = 44100
+        n = 4410
+        path = tmp_path / "corrupt.wav"
+        samples = (
+            0.5 * np.sin(2 * np.pi * 440 * np.linspace(0, 0.1, n, endpoint=False))
+        ).astype(np.float32)
+        sf.write(str(path), samples, sr, subtype="FLOAT")
+        with open(path, "r+b") as fh:
+            fh.seek(44 + 4 * 1000)  # data region starts at header offset 44
+            fh.write(struct.pack("<f", bad_value))
+
+        with pytest.raises(AudioLoadError, match="non-finite"):
+            load_audio(str(path))
+
+    def test_rejects_overflow_magnitude_samples(self, tmp_path):
+        """A float WAV with extreme-but-finite samples is rejected (AUD-01).
+
+        Magnitudes near float32's ceiling overflow the analysis engine's
+        internal accumulators, which hangs HumDetector exactly like NaN
+        input; the guard must catch finite values in that range.
+        """
+        sr = 44100
+        n = 4410
+        path = tmp_path / "loud.wav"
+        samples = (
+            1e20 * np.sin(2 * np.pi * 440 * np.linspace(0, 0.1, n, endpoint=False))
+        ).astype(np.float32)
+        sf.write(str(path), samples, sr, subtype="FLOAT")
+        with pytest.raises(AudioLoadError, match="magnitude"):
+            load_audio(str(path))
+
+    def test_decoded_size_cap_rejected(
+        self, wav_file_factory, mono_sine_440hz, monkeypatch
+    ):
+        """A file whose decoded footprint exceeds PHANTOM_MAX_DECODED_BYTES is rejected."""
+        monkeypatch.setenv("PHANTOM_MAX_DECODED_BYTES", "1000")  # 1 KB << 176 KB
+        samples, sr = mono_sine_440hz
+        path = wav_file_factory(samples, sr)
+        with pytest.raises(AudioLoadError, match="decoded-size"):
+            load_audio(path)
+
+    def test_decoded_size_param_rejected(self, wav_file_factory, mono_sine_440hz):
+        """max_decoded_bytes parameter overrides the env/default decoded cap."""
+        samples, sr = mono_sine_440hz
+        path = wav_file_factory(samples, sr)
+        with pytest.raises(AudioLoadError, match="decoded-size"):
+            load_audio(path, max_decoded_bytes=1000)
+
+    def test_decoded_size_malformed_env(
+        self, wav_file_factory, mono_sine_440hz, monkeypatch
+    ):
+        """PHANTOM_MAX_DECODED_BYTES=abc raises AudioLoadError matching the var name."""
+        monkeypatch.setenv("PHANTOM_MAX_DECODED_BYTES", "abc")
+        samples, sr = mono_sine_440hz
+        path = wav_file_factory(samples, sr)
+        with pytest.raises(AudioLoadError, match="PHANTOM_MAX_DECODED_BYTES"):
+            load_audio(path)
+
+    def test_decoded_size_large_cap_allows(
+        self, wav_file_factory, mono_sine_440hz, monkeypatch
+    ):
+        """A generous decoded cap does not reject ordinary files."""
+        monkeypatch.setenv("PHANTOM_MAX_DECODED_BYTES", "1000000000")
+        samples, sr = mono_sine_440hz
+        path = wav_file_factory(samples, sr)
+        result = load_audio(path)
+        assert result.num_samples == len(samples)
 
 
 # ── Edge case tests (D-13) ─────────────────────────────────────────────
@@ -432,6 +667,13 @@ class TestInputValidationEdgeCases:
         with pytest.raises(AudioLoadError, match="positive"):
             load_audio(path, max_file_size=0)
 
+    def test_inf_max_duration_rejected(self, wav_file_factory, mono_sine_440hz):
+        """load_audio rejects an inf max_duration param instead of disabling the cap."""
+        samples, sr = mono_sine_440hz
+        path = wav_file_factory(samples, sr)
+        with pytest.raises(AudioLoadError, match="positive"):
+            load_audio(path, max_duration=float("inf"))
+
     # -- Malformed env vars (SC-10) --
 
     def test_env_max_duration_zero_rejected(
@@ -449,6 +691,17 @@ class TestInputValidationEdgeCases:
     ):
         """PHANTOM_MAX_DURATION='-1' raises AudioLoadError matching 'positive'."""
         monkeypatch.setenv("PHANTOM_MAX_DURATION", "-1")
+        samples, sr = mono_sine_440hz
+        path = wav_file_factory(samples, sr)
+        with pytest.raises(AudioLoadError, match="positive"):
+            load_audio(path)
+
+    @pytest.mark.parametrize("bad_value", ["nan", "inf", "-inf"])
+    def test_env_max_duration_non_finite_rejected(
+        self, wav_file_factory, mono_sine_440hz, monkeypatch, bad_value
+    ):
+        """PHANTOM_MAX_DURATION=nan/inf raises AudioLoadError, not a disabled cap."""
+        monkeypatch.setenv("PHANTOM_MAX_DURATION", bad_value)
         samples, sr = mono_sine_440hz
         path = wav_file_factory(samples, sr)
         with pytest.raises(AudioLoadError, match="positive"):

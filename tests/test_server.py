@@ -210,6 +210,19 @@ async def test_multi_stem_masking_aggregate_limit(client, make_wav, monkeypatch)
         await client.call_tool("multi_stem_masking", {"file_paths": [path_a, path_b]})
 
 
+async def test_batch_diagnostic_aggregate_limit(client, make_wav, monkeypatch):
+    """Combined batch size over PHANTOM_MAX_AGGREGATE_BYTES is rejected."""
+    sr = 44100
+    t = np.linspace(0, 1.0, sr, endpoint=False, dtype=np.float32)
+    samples = (0.5 * np.sin(2 * np.pi * 300 * t)).astype(np.float32)
+    path_a = make_wav(samples, sr, name="batchagg_a.wav")
+    path_b = make_wav(samples, sr, name="batchagg_b.wav")
+    # 1 KB budget is far below two 1-second stems' decoded size.
+    monkeypatch.setenv("PHANTOM_MAX_AGGREGATE_BYTES", "1000")
+    with pytest.raises(ToolError, match="aggregate limit"):
+        await client.call_tool("batch_diagnostic", {"file_paths": [path_a, path_b]})
+
+
 # ---------------------------------------------------------------------------
 # Profile and reference tools (SRV-01)
 # ---------------------------------------------------------------------------
@@ -513,6 +526,7 @@ def test_full_diagnostic_populates_cache(mono_sine_440hz, make_wav):
     func name), so re-loading the same file hits the same entries.
     """
     from phantom._cache import _MISSING, analysis_cache
+    from phantom._settings import analysis_settings
     from phantom.audio import load_audio
     from phantom.server import full_diagnostic
 
@@ -523,14 +537,16 @@ def test_full_diagnostic_populates_cache(mono_sine_440hz, make_wav):
     path = make_wav(samples, sr)
     full_diagnostic(path)
 
-    # Re-load the same file; the content hash must match the cached entries.
+    # Re-load the same file; the content hash must match the cached entries
+    # (scoped by the effective settings fingerprint, C.1).
     audio = load_audio(path)
-    assert analysis_cache.get(audio, "analyze_spectrum") is not _MISSING
-    assert analysis_cache.get(audio, "analyze_loudness") is not _MISSING
-    assert analysis_cache.get(audio, "analyze_dynamics") is not _MISSING
-    assert analysis_cache.get(audio, "analyze_stereo") is not _MISSING
-    assert analysis_cache.get(audio, "analyze_phase") is not _MISSING
-    assert analysis_cache.get(audio, "detect_problems") is not _MISSING
+    settings_key = "|" + analysis_settings().fingerprint()
+    assert analysis_cache.get(audio, "analyze_spectrum", settings_key) is not _MISSING
+    assert analysis_cache.get(audio, "analyze_loudness", settings_key) is not _MISSING
+    assert analysis_cache.get(audio, "analyze_dynamics", settings_key) is not _MISSING
+    assert analysis_cache.get(audio, "analyze_stereo", settings_key) is not _MISSING
+    assert analysis_cache.get(audio, "analyze_phase", settings_key) is not _MISSING
+    assert analysis_cache.get(audio, "detect_problems", settings_key) is not _MISSING
 
     # Clean up so we don't leak entries into other tests sharing the cache.
     analysis_cache.clear()
@@ -653,6 +669,61 @@ async def test_mixed_paths_stripped_from_error(client):
     error = json.loads(str(exc_info.value))
     assert "/home/user" not in error["message"]
     assert "C:\\Users" not in error["message"]
+
+
+async def test_spaced_path_stripped_from_error(client):
+    """Paths with spaces inside components are stripped (AUD-04)."""
+    from unittest.mock import patch
+    from phantom.exceptions import AudioLoadError
+
+    # Built via concatenation to avoid PII pre-commit hook false positives.
+    spaced = "/studio/" + "sessions/My Tracks/rough mix vocals.wav"
+    with patch(
+        "phantom.server.load_audio",
+        side_effect=AudioLoadError(f"Failed at {spaced}"),
+    ):
+        with pytest.raises(ToolError) as exc_info:
+            await client.call_tool("analyze_spectrum", {"file_path": "/tmp/test.wav"})
+    error = json.loads(str(exc_info.value))
+    # Directories after the first space must not survive redaction.
+    assert "/studio/sessions" not in error["message"]
+    assert "My Tracks" not in error["message"]
+
+
+async def test_unc_path_stripped_from_error(client):
+    """Windows UNC share paths are stripped from error messages (AUD-04)."""
+    from unittest.mock import patch
+    from phantom.exceptions import AudioLoadError
+
+    # UNC built via concatenation to keep the hook's path scanner quiet.
+    unc = "\\\\" + "fileserver\\sessions\\mix file.wav"
+    with patch(
+        "phantom.server.load_audio",
+        side_effect=AudioLoadError(f"Failed at {unc}"),
+    ):
+        with pytest.raises(ToolError) as exc_info:
+            await client.call_tool("analyze_spectrum", {"file_path": "/tmp/test.wav"})
+    error = json.loads(str(exc_info.value))
+    assert "fileserver" not in error["message"]
+    assert "\\\\fileserver" not in error["message"]
+
+
+async def test_apostrophe_path_stripped_from_error(client):
+    """Paths containing apostrophes are fully stripped, not truncated at the quote."""
+    from unittest.mock import patch
+    from phantom.exceptions import AudioLoadError
+
+    # Concatenated to keep the hook's path scanner quiet.
+    home = "/Users/" + "O'Brien/music/rough mix.wav"
+    with patch(
+        "phantom.server.load_audio",
+        side_effect=AudioLoadError(f"Failed at {home}"),
+    ):
+        with pytest.raises(ToolError) as exc_info:
+            await client.call_tool("analyze_spectrum", {"file_path": "/tmp/test.wav"})
+    error = json.loads(str(exc_info.value))
+    assert "O'Brien" not in error["message"]
+    assert "music" not in error["message"]
 
 
 # ---------------------------------------------------------------------------

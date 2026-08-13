@@ -38,13 +38,13 @@ Listen to the rough/reference before touching a fader — it represents the arti
 
 Read the diagnostician's mix brief if available, or run `full_diagnostic` / `batch_diagnostic`.
 
-**Crest factor guide:** Above 15 dB = very dynamic (handle gently), 8-12 dB = normal (standard processing), below 6 dB = already over-compressed (no more compression — use transient shaper or parallel clean blend instead).
+**Crest factor guide:** Above 15 dB = very dynamic (handle gently), 8-12 dB = normal (standard processing), below the analyzer's over-compression threshold = already crushed (no more compression — use transient shaper or parallel clean blend instead). The threshold defaults to 6 dB and is tunable via `PHANTOM_CREST_FACTOR_LOW_DB` — set it looser for aggressively compressed genres, tighter for dynamic ones.
 
 **Printed effects detection:** If crest factor is low AND spectrum shows reverb tail energy or modulation artifacts, the stem has printed effects. Do NOT layer more of the same — adjust EQ around the existing character. For dynamic control on crushed stems, use a transient shaper (attack +2-4) or blend 30-50% clean parallel copy to restore dynamics.
 
 ### 3. Phase Check (Always Before EQ)
 
-Run `analyze_phase` on every stereo stem. Flip polarity if `polarity_inverted: true`. For multi-mic recordings, `compare_phase` between close and room mics.
+Run `analyze_phase` on every stereo stem. Flip polarity if `polarity_inverted: true` (the flag fires when overall L/R correlation falls below `PHANTOM_POLARITY_THRESHOLD`, default -0.5 — raise it to catch marginal polarity issues earlier, lower it to require strongly negative correlation before flagging). For multi-mic recordings, `compare_phase` between close and room mics.
 
 **Phase vs EQ decision:** "Sounds fine solo but thin in context" = phase cancellation, not an EQ problem. If correlation is below +0.5 between related mics, fix phase first — no amount of EQ fixes destructive interference. Only move to EQ once correlation is above +0.7. **Success test:** correlation above +0.7 on all related mic pairs.
 

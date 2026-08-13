@@ -14,7 +14,9 @@ import hashlib
 import logging
 import threading
 from collections import OrderedDict
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any, Callable, TypeVar
+
+from phantom._settings import AnalysisSettings, analysis_settings
 
 if TYPE_CHECKING:
     from phantom.audio import AudioData
@@ -24,6 +26,10 @@ logger = logging.getLogger(__name__)
 # Sentinel object used to distinguish a cache miss from a cached ``None`` result.
 _MISSING = object()
 
+# An analysis function's result type, threaded through the cache so callers
+# keep static knowledge of what came back (C.3).
+AnalysisT = TypeVar("AnalysisT")
+
 
 class AnalysisCache:
     """Thread-safe LRU cache for analysis results.
@@ -32,11 +38,13 @@ class AnalysisCache:
     ----------
     max_entries:
         Maximum number of cached results before LRU eviction.
-        Defaults to 8 (sufficient for a typical compare workflow
-        analyzing 4 functions x 2 files).
+        Defaults to 400, sized for a full ``batch_diagnostic`` (6 analyzers
+        x up to 50 files, server.MAX_BATCH) plus headroom, so the shared
+        cache actually serves the reuse it documents rather than evicting
+        mid-batch.
     """
 
-    def __init__(self, max_entries: int = 8) -> None:
+    def __init__(self, max_entries: int = 400) -> None:
         self._max_entries = max_entries
         self._store: OrderedDict[str, Any] = OrderedDict()
         self._lock = threading.Lock()
@@ -93,14 +101,19 @@ class AnalysisCache:
     # Public API
     # ------------------------------------------------------------------
 
-    def get(self, audio: AudioData, func_name: str) -> Any:
+    def get(self, audio: AudioData, func_name: str, settings_key: str = "") -> Any:
         """Retrieve a cached analysis result.
 
         Returns the module-level ``_MISSING`` sentinel on cache miss.
         On hit, the entry is moved to the end of the LRU queue
         (most recently used).
+
+        *settings_key* is an opaque per-settings fingerprint suffix
+        (C.1): analysis results depend on the tunable thresholds, so the
+        key carries the settings that produced them. Defaults to "" -- the
+        raw content hash -- for cache-only callers.
         """
-        key = self._hash_audio(audio, func_name)
+        key = self._hash_audio(audio, func_name) + settings_key
         with self._lock:
             if key in self._store:
                 self._store.move_to_end(key)
@@ -108,12 +121,20 @@ class AnalysisCache:
                 return self._store[key]
         return _MISSING
 
-    def put(self, audio: AudioData, func_name: str, result: Any) -> None:
+    def put(
+        self,
+        audio: AudioData,
+        func_name: str,
+        result: Any,
+        settings_key: str = "",
+    ) -> None:
         """Store an analysis result in the cache.
 
         If the cache is full, the least-recently-used entry is evicted.
+        *settings_key* must match the one passed to :meth:`get` for the
+        entry to be reusable.
         """
-        key = self._hash_audio(audio, func_name)
+        key = self._hash_audio(audio, func_name) + settings_key
         with self._lock:
             if key in self._store:
                 # Update existing entry and refresh position
@@ -142,19 +163,30 @@ analysis_cache = AnalysisCache()
 
 
 def _cached_analysis(
-    audio: AudioData, func_name: str, func: Callable[[AudioData], Any]
-) -> Any:
+    audio: AudioData,
+    func_name: str,
+    func: Callable[[AudioData, AnalysisSettings | None], AnalysisT],
+    settings: AnalysisSettings | None = None,
+) -> AnalysisT:
     """Run an analysis function with cache lookup/store.
 
-    Checks the shared ``analysis_cache`` first. On miss, runs ``func(audio)``
-    and stores the result under ``func_name`` for subsequent calls with the
-    same audio content. Composite tools (``full_diagnostic``,
-    ``batch_diagnostic``), the ``analyze`` CLI, and the ``compare_*`` tools all
-    route through this helper so they share per-analyzer results (P-01).
+    Checks the shared ``analysis_cache`` first. On miss, runs
+    ``func(audio, settings)`` and stores the result under ``func_name`` for
+    subsequent calls with the same audio content. Composite tools
+    (``full_diagnostic``, ``batch_diagnostic``), the ``analyze`` CLI, and the
+    ``compare_*`` tools all route through this helper so they share
+    per-analyzer results (P-01).
+
+    The cache key folds the *effective* settings -- *settings* when given,
+    otherwise the per-call env resolution -- because tunable thresholds can
+    change results (C.1): an entry computed under one configuration must not
+    serve a run under another.
     """
-    result = analysis_cache.get(audio, func_name)
+    effective = settings if settings is not None else analysis_settings()
+    settings_key = "|" + effective.fingerprint()
+    result = analysis_cache.get(audio, func_name, settings_key)
     if result is not _MISSING:
         return result
-    result = func(audio)
-    analysis_cache.put(audio, func_name, result)
+    result = func(audio, effective)
+    analysis_cache.put(audio, func_name, result, settings_key)
     return result

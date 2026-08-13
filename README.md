@@ -32,7 +32,7 @@ Without Claude, Phantom is a capable CLI analysis tool. With Claude, it becomes 
 
 Four layers that work together:
 
-1. **Measurement.** 19 MCP tools that quantify your audio: spectrum, loudness (EBU R128), dynamics, stereo field, phase coherence, frequency masking between stems, and problems like clipping, hum, DC offset, sibilance, and room resonances. Plus automated problem fixing and custom processing chains.
+1. **Measurement.** 20 MCP tools that quantify your audio: spectrum, loudness (EBU R128), dynamics, stereo field, phase coherence, frequency masking between stems, and problems like clipping, hum, DC offset, sibilance, and room resonances. Plus automated problem fixing and custom processing chains.
 
 2. **Methodology.** Five domain expert skills that encode how professional engineers actually think. Structured decision-making workflows: when to use FET vs VCA compression, how to read crest factor to choose a handling strategy, when a mix needs more work vs when it's ready for mastering.
 
@@ -122,7 +122,7 @@ Then talk to Claude:
 
 **Effects Engineer.** Distortion and saturation taxonomy (tube warmth vs transistor grit vs tape compression), modulation effects, reverb and delay type selection with pre-delay guidance, creative chain recipes (ethereal vocals, massive guitars, Tool-style distortion, lo-fi textures), and effects automation for dynamic transitions.
 
-**Mastering Engineer.** Nine-stage mastering chain in strict order (HPF through dither), send-back criteria (when a mix needs more work, not mastering), platform-specific loudness targeting (Spotify, Apple Music, YouTube, CD, vinyl), reference-based mastering workflow, and format delivery requirements including metadata.
+**Mastering Engineer.** Ten-stage mastering chain in strict order (HPF through dither), send-back criteria (when a mix needs more work, not mastering), platform-specific loudness targeting (Spotify, Apple Music, YouTube, CD, vinyl), reference-based mastering workflow, and format delivery requirements including metadata.
 
 **Session Architect.** Genre-specific session templates, folder/bus hierarchy design, aux channel setup (reverb sends, delay sends, parallel compression), sidechain routing, color coding conventions, automation mode guidance, and render settings per deliverable format.
 
@@ -131,13 +131,13 @@ Then talk to Claude:
 | Profile | Target LUFS | Character |
 |---------|-------------|-----------|
 | Pop | -10 to -7 | Polished, vocal-forward, controlled dynamics, 4 kHz presence boost |
-| Rock | -10 to -8 | Wide stereo, prominent guitars, punchy drums |
-| Hip-Hop | -10 to -6 | Heavy low end, crisp highs, compressed dynamics |
-| Electronic | -9 to -6 | Wide stereo, sub-bass emphasis, bright top end |
+| Rock | -12 to -8 | Wide stereo, prominent guitars, punchy drums |
+| Hip-Hop | -10 to -7 | Heavy low end, crisp highs, compressed dynamics |
+| Electronic | -10 to -7 | Wide stereo, sub-bass emphasis, bright top end |
 | EDM | -8 to -5 | Loud, sidechain pumping, wide and bright |
-| Metal | -8 to -5 | Dense, scooped mids, aggressive compression |
-| Rock-Metal | -9 to -6 | Heavy, mid-present, tight low end |
-| Lo-Fi | -16 to -12 | Warm, rolled-off highs, narrow stereo, intentionally quiet |
+| Metal | -10 to -6 | Dense, scooped mids, aggressive compression |
+| Rock-Metal | -10 to -7 | Heavy, mid-present, tight low end |
+| Lo-Fi | -14 to -10 | Warm, rolled-off highs, narrow stereo, intentionally quiet |
 | Ambient | -20 to -14 | Wide, dynamic, gentle spectral curve |
 
 ## Installation
@@ -188,7 +188,25 @@ uv add phantom-audio
 ```bash
 git clone https://github.com/fadelabs/phantom.git
 cd phantom
-uv sync --dev
+uv sync --extra dev
+```
+
+## Telemetry
+
+The Unix installer (`install.sh`) reports anonymized install telemetry to `fadelab.net` at the start, completion, and failure of an install. Each report is a small JSON payload carrying the OS, architecture, phantom version (when known), the chosen extras, and the install method (currently always `uv`), plus a per-run install ID used to join the start and completion events of a single install. A failure report also includes one of six fixed reason codes (`unsupported_os`, `unsupported_arch`, `no_downloader`, `uv_install_failed`, `pkg_install_failed`, `not_on_path`) — never raw error text or log contents. No audio, file names, or other personal data is sent, and the request has no effect on the install.
+
+The Windows installer (`install.ps1`) reports the same three events with the same opt-out.
+
+Telemetry is on by default. Opt out by setting the flag for the install command:
+
+```bash
+# macOS / Linux
+PHANTOM_NO_TELEMETRY=1 curl -sSL https://fadelab.net/install | bash
+```
+
+```powershell
+# Windows
+$env:PHANTOM_NO_TELEMETRY = "1"; irm https://fadelab.net/install.ps1 | iex
 ```
 
 ## Usage
@@ -273,19 +291,71 @@ These sit on top of 100+ individual tools for tracks, FX, MIDI, routing, markers
 
 ## Configuration
 
-Environment variables for security and resource limits:
+Phantom reads its settings from environment variables. The full runtime set is 40 `PHANTOM_*` variables — paths and limits, analysis thresholds, FFT/frame sizes, and behavior flags — and `phantom doctor` prints the complete list with the value each has in your environment (or that it is unset). All analysis thresholds and frame sizes are knobs on `AnalysisSettings` (`src/phantom/_settings.py`), each overridable through its `PHANTOM_*` env var with the documented default. Settings resolve per call, so a change takes effect without a restart, and the analysis cache keys on your settings — a tuned run is never served a result computed under different settings.
+
+### Paths and Limits
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `PHANTOM_AUDIO_DIR` | *(none)* | Restrict input file reads to this directory tree. When unset, inputs may be read from anywhere (Phantom's core use case); writes are always confined regardless. |
-| `PHANTOM_OUTPUT_DIR` | `~/.phantom/output` | Directory all file writes are confined to. Writes outside it are rejected. Defaults to a sandbox (created on demand); set this to write elsewhere. |
+| `PHANTOM_OUTPUT_DIR` | `~/.phantom/output` | Directory all file writes are confined to. Writes outside it are rejected. Created on demand when unset; set this to write elsewhere. |
+| `PHANTOM_PROFILES_DIR` | *(built-ins)* | Custom reference profile directory (overrides built-ins). |
+| `PHANTOM_METRICS_DIR` | *(platform default)* | Directory for live metrics snapshots: `~/Library/PhantomStudio/metrics` (macOS), `%APPDATA%\PhantomStudio\metrics` (Windows), `~/.config/PhantomStudio/metrics` (Linux). |
 | `PHANTOM_MAX_DURATION` | 900 (15 min) | Maximum audio duration in seconds |
-| `PHANTOM_MAX_FILE_SIZE` | 524288000 (500 MB) | Maximum file size in bytes |
-| `PHANTOM_PROFILES_DIR` | *(built-in)* | Custom reference profile directory |
-| `PHANTOM_MASKING_TOP_N` | *(auto)* | Override number of top masking pairs returned |
-| `PHANTOM_PHAT_WINDOW_S` | 10.0 | PHAT cross-correlation window size in seconds |
+| `PHANTOM_MAX_FILE_SIZE` | 500000000 (500 MB) | Maximum file size in bytes |
+| `PHANTOM_MAX_DECODED_BYTES` | 1000000000 (1 GB) | Maximum decoded float32 footprint per audio file in bytes |
+| `PHANTOM_MAX_AGGREGATE_BYTES` | 4000000000 (4 GB) | Combined decoded-size cap for multi-file tools |
+
+### Analysis Thresholds
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PHANTOM_POLARITY_THRESHOLD` | -0.5 | Overall L/R correlation below this flags polarity inversion |
+| `PHANTOM_PHAT_WINDOW_S` | 10.0 | GCC-PHAT cross-correlation window in seconds |
+| `PHANTOM_CREST_FACTOR_LOW_DB` | 6.0 | Crest factor below this marks the track as over-compressed |
+| `PHANTOM_CLIPPING_THRESHOLD` | 1.0 | Sample magnitude at or above this counts as clipping |
+| `PHANTOM_DC_OFFSET_THRESHOLD` | 0.0005 | Mean sample value above this flags DC offset |
+| `PHANTOM_ISP_OVERSHOOT_DB` | 0.5 | True-peak overshoot above this flags inter-sample peaks |
+| `PHANTOM_ISP_SEVERE_DBTP` | -1.0 | True peak above this raises ISP severity to significant |
+| `PHANTOM_DYNAMIC_SPREAD_MIN_DB` | 10.0 | Minimum P90-P10 block spread to trust a noise-floor estimate |
+| `PHANTOM_NOISE_FLOOR_MODERATE_DB` | -50.0 | Noise floor above this is flagged moderate |
+| `PHANTOM_NOISE_FLOOR_MINOR_DB` | -60.0 | Noise floor above this is flagged minor |
+| `PHANTOM_SNR_PROFESSIONAL_DB` | 60.0 | SNR at or above this counts as professional |
+| `PHANTOM_SNR_POOR_DB` | 50.0 | SNR below this is flagged poor/significant |
+| `PHANTOM_SPECTRAL_FLATNESS_MIN` | 0.01 | Minimum flatness to run band-excess detectors |
+| `PHANTOM_BAND_EXCESS_THRESHOLD_DB` | 6.0 | Band energy above expected level triggers detection |
+| `PHANTOM_RESONANCE_MEDIAN_FLOOR_DB` | -40.0 | Median spectral level floor for resonance detection |
+| `PHANTOM_RESONANCE_PROMINENCE_DB` | 12 | Peak prominence threshold for resonance detection |
+| `PHANTOM_LOSSY_SHELF_DROP_DB` | 20.0 | Shelf drop above this indicates a lossy codec |
+| `PHANTOM_MASKING_SEVERITY_HIGH` | 0.6 | Overlap score at or above this is labeled high severity |
+| `PHANTOM_MASKING_SEVERITY_MODERATE` | 0.3 | Overlap score at or above this is labeled moderate severity |
+| `PHANTOM_MASKING_SEVERITY_LOW` | 0.1 | Overlap score at or above this is labeled low severity |
+| `PHANTOM_MASKING_FLOOR_DB` | 40.0 | Bands more than this below the pair peak are zeroed before scoring |
+
+### FFT / Frame Sizes
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PHANTOM_SPECTRAL_FRAME_SIZE` | 2048 | Frame size of the main spectral analysis pass |
+| `PHANTOM_SPECTRAL_HOP_SIZE` | 1024 | Hop size of the main spectral analysis pass |
+| `PHANTOM_OCTAVE_FRAME_SIZE` | 4096 | Frame size of the octave-band energy pass (spectral + masking) |
+| `PHANTOM_OCTAVE_HOP_SIZE` | 2048 | Hop size of the octave-band energy pass |
+| `PHANTOM_FLATNESS_FRAME_SIZE` | 4096 | Frame size of the spectral-flatness gate (band-excess detectors) |
+| `PHANTOM_SPECTRUM_FRAME_SIZE` | 8192 | Frame size of the shared power-spectrum pass (resonance, lossy-codec detection) |
+
+> Changing frame sizes changes the analysis geometry, so results are not numerically comparable with the built-in genre profiles or reference-target comparisons, both of which are calibrated to the default frame sizes. Reset the knobs to defaults before comparing, or re-run the comparison under the same tuned geometry.
+
+### Output and Behavior
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PHANTOM_MASKING_TOP_N` | *(auto)* | Number of top masking pairs returned (scales with stem count when unset) |
+| `PHANTOM_PROFILE_MERGE` | *(none)* | Merge a user profile over the built-in instead of replacing it |
+| `PHANTOM_PROFILE_OVERRIDE_QUIET` | *(none)* | Silence the user-profile-override log line |
 | `PHANTOM_DEBUG` | *(none)* | Enable verbose error output from MCP tools |
 | `PHANTOM_QUIET` | *(none)* | Suppress startup preflight messages |
+
+The installers (`install.sh`, `install.ps1`) honor `PHANTOM_NO_TELEMETRY` to opt out of install telemetry; see the Telemetry section.
 
 ## Contributing
 

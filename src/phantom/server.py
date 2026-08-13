@@ -10,25 +10,23 @@ import json
 import os
 import re
 import sys
+from collections.abc import Callable
 
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel
 
 from phantom._utils import _get_env_int
 from phantom.audio import load_audio
 from phantom.exceptions import PhantomError
-from phantom.spectral import analyze_spectrum as _analyze_spectrum, SpectralResult
-from phantom.loudness import analyze_loudness as _analyze_loudness, LoudnessResult
-from phantom.dynamics import analyze_dynamics as _analyze_dynamics, DynamicsResult
-from phantom.stereo import analyze_stereo as _analyze_stereo, StereoResult
-from phantom.phase import analyze_phase as _analyze_phase, PhaseResult
-from phantom.phase import compare_phase as _compare_phase
-from phantom.problems import (
-    detect_problems as _detect_problems,
-    inject_sample_rate_mismatch,
-    ProblemsResult,
+from phantom.facade import (
+    ANALYSIS_TYPES,
+    BatchDiagnosticResult,
+    StemDiagnosticResult,
+    run_analyses,
 )
+from phantom.phase import compare_phase as _compare_phase
+from phantom.problems import inject_sample_rate_mismatch
 from phantom.masking import analyze_masking as _analyze_masking
 from phantom.masking import (
     analyze_masking_matrix as _analyze_masking_matrix,
@@ -52,33 +50,6 @@ from phantom.processing import (
 # ---------------------------------------------------------------------------
 
 
-class StemDiagnosticResult(BaseModel):
-    """Typed response for full_diagnostic and batch_diagnostic tools."""
-
-    file: str
-    duration_seconds: float
-    sample_rate: int
-    channels: int
-    spectral: SpectralResult
-    loudness: LoudnessResult
-    dynamics: DynamicsResult
-    stereo: StereoResult
-    phase: PhaseResult
-    problems: ProblemsResult
-
-    @field_validator("duration_seconds", mode="before")
-    @classmethod
-    def _round_duration(cls, v: float) -> float:
-        return round(v, 3) if v is not None else v
-
-
-class BatchDiagnosticResult(BaseModel):
-    """Typed response for the batch_diagnostic server tool."""
-
-    stems: dict[str, StemDiagnosticResult | dict]  # dict for error stems
-    stem_count: int
-
-
 class MultiStemMaskingResult(BaseModel):
     """Typed response for the multi_stem_masking server tool."""
 
@@ -88,8 +59,11 @@ class MultiStemMaskingResult(BaseModel):
     stem_paths: dict[str, str]
 
 
-# Regex pattern for stripping file paths (Unix and Windows) from error messages
-_PATH_REGEX = re.compile(r"([A-Za-z]:\\[^\s:,)]+\\|/[^\s:,)]+/)+")
+# Regex pattern for stripping file paths (Unix, Windows drive-letter, and
+# UNC) from error messages. Segments may contain spaces, apostrophes, and
+# punctuation (but not quotes or newlines); the match runs to the last path
+# separator so only the basename remains visible.
+_PATH_REGEX = re.compile(r"(?:[A-Za-z]:\\[^\"\n]+\\|\\\\[^\"\n]+\\|/[^\"\n]+/)+")
 
 
 def _to_tool_error(exc: Exception, context: dict | None = None) -> ToolError:
@@ -175,79 +149,170 @@ def _phantom_tool(fn):
 
 
 # ---------------------------------------------------------------------------
-# Individual analysis tools (Tools 1-7)
+# Generated load -> analyze -> dump tools
 # ---------------------------------------------------------------------------
+#
+# Nine tools share the identical shape "load N audio files, call the analyzer,
+# model_dump()". Instead of nine hand-written wrappers, one registry row drives
+# a tiny factory. The six single-file dimensions come from the facade registry;
+# the three two-file tools are listed below. The tool-schema snapshot test
+# (tests/test_tool_schema.py) gates the generated surface: any change to a
+# tool's name, description, or input schema fails loudly.
 
 
-@mcp.tool
-@_phantom_tool
-def analyze_spectrum(file_path: str) -> dict:
-    """Analyze frequency spectrum: centroid, rolloff, flatness, contrast, dissonance, octave band energy."""
-    audio = load_audio(file_path)
-    return _analyze_spectrum(audio).model_dump()
+def _make_unary_tool(name: str, fn, description: str):
+    """Generate a load(file_path) -> fn(audio) -> dump tool."""
+
+    def wrapper(file_path: str) -> dict:
+        audio = load_audio(file_path)
+        return fn(audio).model_dump()
+
+    wrapper.__name__ = name
+    wrapper.__doc__ = description
+    return wrapper
 
 
-@mcp.tool
-@_phantom_tool
-def analyze_loudness(file_path: str) -> dict:
-    """Measure EBU R128 loudness: integrated LUFS, true peak dBTP, loudness range, short-term and momentary LUFS."""
-    audio = load_audio(file_path)
-    return _analyze_loudness(audio).model_dump()
+def _make_pair_tool(name: str, fn, description: str):
+    """Generate a load(a/b) -> fn(audio_a, audio_b) -> dump tool."""
+
+    def wrapper(file_path_a: str, file_path_b: str) -> dict:
+        audio_a = load_audio(file_path_a)
+        audio_b = load_audio(file_path_b)
+        return fn(audio_a, audio_b).model_dump()
+
+    wrapper.__name__ = name
+    wrapper.__doc__ = description
+    return wrapper
 
 
-@mcp.tool
-@_phantom_tool
-def analyze_dynamics(file_path: str) -> dict:
-    """Measure dynamics: RMS, peak, crest factor, dynamic range, dynamic complexity."""
-    audio = load_audio(file_path)
-    return _analyze_dynamics(audio).model_dump()
+def _make_reference_tool(name: str, fn, description: str):
+    """Generate a load(file_path, reference_path) -> fn -> dump tool."""
+
+    def wrapper(file_path: str, reference_path: str) -> dict:
+        audio = load_audio(file_path)
+        ref_audio = load_audio(reference_path)
+        return fn(audio, ref_audio).model_dump()
+
+    wrapper.__name__ = name
+    wrapper.__doc__ = description
+    return wrapper
 
 
-@mcp.tool
-@_phantom_tool
-def analyze_stereo(file_path: str) -> dict:
-    """Analyze stereo field: correlation, width, mid/side ratio, L/R balance, panorama distribution."""
-    audio = load_audio(file_path)
-    return _analyze_stereo(audio).model_dump()
+def _peek_aggregate_decoded_bytes(file_paths: list[str]) -> int:
+    """Sum header-declared decoded float32 bytes across files (AUD-03).
+
+    Reads only file headers (sf.info, no decode). Files whose header cannot
+    be read contribute zero and defer to load_audio for a precise error.
+    """
+    import soundfile as sf
+
+    total = 0
+    for p in file_paths:
+        try:
+            info = sf.info(p)
+        except Exception:
+            continue
+        total += info.frames * info.channels * 4
+    return total
 
 
-@mcp.tool
-@_phantom_tool
-def analyze_phase(file_path: str) -> dict:
-    """Check phase coherence: overall and per-band correlation, polarity detection."""
-    audio = load_audio(file_path)
-    return _analyze_phase(audio).model_dump()
+def _validate_batch_inputs(file_paths: list[str]) -> list[str]:
+    """Validate a batch request: size, non-empty, uniqueness, aggregate size.
+
+    Returns the normalized paths. Raises ToolError with the standard error
+    schema on the first rejection.
+    """
+    MAX_BATCH = 50
+    if len(file_paths) > MAX_BATCH:
+        raise ToolError(
+            json.dumps(
+                {
+                    "error_type": "ValidationError",
+                    "message": (
+                        f"Too many files: {len(file_paths)}. Maximum batch size "
+                        f"is {MAX_BATCH}."
+                    ),
+                    "context": {
+                        "file_count": len(file_paths),
+                        "max_batch": MAX_BATCH,
+                    },
+                }
+            )
+        )
+    if not file_paths:
+        raise ToolError(
+            json.dumps(
+                {
+                    "error_type": "ValidationError",
+                    "message": "At least 1 file path required.",
+                    "context": {},
+                }
+            )
+        )
+    normalized_paths = [os.path.normpath(p) for p in file_paths]
+    if len(set(normalized_paths)) != len(normalized_paths):
+        raise ToolError(
+            json.dumps(
+                {
+                    "error_type": "ValidationError",
+                    "message": "Duplicate file paths (after normalization) are not supported.",
+                    "context": {},
+                }
+            )
+        )
+    # Aggregate work guard (AUD-03): the per-file caps bound each decode,
+    # but a full batch at the caps would still decode ~100 GB total.
+    max_aggregate = _get_env_int("PHANTOM_MAX_AGGREGATE_BYTES", 4_000_000_000)
+    total_decoded = _peek_aggregate_decoded_bytes(file_paths)
+    if total_decoded > max_aggregate:
+        raise ToolError(
+            json.dumps(
+                {
+                    "error_type": "ValidationError",
+                    "message": (
+                        f"Combined stem size (~{total_decoded // 1_000_000} MB decoded) "
+                        "exceeds the aggregate limit. Reduce the number of files "
+                        "or trim them."
+                    ),
+                    "context": {"max_aggregate_bytes": max_aggregate},
+                }
+            )
+        )
+    return normalized_paths
 
 
-# ---------------------------------------------------------------------------
-# Two-file analysis tools (Tools 6, 8, 10)
-# ---------------------------------------------------------------------------
+_GENERATED_TOOLS: list[tuple[str, str, Callable, str]] = [
+    (spec.cache_key, "unary", spec.fn, spec.description)
+    for spec in ANALYSIS_TYPES.values()
+] + [
+    (
+        "compare_phase",
+        "pair",
+        _compare_phase,
+        "Compare phase between two audio files: cross-correlation, delay detection, polarity check.",
+    ),
+    (
+        "analyze_masking",
+        "pair",
+        _analyze_masking,
+        "Analyze frequency masking between two stems with per-octave-band severity.",
+    ),
+    (
+        "compare_to_reference",
+        "reference",
+        _compare_to_reference,
+        "Compare audio against a reference WAV file with normalized spectral curves.",
+    ),
+]
 
+_MAKERS = {
+    "unary": _make_unary_tool,
+    "pair": _make_pair_tool,
+    "reference": _make_reference_tool,
+}
 
-@mcp.tool
-@_phantom_tool
-def compare_phase(file_path_a: str, file_path_b: str) -> dict:
-    """Compare phase between two audio files: cross-correlation, delay detection, polarity check."""
-    audio_a = load_audio(file_path_a)
-    audio_b = load_audio(file_path_b)
-    return _compare_phase(audio_a, audio_b).model_dump()
-
-
-@mcp.tool
-@_phantom_tool
-def detect_problems(file_path: str) -> dict:
-    """Scan for audio problems: clipping, DC offset, ISP, noise, hum, sibilance, mud, harshness, resonances."""
-    audio = load_audio(file_path)
-    return _detect_problems(audio).model_dump()
-
-
-@mcp.tool
-@_phantom_tool
-def analyze_masking(file_path_a: str, file_path_b: str) -> dict:
-    """Analyze frequency masking between two stems with per-octave-band severity."""
-    audio_a = load_audio(file_path_a)
-    audio_b = load_audio(file_path_b)
-    return _analyze_masking(audio_a, audio_b).model_dump()
+for _name, _shape, _fn, _description in _GENERATED_TOOLS:
+    mcp.tool(_phantom_tool(_MAKERS[_shape](_name, _fn, _description)))
 
 
 # ---------------------------------------------------------------------------
@@ -262,15 +327,6 @@ def compare_to_profile(file_path: str, profile_name: str) -> dict:
     audio = load_audio(file_path)
     profile = _load_profile(profile_name)
     return _compare_to_profile(audio, profile).model_dump()
-
-
-@mcp.tool
-@_phantom_tool
-def compare_to_reference(file_path: str, reference_path: str) -> dict:
-    """Compare audio against a reference WAV file with normalized spectral curves."""
-    audio = load_audio(file_path)
-    ref_audio = load_audio(reference_path)
-    return _compare_to_reference(audio, ref_audio).model_dump()
 
 
 @mcp.tool
@@ -339,25 +395,12 @@ def apply_processing(
 def _run_full_analysis(audio) -> dict:
     """Run all six analysis types on an AudioData object.
 
-    Returns a dict with keys: spectral, loudness, dynamics, stereo,
-    phase, problems. Values are Pydantic model instances (not dumped dicts).
-    Caller adds file-level metadata (file, duration, sample_rate, channels).
-
-    Each analyzer is routed through the shared ``analysis_cache`` via
-    ``_cached_analysis`` (P-01), so a subsequent ``compare_to_profile`` /
-    ``compare_to_reference`` on the same audio content reuses these results.
-    The cache keys match those used by the ``compare_*`` tools exactly.
+    Delegates to ``phantom.facade.run_analyses``, which routes every analyzer
+    through the shared ``analysis_cache`` under the registry's canonical cache
+    keys (P-01). Returns ``{dimension_key: Pydantic model}``; caller adds
+    file-level metadata (file, duration, sample_rate, channels).
     """
-    from phantom._cache import _cached_analysis
-
-    return {
-        "spectral": _cached_analysis(audio, "analyze_spectrum", _analyze_spectrum),
-        "loudness": _cached_analysis(audio, "analyze_loudness", _analyze_loudness),
-        "dynamics": _cached_analysis(audio, "analyze_dynamics", _analyze_dynamics),
-        "stereo": _cached_analysis(audio, "analyze_stereo", _analyze_stereo),
-        "phase": _cached_analysis(audio, "analyze_phase", _analyze_phase),
-        "problems": _cached_analysis(audio, "detect_problems", _detect_problems),
-    }
+    return run_analyses(audio)
 
 
 @mcp.tool
@@ -380,41 +423,7 @@ def full_diagnostic(file_path: str) -> dict:
 @_phantom_tool
 def batch_diagnostic(file_paths: list[str]) -> dict:
     """Run full diagnostic on multiple stems. Flags sample rate mismatches as dealbreaker severity."""
-    MAX_BATCH = 50
-    if len(file_paths) > MAX_BATCH:
-        raise ToolError(
-            json.dumps(
-                {
-                    "error_type": "ValidationError",
-                    "message": f"Too many files: {len(file_paths)}. Maximum batch size is {MAX_BATCH}.",
-                    "context": {
-                        "file_count": len(file_paths),
-                        "max_batch": MAX_BATCH,
-                    },
-                }
-            )
-        )
-    if not file_paths:
-        raise ToolError(
-            json.dumps(
-                {
-                    "error_type": "ValidationError",
-                    "message": "At least 1 file path required.",
-                    "context": {},
-                }
-            )
-        )
-    normalized_paths = [os.path.normpath(p) for p in file_paths]
-    if len(set(normalized_paths)) != len(normalized_paths):
-        raise ToolError(
-            json.dumps(
-                {
-                    "error_type": "ValidationError",
-                    "message": "Duplicate file paths (after normalization) are not supported.",
-                    "context": {},
-                }
-            )
-        )
+    normalized_paths = _validate_batch_inputs(file_paths)
 
     results: dict[str, StemDiagnosticResult | dict] = {}
     sample_rates = {}

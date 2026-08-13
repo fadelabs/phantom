@@ -70,16 +70,23 @@ class TestIdentity:
 
 
 class TestDownsampleRejection:
-    """Attempting to downsample must raise ValueError."""
+    """Attempting to downsample must raise AnalysisError (B.9), keeping the
+    former message so callers that matched on it still work."""
 
     def test_downsample_raises(self) -> None:
+        from phantom.exceptions import AnalysisError
+
         audio = _make_audio(_sine(440.0, 48000), 48000)
-        with pytest.raises(ValueError, match="target_sr must be >= audio sample rate"):
+        with pytest.raises(
+            AnalysisError, match="target_sr must be >= audio sample rate"
+        ):
             resample_to_match(audio, 44100)
 
     def test_downsample_96k_to_48k_raises(self) -> None:
+        from phantom.exceptions import AnalysisError
+
         audio = _make_audio(_sine(440.0, 96000, duration=0.05), 96000)
-        with pytest.raises(ValueError):
+        with pytest.raises(AnalysisError):
             resample_to_match(audio, 48000)
 
 
