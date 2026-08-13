@@ -31,8 +31,30 @@ main() {
     fail() { printf "  %s✗%s %s\n" "$RED" "$RESET" "$1" >&2; }
     info() { printf "  %s▸%s %s\n" "$CYAN" "$RESET" "$1"; }
     warn() { printf "  %s!%s %s\n" "$YELLOW" "$RESET" "$1"; }
-    _ping() { :; }
-    err()  { fail "$1"; _ping "install_failed" 2>/dev/null; exit 1; }
+
+    # ── Telemetry (opt-out via PHANTOM_NO_TELEMETRY=1) ─────
+    # Stable per-run id so install_started/install_complete can be joined server-side.
+    INSTALL_ID="$(uuidgen 2>/dev/null || echo "cli-$(date +%s)-$$-${RANDOM}")"
+    # Values are reduced to a safe charset so they can never break the JSON body.
+    _json_safe() { printf '%s' "$1" | tr -cd 'A-Za-z0-9._,+-'; }
+    # _ping <event> [version] [reason] — POST JSON to fadelab.net, fire-and-forget.
+    _ping() {
+        if [ "${PHANTOM_NO_TELEMETRY:-0}" = "1" ]; then return; fi
+        local version extras reason payload
+        version=$(_json_safe "${2:-unknown}")
+        extras=$(_json_safe "${INSTALL_EXTRAS:-none}")
+        reason=$(_json_safe "${3:-}")
+        payload=$(printf '{"event":"%s","iid":"%s","os":"%s","arch":"%s","version":"%s","extras":"%s","method":"uv"%s}' \
+            "$1" "$INSTALL_ID" "${PLATFORM:-unknown}" "${ARCH_LABEL:-unknown}" \
+            "${version:-unknown}" "${extras:-none}" \
+            "${reason:+,\"reason\":\"$reason\"}")
+        curl -sf -X POST -H "Content-Type: application/json" -d "$payload" \
+            "https://fadelab.net/api/ping" > /dev/null 2>&1 &
+    }
+    # err <message> [reason] — reason is an enumerated code sent with install_failed.
+    # Full set (keep in sync with fadelab.net reporting): unsupported_os,
+    # unsupported_arch, no_downloader, uv_install_failed, pkg_install_failed, not_on_path.
+    err()  { fail "$1"; _ping "install_failed" "" "${2:-}" 2>/dev/null; exit 1; }
 
     # ── Spinner (CR-03: tracks PID for cleanup, WR-04: ASCII fallback) ──
     run_with_spinner() {
@@ -95,24 +117,17 @@ main() {
     case "$OS" in
         Darwin) PLATFORM="macOS" ;;
         Linux)  PLATFORM="Linux" ;;
-        *)      err "Unsupported OS: $OS (phantom supports macOS and Linux). Windows users: see install.ps1" ;;
+        *)      err "Unsupported OS: $OS (phantom supports macOS and Linux). Windows users: see install.ps1" "unsupported_os" ;;
     esac
 
     case "$ARCH" in
         x86_64|amd64)  ARCH_LABEL="x86_64" ;;
         arm64|aarch64) ARCH_LABEL="arm64" ;;
-        *)             err "Unsupported architecture: $ARCH" ;;
+        *)             err "Unsupported architecture: $ARCH" "unsupported_arch" ;;
     esac
 
     ok "Detected ${PLATFORM} ${ARCH_LABEL}"
 
-    # ── Telemetry (opt-out via PHANTOM_NO_TELEMETRY=1) ─────
-    # Stable per-run id so install_started/install_complete can be joined server-side.
-    INSTALL_ID="$(uuidgen 2>/dev/null || echo "cli-$(date +%s)-$$-${RANDOM}")"
-    _ping() {
-        if [ "${PHANTOM_NO_TELEMETRY:-0}" = "1" ]; then return; fi
-        curl -sfL "https://fadelab.net/api/ping?event=$1&os=${PLATFORM}&arch=${ARCH_LABEL}&version=${2:-unknown}&extras=${INSTALL_EXTRAS:-none}&iid=${INSTALL_ID}" > /dev/null 2>&1 &
-    }
     _ping "install_started"
 
     # ── Step 2: Check/install uv ────────────────────────────
@@ -129,7 +144,7 @@ main() {
         elif command -v wget >/dev/null 2>&1; then
             wget -qO- "https://astral.sh/uv/${UV_VERSION}/install.sh" | sh > "$uv_log" 2>&1
         else
-            err "curl or wget required. Install one and re-run."
+            err "curl or wget required. Install one and re-run." "no_downloader"
         fi
 
         # Source uv env
@@ -141,7 +156,7 @@ main() {
         if ! command -v uv >/dev/null 2>&1; then
             fail "uv installation failed"
             printf "    %sLog: %s%s\n" "$DIM" "$uv_log" "$RESET" >&2
-            err "See https://docs.astral.sh/uv/ for manual install"
+            err "See https://docs.astral.sh/uv/ for manual install" "uv_install_failed"
         fi
         ok "uv installed"
     fi
@@ -244,18 +259,18 @@ main() {
             info "Full install failed, trying core only..."
             if ! run_with_spinner "Installing phantom core" \
                 uv tool install phantom-audio --python 3.13 --force; then
-                err "Installation failed. Check Python 3.13: uv python list | grep 3.13"
+                err "Installation failed. Check Python 3.13: uv python list | grep 3.13" "pkg_install_failed"
             fi
             warn "Extras skipped — install later: uv tool install \"phantom-audio[all]\" --python 3.13 --force"
         else
-            err "Installation failed. Check Python 3.13: uv python list | grep 3.13"
+            err "Installation failed. Check Python 3.13: uv python list | grep 3.13" "pkg_install_failed"
         fi
     fi
 
     # ── Verify install ──────────────────────────────────────
     hash -r 2>/dev/null || true
     export PATH="$HOME/.local/bin:$PATH"
-    command -v phantom >/dev/null 2>&1 || err "phantom not found on PATH. Add ~/.local/bin to your PATH."
+    command -v phantom >/dev/null 2>&1 || err "phantom not found on PATH. Add ~/.local/bin to your PATH." "not_on_path"
 
     INSTALLED_VERSION=$(uv tool list 2>/dev/null | grep phantom-audio | head -1 | sed 's/phantom-audio //' | sed 's/ .*//' || echo "unknown")
     _ping "install_complete" "$INSTALLED_VERSION"
