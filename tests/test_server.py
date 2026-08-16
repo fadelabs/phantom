@@ -349,7 +349,7 @@ async def test_batch_diagnostic(client, mono_sine_440hz, make_wav):
     assert data["stem_count"] == 2
     stems = data["stems"]
     assert len(stems) == 2
-    for stem_name, stem_data in stems.items():
+    for stem_data in stems.values():
         assert "spectral" in stem_data
         assert "loudness" in stem_data
 
@@ -446,12 +446,14 @@ async def test_non_phantom_error_sanitized(client, mono_sine_440hz, make_wav):
     from unittest.mock import patch
 
     # Mock load_audio to raise a generic RuntimeError with a path leak
-    with patch(
-        "phantom.server.load_audio",
-        side_effect=RuntimeError("secret /path/to/file.wav leaked"),
+    with (
+        patch(
+            "phantom.server.load_audio",
+            side_effect=RuntimeError("secret /path/to/file.wav leaked"),
+        ),
+        pytest.raises(ToolError) as exc_info,
     ):
-        with pytest.raises(ToolError) as exc_info:
-            await client.call_tool("analyze_spectrum", {"file_path": "/tmp/test.wav"})
+        await client.call_tool("analyze_spectrum", {"file_path": "/tmp/test.wav"})
     error = json.loads(str(exc_info.value))
     assert (
         error["message"] == "Internal analysis error — check server logs for details."
@@ -641,12 +643,14 @@ async def test_windows_path_stripped_from_error(client):
     from unittest.mock import patch
     from phantom.exceptions import AudioLoadError
 
-    with patch(
-        "phantom.server.load_audio",
-        side_effect=AudioLoadError("Failed at C:\\Users\\lee\\audio\\test.wav"),
+    with (
+        patch(
+            "phantom.server.load_audio",
+            side_effect=AudioLoadError("Failed at C:\\Users\\lee\\audio\\test.wav"),
+        ),
+        pytest.raises(ToolError) as exc_info,
     ):
-        with pytest.raises(ToolError) as exc_info:
-            await client.call_tool("analyze_spectrum", {"file_path": "/tmp/test.wav"})
+        await client.call_tool("analyze_spectrum", {"file_path": "/tmp/test.wav"})
     error = json.loads(str(exc_info.value))
     assert "C:\\Users" not in error["message"]
     assert "C:\\\\Users" not in error["message"]
@@ -660,12 +664,14 @@ async def test_mixed_paths_stripped_from_error(client):
     # Build paths via concatenation to avoid PII pre-commit hook false positive
     unix_path = "/home/" + "user/audio/"
     win_path = "C:\\Users\\" + "admin\\audio\\test.wav"
-    with patch(
-        "phantom.server.load_audio",
-        side_effect=AudioLoadError(f"Failed at {unix_path} and {win_path}"),
+    with (
+        patch(
+            "phantom.server.load_audio",
+            side_effect=AudioLoadError(f"Failed at {unix_path} and {win_path}"),
+        ),
+        pytest.raises(ToolError) as exc_info,
     ):
-        with pytest.raises(ToolError) as exc_info:
-            await client.call_tool("analyze_spectrum", {"file_path": "/tmp/test.wav"})
+        await client.call_tool("analyze_spectrum", {"file_path": "/tmp/test.wav"})
     error = json.loads(str(exc_info.value))
     assert "/home/user" not in error["message"]
     assert "C:\\Users" not in error["message"]
@@ -678,12 +684,14 @@ async def test_spaced_path_stripped_from_error(client):
 
     # Built via concatenation to avoid PII pre-commit hook false positives.
     spaced = "/studio/" + "sessions/My Tracks/rough mix vocals.wav"
-    with patch(
-        "phantom.server.load_audio",
-        side_effect=AudioLoadError(f"Failed at {spaced}"),
+    with (
+        patch(
+            "phantom.server.load_audio",
+            side_effect=AudioLoadError(f"Failed at {spaced}"),
+        ),
+        pytest.raises(ToolError) as exc_info,
     ):
-        with pytest.raises(ToolError) as exc_info:
-            await client.call_tool("analyze_spectrum", {"file_path": "/tmp/test.wav"})
+        await client.call_tool("analyze_spectrum", {"file_path": "/tmp/test.wav"})
     error = json.loads(str(exc_info.value))
     # Directories after the first space must not survive redaction.
     assert "/studio/sessions" not in error["message"]
@@ -697,12 +705,14 @@ async def test_unc_path_stripped_from_error(client):
 
     # UNC built via concatenation to keep the hook's path scanner quiet.
     unc = "\\\\" + "fileserver\\sessions\\mix file.wav"
-    with patch(
-        "phantom.server.load_audio",
-        side_effect=AudioLoadError(f"Failed at {unc}"),
+    with (
+        patch(
+            "phantom.server.load_audio",
+            side_effect=AudioLoadError(f"Failed at {unc}"),
+        ),
+        pytest.raises(ToolError) as exc_info,
     ):
-        with pytest.raises(ToolError) as exc_info:
-            await client.call_tool("analyze_spectrum", {"file_path": "/tmp/test.wav"})
+        await client.call_tool("analyze_spectrum", {"file_path": "/tmp/test.wav"})
     error = json.loads(str(exc_info.value))
     assert "fileserver" not in error["message"]
     assert "\\\\fileserver" not in error["message"]
@@ -715,12 +725,14 @@ async def test_apostrophe_path_stripped_from_error(client):
 
     # Concatenated to keep the hook's path scanner quiet.
     home = "/Users/" + "O'Brien/music/rough mix.wav"
-    with patch(
-        "phantom.server.load_audio",
-        side_effect=AudioLoadError(f"Failed at {home}"),
+    with (
+        patch(
+            "phantom.server.load_audio",
+            side_effect=AudioLoadError(f"Failed at {home}"),
+        ),
+        pytest.raises(ToolError) as exc_info,
     ):
-        with pytest.raises(ToolError) as exc_info:
-            await client.call_tool("analyze_spectrum", {"file_path": "/tmp/test.wav"})
+        await client.call_tool("analyze_spectrum", {"file_path": "/tmp/test.wav"})
     error = json.loads(str(exc_info.value))
     assert "O'Brien" not in error["message"]
     assert "music" not in error["message"]
@@ -830,14 +842,14 @@ class TestDebugOutputRestriction:
         from unittest.mock import patch
 
         monkeypatch.setenv("PHANTOM_DEBUG", "1")
-        with patch(
-            "phantom.server.load_audio",
-            side_effect=RuntimeError("secret /path/to/file.wav leaked"),
+        with (
+            patch(
+                "phantom.server.load_audio",
+                side_effect=RuntimeError("secret /path/to/file.wav leaked"),
+            ),
+            pytest.raises(ToolError) as exc_info,
         ):
-            with pytest.raises(ToolError) as exc_info:
-                await client.call_tool(
-                    "analyze_spectrum", {"file_path": "/tmp/test.wav"}
-                )
+            await client.call_tool("analyze_spectrum", {"file_path": "/tmp/test.wav"})
         error = json.loads(str(exc_info.value))
         assert (
             error["message"]
@@ -852,14 +864,14 @@ class TestDebugOutputRestriction:
         from unittest.mock import patch
 
         monkeypatch.delenv("PHANTOM_DEBUG", raising=False)
-        with patch(
-            "phantom.server.load_audio",
-            side_effect=RuntimeError("secret /path/to/file.wav leaked"),
+        with (
+            patch(
+                "phantom.server.load_audio",
+                side_effect=RuntimeError("secret /path/to/file.wav leaked"),
+            ),
+            pytest.raises(ToolError) as exc_info,
         ):
-            with pytest.raises(ToolError) as exc_info:
-                await client.call_tool(
-                    "analyze_spectrum", {"file_path": "/tmp/test.wav"}
-                )
+            await client.call_tool("analyze_spectrum", {"file_path": "/tmp/test.wav"})
         error = json.loads(str(exc_info.value))
         assert (
             error["message"]
@@ -874,14 +886,14 @@ class TestDebugOutputRestriction:
         from unittest.mock import patch
 
         monkeypatch.setenv("PHANTOM_DEBUG", "1")
-        with patch(
-            "phantom.server.load_audio",
-            side_effect=RuntimeError("secret debug message"),
+        with (
+            patch(
+                "phantom.server.load_audio",
+                side_effect=RuntimeError("secret debug message"),
+            ),
+            pytest.raises(ToolError),
         ):
-            with pytest.raises(ToolError):
-                await client.call_tool(
-                    "analyze_spectrum", {"file_path": "/tmp/test.wav"}
-                )
+            await client.call_tool("analyze_spectrum", {"file_path": "/tmp/test.wav"})
         captured = capsys.readouterr()
         assert "RuntimeError" in captured.err
         assert "secret debug message" in captured.err
@@ -893,14 +905,14 @@ class TestDebugOutputRestriction:
         from unittest.mock import patch
 
         monkeypatch.delenv("PHANTOM_DEBUG", raising=False)
-        with patch(
-            "phantom.server.load_audio",
-            side_effect=RuntimeError("secret debug message"),
+        with (
+            patch(
+                "phantom.server.load_audio",
+                side_effect=RuntimeError("secret debug message"),
+            ),
+            pytest.raises(ToolError),
         ):
-            with pytest.raises(ToolError):
-                await client.call_tool(
-                    "analyze_spectrum", {"file_path": "/tmp/test.wav"}
-                )
+            await client.call_tool("analyze_spectrum", {"file_path": "/tmp/test.wav"})
         captured = capsys.readouterr()
         assert "secret debug message" not in captured.err
 
@@ -913,14 +925,14 @@ class TestDebugOutputRestriction:
         from phantom.exceptions import PhantomError
 
         monkeypatch.setenv("PHANTOM_DEBUG", "1")
-        with patch(
-            "phantom.server.load_audio",
-            side_effect=PhantomError("Audio file is too short for analysis"),
+        with (
+            patch(
+                "phantom.server.load_audio",
+                side_effect=PhantomError("Audio file is too short for analysis"),
+            ),
+            pytest.raises(ToolError) as exc_info,
         ):
-            with pytest.raises(ToolError) as exc_info:
-                await client.call_tool(
-                    "analyze_spectrum", {"file_path": "/tmp/test.wav"}
-                )
+            await client.call_tool("analyze_spectrum", {"file_path": "/tmp/test.wav"})
         error = json.loads(str(exc_info.value))
         assert error["message"] == "Audio file is too short for analysis"
         assert error["error_type"] == "PhantomError"

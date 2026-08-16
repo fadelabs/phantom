@@ -281,7 +281,7 @@ def test_analyze_batch_json_mismatch(runner, make_wav):
 
     # At least one stem should have the mismatch problem injected
     found_mismatch = False
-    for stem_name, stem_data in data["stems"].items():
+    for stem_data in data["stems"].values():
         if "problems" in stem_data:
             for problem in stem_data["problems"].get("problems", []):
                 if problem.get("type") == "sample_rate_mismatch":

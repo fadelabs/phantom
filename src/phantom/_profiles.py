@@ -110,8 +110,7 @@ def _max_json_nesting(text: str) -> int:
             in_string = True
         elif ch in "[{":
             depth += 1
-            if depth > max_depth:
-                max_depth = depth
+            max_depth = max(max_depth, depth)
         elif ch in "]}":
             depth -= 1
     return max_depth

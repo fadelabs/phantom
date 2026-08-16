@@ -408,7 +408,6 @@ class TestWrapErrors:
         @wrap_errors("Prefix")
         def my_func() -> None:
             """Analyze the spectrum."""
-            pass
 
         assert my_func.__doc__ == "Analyze the spectrum."
 

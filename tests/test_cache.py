@@ -103,7 +103,7 @@ class TestContentHashMemoization:
         h.update(audio.samples.tobytes())
         h.update(str(audio.sample_rate).encode())
         h.update(str(audio.num_channels).encode())
-        h.update("spectrum".encode())
+        h.update(b"spectrum")
         expected = h.hexdigest()
 
         assert cache._hash_audio(audio, "spectrum") == expected

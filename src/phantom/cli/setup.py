@@ -100,6 +100,7 @@ def _setup_plugin(console, json_mode: bool) -> dict:
             capture_output=True,
             text=True,
             timeout=60,
+            check=False,
         )
         if proc.returncode != 0:
             combined = (proc.stderr or "") + (proc.stdout or "")
@@ -114,6 +115,7 @@ def _setup_plugin(console, json_mode: bool) -> dict:
             capture_output=True,
             text=True,
             timeout=60,
+            check=False,
         )
         if proc.returncode == 0:
             if not json_mode:
@@ -296,6 +298,7 @@ def setup(json_output: bool, skip_reaper: bool, skip_plugin: bool) -> None:
                     capture_output=True,
                     text=True,
                     timeout=900,
+                    check=False,
                 )
             if proc.returncode == 0:
                 for _, label in missing_extras:

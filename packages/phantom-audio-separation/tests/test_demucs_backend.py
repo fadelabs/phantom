@@ -18,14 +18,14 @@ from unittest.mock import patch, MagicMock
 
 pytest.importorskip("phantom_separation")
 
-from phantom.exceptions import (  # noqa: E402
+from phantom.exceptions import (
     AnalysisError,
     AudioLoadError,
     DependencyMissingError,
     PathSecurityError,
 )
-from phantom.separation import SeparationResult  # noqa: E402
-from phantom_separation.demucs_backend import separate_stems  # noqa: E402
+from phantom.separation import SeparationResult
+from phantom_separation.demucs_backend import separate_stems
 
 
 def _make_demucs_mocks(samplerate=44100):
@@ -126,9 +126,11 @@ class TestSeparateStems:
         nonexistent = str(tmp_path / "nonexistent.wav")
         output_dir = str(tmp_path / "stems")
         mocks = _make_demucs_mocks()
-        with _demucs_patch(mocks):
-            with pytest.raises(AudioLoadError, match="Input file not found"):
-                separate_stems(nonexistent, output_dir)
+        with (
+            _demucs_patch(mocks),
+            pytest.raises(AudioLoadError, match="Input file not found"),
+        ):
+            separate_stems(nonexistent, output_dir)
 
     def test_successful_separation(self, tmp_path, stereo_sine_input):
         """Successful separation returns dict mapping stem names to file paths (SEP-01)."""
@@ -174,19 +176,20 @@ class TestSeparateStems:
             "Internal demucs failure"
         )
 
-        with _demucs_patch(mocks):
-            with pytest.raises(AnalysisError, match="Source separation failed"):
-                separate_stems(stereo_sine_input, output_dir)
+        with (
+            _demucs_patch(mocks),
+            pytest.raises(AnalysisError, match="Source separation failed"),
+        ):
+            separate_stems(stereo_sine_input, output_dir)
 
     def test_function_signature(self, tmp_path):
         """separate_stems accepts exactly 2 positional args named input_path and output_dir (D-04)."""
         mocks = _make_demucs_mocks()
-        with _demucs_patch(mocks):
-            with pytest.raises(AudioLoadError):
-                separate_stems(
-                    input_path=str(tmp_path / "a.wav"),
-                    output_dir=str(tmp_path / "out"),
-                )
+        with _demucs_patch(mocks), pytest.raises(AudioLoadError):
+            separate_stems(
+                input_path=str(tmp_path / "a.wav"),
+                output_dir=str(tmp_path / "out"),
+            )
 
     def test_silent_input_raises_analysis_error(self, tmp_path, wav_file_factory):
         """Fully-silent input (ref.std() == 0) raises a clean AnalysisError, not NaN (P-14).
@@ -212,9 +215,8 @@ class TestSeparateStems:
             std=MagicMock(return_value=0.0),
         )
 
-        with _demucs_patch(mocks):
-            with pytest.raises(AnalysisError, match="silent"):
-                separate_stems(input_path, output_dir)
+        with _demucs_patch(mocks), pytest.raises(AnalysisError, match="silent"):
+            separate_stems(input_path, output_dir)
 
     def test_import_without_demucs(self, monkeypatch):
         """Importing the backend without demucs installed does not raise (SEP-02)."""
@@ -249,17 +251,21 @@ class TestDecodeLimits:
         """An input longer than PHANTOM_MAX_DURATION is rejected before decode."""
         monkeypatch.setenv("PHANTOM_MAX_DURATION", "0.5")
         input_path = wav_file_factory(np.zeros((44100 * 2, 2), dtype=np.float32))  # 2s
-        with _demucs_patch(_make_demucs_mocks()):
-            with pytest.raises(AudioLoadError, match="exceeds the"):
-                separate_stems(input_path, str(tmp_path / "stems"))
+        with (
+            _demucs_patch(_make_demucs_mocks()),
+            pytest.raises(AudioLoadError, match="exceeds the"),
+        ):
+            separate_stems(input_path, str(tmp_path / "stems"))
 
     def test_over_size_input_rejected(self, tmp_path, wav_file_factory, monkeypatch):
         """An input larger than PHANTOM_MAX_FILE_SIZE is rejected before decode."""
         monkeypatch.setenv("PHANTOM_MAX_FILE_SIZE", "100")  # 100 bytes
         input_path = wav_file_factory(np.zeros((44100, 2), dtype=np.float32))
-        with _demucs_patch(_make_demucs_mocks()):
-            with pytest.raises(AudioLoadError, match="exceeds the"):
-                separate_stems(input_path, str(tmp_path / "stems"))
+        with (
+            _demucs_patch(_make_demucs_mocks()),
+            pytest.raises(AudioLoadError, match="exceeds the"),
+        ):
+            separate_stems(input_path, str(tmp_path / "stems"))
 
 
 class TestOutputDirValidation:

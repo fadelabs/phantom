@@ -11,7 +11,7 @@ Near-silent audio returns None for all values (per LOUD-05).
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import ClassVar, Optional
+from typing import ClassVar
 
 import numpy as np
 import essentia.standard as es
@@ -77,11 +77,11 @@ class LufsStats(RoundedModel):
 class LoudnessResult(RoundedModel):
     """Result of EBU R128 loudness analysis."""
 
-    integrated_lufs: Optional[float] = None
-    true_peak_dbtp: Optional[float] = None
-    loudness_range_lu: Optional[float] = None
-    short_term_lufs: Optional[LufsStats] = None
-    momentary_lufs: Optional[LufsStats] = None
+    integrated_lufs: float | None = None
+    true_peak_dbtp: float | None = None
+    loudness_range_lu: float | None = None
+    short_term_lufs: LufsStats | None = None
+    momentary_lufs: LufsStats | None = None
 
     _ROUND_FIELDS: ClassVar[dict[str, Callable[[object], object]]] = {
         "integrated_lufs": round_db,

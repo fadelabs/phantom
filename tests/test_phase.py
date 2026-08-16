@@ -205,7 +205,7 @@ class TestCrossFileDelay:
 
     def test_delay_ms_consistent(self, delayed_signal_pair):
         """delay_ms should match delay_samples / sr * 1000."""
-        sig1, sig2, sr, delay = delayed_signal_pair
+        sig1, sig2, sr, _delay = delayed_signal_pair
         audio1 = _make_audio(sig1, sr)
         audio2 = _make_audio(sig2, sr)
         result = compare_phase(audio1, audio2)

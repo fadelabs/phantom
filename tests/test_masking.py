@@ -551,7 +551,7 @@ class TestMatrixStreamingParity:
                 res = _compute_pairwise_result(
                     energies[i], energies[j], AnalysisSettings()
                 )
-            expected[("stem_%d" % i, "stem_%d" % j)] = res
+            expected[(f"stem_{i}", f"stem_{j}")] = res
         return expected
 
     def test_mixed_rate_three_stems_parity(self):

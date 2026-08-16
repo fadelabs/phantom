@@ -149,6 +149,7 @@ def _uninstall_uv_package(console, removed: list[str]) -> None:
             capture_output=True,
             text=True,
             timeout=30,
+            check=False,
         )
     except subprocess.TimeoutExpired:
         console.print(

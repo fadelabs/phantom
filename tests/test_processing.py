@@ -433,7 +433,7 @@ class TestCompareResults:
             clean=False,
         )
 
-        improvements, regressions = _compare_results(before, after)
+        improvements, _regressions = _compare_results(before, after)
         assert len(improvements) == 1
         assert improvements[0].status == "improved"
         assert improvements[0].before_severity == "significant"

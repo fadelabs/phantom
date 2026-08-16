@@ -102,7 +102,7 @@ class TestFrequencyDeviationMap:
         band_dev = m.get("250_hz")
         assert isinstance(band_dev, DeviationResult)
         assert band_dev.rating == "slightly_below"
-        for key, dev in m.items():
+        for dev in m.values():
             assert isinstance(dev, DeviationResult)
 
     def test_dump_reduces_values_to_plain_dicts(self) -> None:

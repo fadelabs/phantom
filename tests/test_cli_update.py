@@ -150,19 +150,21 @@ class TestCheckForUpdate:
         bug) is outside the caught tuple, so it propagates instead of being
         silently turned into None.
         """
-        with patch(
-            "phantom.cli.update._fetch_latest_version",
-            side_effect=TypeError("unexpected programming bug"),
+        with (
+            patch(
+                "phantom.cli.update._fetch_latest_version",
+                side_effect=TypeError("unexpected programming bug"),
+            ),
+            pytest.raises(TypeError),
         ):
-            with pytest.raises(TypeError):
-                check_for_update(force=True)
+            check_for_update(force=True)
 
     def test_returns_versions_when_release_exists(self, cache_dir):
         resp = _mock_urlopen({"tag_name": "v1.2.0"})
         with patch("phantom.cli.update.urlopen", return_value=resp):
             result = check_for_update(force=True)
             assert result is not None
-            latest, current = result
+            latest, _current = result
             assert latest == "1.2.0"
 
     def test_falls_back_to_tags(self, cache_dir):
