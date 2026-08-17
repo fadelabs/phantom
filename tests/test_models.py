@@ -7,6 +7,8 @@ or unexpected nesting before reaching clients.
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 import pytest
 
 from phantom.spectral import SpectralResult
@@ -1140,8 +1142,6 @@ class TestRoundedModel:
 
     def test_subclass_spec_applied(self):
         """Declared fields round through the spec callable."""
-        from typing import ClassVar
-
         from phantom._rounding import RoundedModel, round_db, round_ratio
 
         class Sample(RoundedModel):
@@ -1149,7 +1149,7 @@ class TestRoundedModel:
             ratio: float | None = None
             untouched: int = 0
 
-            _ROUND_FIELDS: ClassVar = {"db": round_db, "ratio": round_ratio}
+            _ROUND_FIELDS: ClassVar[dict] = {"db": round_db, "ratio": round_ratio}
 
         result = Sample(db=-14.12345, ratio=0.12345678, untouched=3).model_dump()
         assert result == {"db": -14.12, "ratio": 0.1235, "untouched": 3}
@@ -1157,27 +1157,23 @@ class TestRoundedModel:
     def test_none_passes_through(self):
         """Present-but-None declared fields stay None (validators were
         None-tolerant and the model spec skips them)."""
-        from typing import ClassVar
-
         from phantom._rounding import RoundedModel, round_db
 
         class Sample(RoundedModel):
             db: float | None = None
 
-            _ROUND_FIELDS: ClassVar = {"db": round_db}
+            _ROUND_FIELDS: ClassVar[dict] = {"db": round_db}
 
         assert Sample(db=None).model_dump() == {"db": None}
 
     def test_input_dict_not_mutated(self):
         """The validator doesn't mutate caller-owned input dicts."""
-        from typing import ClassVar
-
         from phantom._rounding import RoundedModel, round_db
 
         class Sample(RoundedModel):
             db: float | None = None
 
-            _ROUND_FIELDS: ClassVar = {"db": round_db}
+            _ROUND_FIELDS: ClassVar[dict] = {"db": round_db}
 
         raw = {"db": -14.12345}
         Sample.model_validate(raw)
@@ -1186,15 +1182,13 @@ class TestRoundedModel:
     def test_unrounded_field_stays_unrounded(self):
         """Fields outside the spec pass through verbatim (no default
         rounding is applied by the base class)."""
-        from typing import ClassVar
-
         from phantom._rounding import RoundedModel, round_db
 
         class Sample(RoundedModel):
             db: float | None = None
             raw: float | None = None
 
-            _ROUND_FIELDS: ClassVar = {"db": round_db}
+            _ROUND_FIELDS: ClassVar[dict] = {"db": round_db}
 
         assert Sample(db=1.23456, raw=9.87654321).model_dump()["raw"] == 9.87654321
 
