@@ -210,13 +210,21 @@ function Main {
     Write-Host ""
 
     # MCP server (run from user home to avoid project-local .mcp.json)
+    # $ErrorActionPreference = "Stop" does not make a native command's non-zero
+    # exit throw, so success was reported unconditionally here. Check
+    # $LASTEXITCODE the way the uv and plugin steps above already do.
     try {
         Push-Location $env:USERPROFILE
         $setupOut = phantom setup --skip-plugin --skip-reaper 2>&1 |
             Where-Object { $_ -notmatch 'DeprecationWarning|AuthlibDeprecation|scipy\.ndimage|from authlib|from scipy|It will be compatible|__main__|cannot be directly' } |
             Out-String
+        $setupExit = $LASTEXITCODE
         Pop-Location
-        Write-Ok "MCP server"
+        if ($setupExit -eq 0) {
+            Write-Ok "MCP server"
+        } else {
+            Write-Warn "MCP setup had issues — run 'phantom setup' to retry"
+        }
     } catch {
         Pop-Location
         Write-Warn "MCP setup had issues — run 'phantom setup' to retry"
@@ -228,7 +236,12 @@ function Main {
         try {
             $null = phantom setup-reaper 2>&1 |
                 Where-Object { $_ -notmatch 'DeprecationWarning|AuthlibDeprecation|scipy\.ndimage|from authlib|from scipy|It will be compatible' }
-            Write-Ok "Reaper bridge"
+            $reaperExit = $LASTEXITCODE
+            if ($reaperExit -eq 0) {
+                Write-Ok "Reaper bridge"
+            } else {
+                Write-Warn "Reaper setup had issues — run 'phantom setup-reaper' to retry"
+            }
         } catch {
             Write-Warn "Reaper setup had issues — run 'phantom setup-reaper' to retry"
         }
