@@ -28,7 +28,10 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
-    "Operating System :: OS Independent",
+    # Not OS Independent: essentia publishes no Windows wheel, so the package
+    # cannot resolve on Windows at all. Tracked in issue #52.
+    "Operating System :: MacOS :: MacOS X",
+    "Operating System :: POSIX :: Linux",
 ]
 dependencies = [
     "numpy>=2.0",
