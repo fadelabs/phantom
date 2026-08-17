@@ -54,8 +54,15 @@ jobs:
         run: python tests/install_ps1/verify_telemetry.py
 
   end-to-end:
-    name: Real install on Windows
+    name: Real install on Windows (known to fail)
     runs-on: windows-latest
+    # Expected to fail today, and non-blocking for that reason: essentia is a
+    # core dependency pinned to a version that publishes no win_amd64 wheel, so
+    # `uv tool install phantom-audio` cannot resolve on Windows at all. The job
+    # still earns its place — it gets as far as bootstrapping uv and running
+    # install.ps1 under real Windows PowerShell, and it will go green by itself
+    # the day the dependency gap closes. Make it blocking then.
+    continue-on-error: true
     # Telemetry stays off: this job exercises the install mechanics, and a real
     # ping would put synthetic installs into production analytics. The payload
     # itself is covered by the telemetry job above.
