@@ -6,6 +6,40 @@ set -euo pipefail
 
 echo "=== Pre-push checks ==="
 
+# Git feeds one line per ref on stdin: "<local ref> <local sha> <remote ref>
+# <remote sha>". Everything below runs against the working tree, so a clean
+# result only says something about the push when the working tree is what is
+# being pushed. Pushing a branch that is not checked out otherwise reports a
+# pass for code the hook never ran.
+#
+# Tags are skipped: a tag introduces no new code, and the commit it points at
+# was already gated when it was pushed to a branch. Releases push tags
+# separately, so checking them here would block every release.
+HEAD_SHA=$(git rev-parse HEAD)
+MISMATCHED=""
+while read -r local_ref local_sha _remote_ref _remote_sha; do
+  [ -n "${local_sha:-}" ] || continue
+  case "$local_ref" in refs/tags/*) continue ;; esac
+  # An all-zero sha means the remote ref is being deleted; nothing to test.
+  case "$local_sha" in *[!0]*) ;; *) continue ;; esac
+  if [ "$local_sha" != "$HEAD_SHA" ]; then
+    MISMATCHED="${MISMATCHED}  ${local_ref} at $(git rev-parse --short "$local_sha")
+"
+  fi
+done
+
+if [ -n "$MISMATCHED" ]; then
+  echo ""
+  echo "BLOCKED: asked to push a ref that is not checked out."
+  printf '%s' "$MISMATCHED"
+  echo "  HEAD is $(git rev-parse --abbrev-ref HEAD) at $(git rev-parse --short HEAD)"
+  echo ""
+  echo "These checks run against the working tree, so they would report on code"
+  echo "that is not being pushed. Check out the branch you are pushing, or use"
+  echo "--no-verify if it has been verified another way."
+  exit 1
+fi
+
 echo ""
 echo "==> PII scan (privacy guard)..."
 HITS=$(git ls-files -- '*.py' '*.md' '*.toml' '*.json' '*.yml' '*.yaml' '*.cfg' '*.txt' '*.rst' | \
