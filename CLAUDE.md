@@ -47,10 +47,15 @@ Optional: demucs (stem separation), matchering (reference matching, GPLv3), peda
 
 ### Pre-push Checks
 
-- Linting: `uv tool run ruff check src/ tests/`
-- Formatting: `uv tool run ruff format --check src/ tests/`
+- Linting: `uv run ruff check src/ tests/ packages/`
+- Formatting: `uv run ruff format --check src/ tests/ packages/`
 - Tests: `uv run pytest tests/ -x -q --tb=short`
 - Hook: `scripts/pre-push` (auto-runs on git push)
+
+Use `uv run`, not `uv tool run` -- the latter resolves to the newest ruff, and a
+new minor can widen the default rule set, so it fails on rules CI never
+enforces. The hook blocks a push whose ref is not the one checked out, since its
+checks run against the working tree; `--no-verify` overrides.
 
 ## Privacy
 

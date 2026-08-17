@@ -32,7 +32,7 @@ pinned in the dev dependencies — the same one CI and the pre-push hook use.
 
 ## Step 1: Bump the Version
 
-Update the version in **two files**:
+Update the version in **three files**:
 
 ```bash
 # 1. pyproject.toml (line 6)
@@ -40,11 +40,24 @@ version = "X.Y.Z"
 
 # 2. plugin/.claude-plugin/plugin.json
 "version": "X.Y.Z"
+
+# 3. .claude-plugin/marketplace.json -- plugins[0].source.ref, with a "v" prefix
+"ref": "vX.Y.Z"
 ```
+
+The third is easy to miss and the test suite enforces it:
+`tests/test_cli_setup.py::TestMarketplaceVersionPin` fails when the marketplace
+`ref` does not equal `v` + the plugin version, so the pre-release checks above
+will not pass until all three agree.
+
+`uv.lock` also records the project version. Any `uv run` after the bump rewrites
+it, so it shows up as an unstaged change — commit it with the rest rather than
+leaving the lock disagreeing with `pyproject.toml`.
 
 Commit:
 ```bash
-git add pyproject.toml plugin/.claude-plugin/plugin.json
+git add pyproject.toml plugin/.claude-plugin/plugin.json \
+  .claude-plugin/marketplace.json uv.lock
 git commit -m "chore: bump version to X.Y.Z"
 ```
 
@@ -142,6 +155,7 @@ Update the `ref`, commit, and push.
 |------|-------|---------|
 | Version (package) | `pyproject.toml` line 6 | edit manually |
 | Version (plugin) | `plugin/.claude-plugin/plugin.json` | edit manually |
+| Version (marketplace ref) | `.claude-plugin/marketplace.json` | edit manually, `vX.Y.Z` |
 | Tests | local | `uv run pytest tests/ -x -q` |
 | Lint | local | `uv run ruff check src/ tests/ packages/` |
 | Build | local | `uv build` |
