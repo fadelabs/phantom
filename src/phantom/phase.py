@@ -160,8 +160,18 @@ def _gcc_phat_delay(
     R = np.conj(SIG1) * SIG2
     R_phat = R / (np.abs(R) + 1e-10)
     cc = np.real(ifft(R_phat))
-    max_shift = int(max_delay_ms / 1000.0 * sample_rate)
-    cc_region = np.concatenate([cc[-max_shift:], cc[: max_shift + 1]])
+    # The lag window cannot exceed what the correlation actually spans.
+    # Unclamped, two things went wrong as inputs got shorter: once
+    # n <= 2 * max_shift the two halves below overlap, so some lags appear
+    # twice and the index-to-lag mapping is wrong; and once max_shift > n the
+    # negative start clamps to 0 rather than wrapping, making cc[-max_shift:]
+    # the entire array and pinning the result at -max_shift whatever the true
+    # delay. compare_phase truncates both signals to the shorter one, so a
+    # single sub-50ms clip was enough to drag any file into this.
+    max_shift = min(int(max_delay_ms / 1000.0 * sample_rate), n // 2)
+    # Index from the front rather than with a negative start, so max_shift == 0
+    # yields an empty first half instead of the whole array.
+    cc_region = np.concatenate([cc[n - max_shift :], cc[: max_shift + 1]])
     delay_samples = int(np.argmax(cc_region) - max_shift)
     delay_ms = float(delay_samples / sample_rate * 1000.0)
     return delay_samples, delay_ms

@@ -77,6 +77,18 @@ _WIDTH_RANGES: dict[str, tuple[float, float]] = {
 # calibration.
 _WIDTH_THRESHOLDS = (0.05, 0.15, 0.25)
 
+# Channel correlation is also unitless, and compare_to_reference rates it as a
+# difference between two mixes rather than against a range. The widest gap two
+# mixes can show is 2.0 (fully correlated against fully anti-correlated), which
+# is under _THRESHOLD_MODERATE -- so on the dB scale "significantly_above/below"
+# was unreachable by construction and anything under 1.0 read "on_target".
+#
+# 0.05 as the just-detectable step is the figure this module already uses for
+# correlation: _BASS_MONO_THRESHOLD treats a 0.05 departure from fully mono as
+# the line where stereo bass content exists. 0.15/0.25 continue the same shape
+# as _WIDTH_THRESHOLDS.
+_CORRELATION_THRESHOLDS = (0.05, 0.15, 0.25)
+
 _BASS_MONO_THRESHOLD = 0.95
 
 
@@ -561,13 +573,23 @@ def compare_to_reference(
         dynamic_range_db=dynamics_devs["dynamic_range_db"],
     )
 
-    # Stereo
+    # Stereo. Both quantities are unitless ratios, so neither may fall back to
+    # the dB thresholds -- the same collapse issue #56 fixed on the profile path.
+    stereo_thresholds = {
+        "correlation": _CORRELATION_THRESHOLDS,
+        "stereo_width": _WIDTH_THRESHOLDS,
+    }
     stereo_devs = {}
     for key in ("correlation", "stereo_width"):
         val_a = getattr(stereo_a, key)
         val_b = getattr(stereo_b, key)
         if val_a is not None and val_b is not None:
-            stereo_devs[key] = _rate_deviation_ref(val_a, val_b, round_fn=round_ratio)
+            stereo_devs[key] = _rate_deviation_ref(
+                val_a,
+                val_b,
+                thresholds=stereo_thresholds[key],
+                round_fn=round_ratio,
+            )
         else:
             stereo_devs[key] = _unmeasurable_deviation()
 

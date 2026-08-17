@@ -76,9 +76,20 @@ def enforce_decode_limits(
                 f"Cannot read audio file: {os.path.basename(path)}"
             ) from exc
 
+    # The header read above is wrapped because this function documents
+    # AudioLoadError for an unreadable file; the size check has to honour the
+    # same contract. A file removed or made unreadable between the two calls
+    # otherwise escapes as a raw OSError.
+    try:
+        file_size = os.path.getsize(path)
+    except OSError as exc:
+        raise AudioLoadError(
+            f"Cannot read audio file: {os.path.basename(path)}"
+        ) from exc
+
     check_duration_size(
         info.duration,
-        os.path.getsize(path),
+        file_size,
         max_duration=max_duration,
         max_file_size=max_file_size,
     )

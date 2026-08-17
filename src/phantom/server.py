@@ -18,7 +18,7 @@ from pydantic import BaseModel
 
 from phantom._utils import _get_env_int
 from phantom.audio import load_audio
-from phantom.exceptions import PhantomError
+from phantom.exceptions import AnalysisError, PhantomError
 from phantom.facade import (
     ANALYSIS_TYPES,
     BatchDiagnosticResult,
@@ -536,6 +536,13 @@ def multi_stem_masking(file_paths: list[str]) -> dict:
     env_val = os.environ.get("PHANTOM_MASKING_TOP_N")
     if env_val is not None and env_val.strip():
         top_n = _get_env_int("PHANTOM_MASKING_TOP_N", default_top_n)
+        # pairs are sorted worst-first, so a non-positive slice is not a
+        # smaller answer -- 0 empties the result and a negative value drops
+        # the most severe pairs, silently inverting the documented ranking.
+        if top_n < 1:
+            raise AnalysisError(
+                f"PHANTOM_MASKING_TOP_N must be a positive integer, got: '{env_val}'"
+            )
     else:
         top_n = default_top_n
 

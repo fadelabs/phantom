@@ -349,3 +349,44 @@ def test_fix_non_interactive_passes_no_preloaded_audio(
     assert result.exit_code == 0, f"Exit {result.exit_code}: {result.output}"
     mock_fix.assert_called_once()
     assert mock_fix.call_args[1].get("audio") is None
+
+
+# ---------------------------------------------------------------------------
+# P-09: --interactive must not write its prompt to stdout under --json
+# ---------------------------------------------------------------------------
+
+
+def test_fix_interactive_json_stdout_stays_clean(runner, mono_sine_440hz, make_wav):
+    """`fix --interactive --json` must emit a parseable JSON document.
+
+    rich's Prompt.ask builds its own Console bound to stdout when no console
+    is passed, so the prompt landed in front of the JSON and
+    `phantom fix --interactive --json x.wav > out.json` produced a file that
+    json.loads could not read.
+    """
+    samples, sr = mono_sine_440hz
+    path = make_wav(samples, sr)
+
+    mock_problems = ProblemsResult(
+        problems=[
+            ProblemItem(
+                type="mud", severity="moderate", message="Mud detected", details={}
+            ),
+        ],
+        clean=False,
+    )
+    mock_result = _make_mock_fix_result(path.replace(".wav", "_fixed.wav"))
+
+    with (
+        patch("phantom.cli.fix.detect_problems", return_value=mock_problems),
+        patch("phantom.cli.fix.fix_audio", return_value=mock_result),
+    ):
+        result = runner.invoke(
+            cli, ["fix", "--interactive", "--json", path], input="all\n"
+        )
+
+    assert result.exit_code == 0, f"Exit {result.exit_code}: {result.output}"
+    assert "Enter problem numbers" not in result.stdout, (
+        "prompt text leaked onto stdout and corrupts the JSON document"
+    )
+    json.loads(result.stdout)

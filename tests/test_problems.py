@@ -484,20 +484,40 @@ class TestMergedNoiseFloorSnr:
         old = self._old_noise_floor(block) + self._old_snr(samples, block)
         assert merged == old
 
-    def test_detect_problems_uses_memoized_block_rms(self, noisy_signal):
-        """detect_problems routes through the AudioData memo so the block loop
-        runs once (spy on _block_rms_db through the memoized property)."""
+    def test_detect_problems_uses_memoized_block_rms(self, noisy_signal, monkeypatch):
+        """The block loop runs once per AudioData across both consumers (A.2).
+
+        This needs a real spy. Asserting
+        ``audio.block_rms_db == _block_rms_db(audio.mono)`` cannot fail --
+        the property is defined as ``_block_rms_db(self.mono)``, so that
+        compares the helper against itself and says nothing about whether
+        detect_problems reuses the memo.
+        """
+        import phantom.audio as audio_mod
+        from phantom.dynamics import analyze_dynamics
+
         samples, sr = noisy_signal
         audio = _make_audio(samples, sr)
-        from phantom._utils import _block_rms_db
 
-        expected = _block_rms_db(audio.mono)
-        # Trigger the memoized property and confirm equality with the direct
-        # helper; the property was already exercised by analyze_dynamics in the
-        # full pipeline, so this locks the shared source of truth.
-        assert audio.block_rms_db == expected
+        calls = []
+        real = audio_mod._block_rms_db
 
+        def counting(mono):
+            calls.append(1)
+            return real(mono)
+
+        monkeypatch.setattr(audio_mod, "_block_rms_db", counting)
+
+        # Two separate consumers of the same AudioData: detect_problems reads
+        # audio.block_rms_db, and analyze_dynamics reads it again for dynamic
+        # range. The cached_property must collapse those into one computation.
         result = detect_problems(audio)
+        analyze_dynamics(audio)
+
+        assert len(calls) == 1, (
+            f"block RMS computed {len(calls)} times; the AudioData memo is not "
+            "being shared between detect_problems and analyze_dynamics"
+        )
         assert any(p.type in ("noise_floor", "snr") for p in result.problems)
 
 
@@ -650,18 +670,37 @@ class TestSeverityTiers:
         assert result.summary.total >= 1
 
     def test_problems_sorted_by_severity(self):
-        """Problems should be sorted by severity order: dealbreaker first."""
-        # Combine clipping (dealbreaker) + DC offset (significant) to guarantee >=2 problems
+        """Problems should be sorted by severity order: dealbreaker first.
+
+        The fixture matters. A clipped-plus-DC signal produces clipping
+        (dealbreaker, detected first) and dc_offset (minor, detected second),
+        which is already in severity order -- so it passes with the sort
+        removed and proves nothing.
+
+        60 Hz hum plus a DC offset inverts the two: dc_offset is minor and is
+        detected second, hum is significant and is detected fifth. Detection
+        order is therefore [minor, significant] and only the sort produces
+        [significant, minor].
+        """
         sr = 44100
-        t = np.linspace(0, 1.0, sr, endpoint=False, dtype=np.float32)
-        samples = np.clip(1.2 * np.sin(2 * np.pi * 440 * t), -1.0, 1.0).astype(
-            np.float32
-        ) + np.float32(0.05)
+        n = sr * 3  # hum detection needs at least 2s
+        t = np.arange(n, dtype=np.float32) / sr
+        samples = (
+            0.4 * np.sin(2 * np.pi * 440 * t)
+            + 0.12 * np.sin(2 * np.pi * 60 * t)  # mains hum -> significant
+            + 0.05  # DC offset -> minor
+        ).astype(np.float32)
         audio = _make_audio(samples, sr)
         result = detect_problems(audio)
-        assert len(result.problems) >= 2, (
-            f"Expected >=2 problems but got {len(result.problems)}"
+
+        types = [p.type for p in result.problems]
+        assert "hum" in types and "dc_offset" in types, (
+            f"fixture no longer produces both problems: {types}"
         )
+        # The sort is what puts the significant problem first; in detection
+        # order dc_offset comes before hum.
+        assert types.index("hum") < types.index("dc_offset")
+
         severity_order = {"dealbreaker": 0, "significant": 1, "moderate": 2, "minor": 3}
         for i in range(len(result.problems) - 1):
             current = severity_order[result.problems[i].severity]

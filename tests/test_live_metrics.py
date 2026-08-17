@@ -92,6 +92,32 @@ def test_newest_instance_wins(metrics_dir):
     assert result.instance_count == 2
 
 
+def test_snapshot_vanishing_during_selection_is_reported_cleanly(
+    metrics_dir, monkeypatch
+):
+    """A file removed between listing and selection must not leak an OSError.
+
+    The read below the selection already handles this race, but the
+    max(..., key=os.path.getmtime) that picks the newest instance sat outside
+    that guard, so a plugin closing at the wrong moment surfaced a raw
+    FileNotFoundError instead of the friendly message.
+    """
+    _write_snapshot(metrics_dir, name="alive-instance")
+    _write_snapshot(metrics_dir, name="gone-instance")
+
+    real_getmtime = os.path.getmtime
+
+    def vanishing(path):
+        if str(path).endswith("gone-instance.json"):
+            raise FileNotFoundError(2, "No such file or directory", str(path))
+        return real_getmtime(path)
+
+    monkeypatch.setattr(os.path, "getmtime", vanishing)
+
+    with pytest.raises(AnalysisError):
+        read_live_metrics()
+
+
 def test_specific_instance(metrics_dir):
     """instance_id selects that instance's file even if another is newer."""
     _write_snapshot(metrics_dir, name="alpha", track="Alpha")
