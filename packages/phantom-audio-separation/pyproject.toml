@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "phantom-audio-separation"
-version = "1.4.0"
+version = "1.5.0"
 description = "Demucs-based stem separation plugin for phantom-audio"
 readme = "README.md"
 license = "AGPL-3.0-or-later"

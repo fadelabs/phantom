@@ -23,9 +23,12 @@ Use [semantic versioning](https://semver.org/) — `MAJOR.MINOR.PATCH`:
 
 1. **All changes committed and pushed to main**
 2. **Tests pass:** `uv run pytest tests/ -x -q`
-3. **Linting clean:** `uv tool run ruff check src/ tests/`
-4. **Format clean:** `uv tool run ruff format --check src/ tests/`
+3. **Linting clean:** `uv run ruff check src/ tests/ packages/`
+4. **Format clean:** `uv run ruff format --check src/ tests/ packages/`
 5. **Version number updated** in both places (see below)
+
+Use `uv run ruff` (not `uv tool run ruff`) so checks run the ruff version
+pinned in the dev dependencies — the same one CI and the pre-push hook use.
 
 ## Step 1: Bump the Version
 
@@ -94,7 +97,7 @@ Update the `ref` and `sha` fields, commit, and push.
 | Version (package) | `pyproject.toml` line 6 | edit manually |
 | Version (plugin) | `plugin/.claude-plugin/plugin.json` | edit manually |
 | Tests | local | `uv run pytest tests/ -x -q` |
-| Lint | local | `uv tool run ruff check src/ tests/` |
+| Lint | local | `uv run ruff check src/ tests/ packages/` |
 | Build | local | `uv build` |
 | Publish to PyPI | pypi.org | `uv publish --token "$(security find-generic-password -a __token__ -s pypi -w)"` |
 | Tag | GitHub | `git tag vX.Y.Z && git push origin vX.Y.Z` |
@@ -105,7 +108,7 @@ Update the `ref` and `sha` fields, commit, and push.
 ```bash
 # 1. Make sure everything is clean
 uv run pytest tests/ -x -q
-uv tool run ruff check src/ tests/
+uv run ruff check src/ tests/ packages/
 
 # 2. Bump version (edit both files)
 # pyproject.toml: version = "1.2.0"
