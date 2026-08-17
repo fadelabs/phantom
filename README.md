@@ -45,8 +45,11 @@ Four layers that work together:
 No install needed. Run this on any audio file:
 
 ```bash
-uvx phantom-audio analyze your-track.wav
+uvx --from phantom-audio phantom analyze your-track.wav
 ```
+
+The distribution is `phantom-audio`; the command it installs is `phantom`. `uvx` assumes those
+match, so `--from` is required here.
 
 Or install it:
 
@@ -101,7 +104,7 @@ Then talk to Claude:
 | Dynamics | `analyze_dynamics` | RMS, peak, crest factor, dynamic range, dynamic complexity |
 | Stereo | `analyze_stereo` | Width, balance, mid/side ratio, correlation, panorama distribution |
 | Phase | `analyze_phase`, `compare_phase` | Phase coherence per band, polarity, inter-channel delay |
-| Problems | `detect_problems` | Clipping, DC offset, inter-sample peaks, hum, sibilance, mud, harshness, resonances |
+| Problems | `detect_problems` | Clipping, DC offset, inter-sample peaks, noise floor, SNR, hum, sibilance, mud, harshness, resonances, lossy-codec artifacts |
 | Masking | `analyze_masking`, `multi_stem_masking` | Per-octave frequency overlap between stems, collision severity ranking |
 | Comparison | `compare_to_profile`, `compare_to_reference` | Deviation from genre targets or reference tracks across all dimensions |
 | Matching | `match_to_reference` | Automated spectral/loudness/width matching to a reference WAV |
@@ -109,7 +112,7 @@ Then talk to Claude:
 | Fixing | `fix_audio` | Automatically fix detected problems (DC offset, clipping, hum, etc.) |
 | Processing | `apply_processing` | Apply a custom chain of audio processing operations |
 | Profiles | `list_profiles`, `load_profile` | Browse and inspect genre reference profiles |
-| Diagnostic | `full_diagnostic`, `batch_diagnostic` | All analysis types on one file or up to 50 files in parallel |
+| Diagnostic | `full_diagnostic`, `batch_diagnostic` | All analysis types on one file, or across up to 50 files in a single call |
 
 ## Domain Expert Skills
 
@@ -194,16 +197,21 @@ Both installers (`install.sh` and `install.ps1`) report anonymized install telem
 
 Two of those codes are specific to `install.sh`: the Windows installer rejects no architecture (`unsupported_arch`) and needs no external downloader (`no_downloader`).
 
-Telemetry is on by default. Opt out by setting the flag for the install command:
+Telemetry is on by default. Opt out by setting the flag on the shell that runs the script:
 
 ```bash
 # macOS / Linux
-PHANTOM_NO_TELEMETRY=1 curl -sSL https://fadelab.net/install | bash
+curl -sSL https://fadelab.net/install | PHANTOM_NO_TELEMETRY=1 bash
 ```
 
+The variable has to go on `bash`, not on `curl`. `PHANTOM_NO_TELEMETRY=1 curl ... | bash` exports it
+to the download process only, and the installer never sees it.
+
 ```powershell
-# Windows
-$env:PHANTOM_NO_TELEMETRY = "1"; irm https://fadelab.net/install.ps1 | iex
+# Windows (install.ps1 honors the same variable, but see the Windows note above —
+# the install cannot currently succeed on Windows)
+$env:PHANTOM_NO_TELEMETRY = "1"
+irm https://raw.githubusercontent.com/fadelabs/phantom/main/install.ps1 | iex
 ```
 
 ## Usage
