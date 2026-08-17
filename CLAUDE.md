@@ -61,7 +61,7 @@ Artist personal information must never appear in commits or public-facing docume
 - **AGPL-3.0** -- open source, copyleft (commercial licensing available separately)
 - **Reaper over Cubase** for DAW integration (900+ API functions vs sandboxed JS)
 - **Monorepo** -- MCP server usable by any MCP client, skills are Claude Code specific
-- **Essentia as primary engine** -- 10-25x faster than librosa for feature extraction
+- **Essentia as primary engine** -- 10-25x faster than librosa for feature extraction. Cost: **essentia publishes no Windows wheel, so phantom-audio cannot be installed on Windows at all.** macOS and Linux only. Replacing it with a Windows-capable backend is tracked in issue #52 -- read that issue before touching `loudness.py`, `spectral.py`, `dynamics.py`, `problems.py`, `_bands.py`, or `_truepeak.py`
 - **Dynamic reference system** -- accepts artist name, genre, song title, or WAV file as mixing/mastering target
 
 ## Entry Points

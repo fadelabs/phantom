@@ -54,12 +54,9 @@ Or install it:
 curl -sSL https://fadelab.net/install | bash
 ```
 
-**Windows (PowerShell):**
-```powershell
-irm https://raw.githubusercontent.com/fadelabs/phantom/main/install.ps1 | iex
-```
-
 The installer handles everything — installs uv and Python if needed, lets you choose which extras to install, and configures the MCP server, Claude Code plugin, and Reaper bridge.
+
+> **Windows is not supported yet.** `phantom-audio` cannot currently be installed on Windows. Its analysis engine, [essentia](https://essentia.upf.edu/), publishes no Windows package, so the install fails while resolving dependencies. Work to replace that engine with a Windows-capable one is tracked in [#52](https://github.com/fadelabs/phantom/issues/52). Until then, run Phantom on macOS, on Linux, or under [WSL](https://learn.microsoft.com/en-us/windows/wsl/install).
 
 Point it at any WAV file:
 ```bash
