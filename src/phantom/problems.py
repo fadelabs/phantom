@@ -13,8 +13,6 @@ Near-silent audio returns an empty problems list with clean=True (per D-12).
 
 from __future__ import annotations
 
-from typing import Optional
-
 import numpy as np
 import essentia.standard as es
 import scipy.signal as sig
@@ -54,40 +52,40 @@ class ProblemDetails(FlatMapModel):
     model_config = ConfigDict(extra="allow")
 
     # PROB-01 clipping
-    clipped_samples: Optional[int] = None
-    clipped_percent: Optional[float] = None
+    clipped_samples: int | None = None
+    clipped_percent: float | None = None
     # PROB-02 dc offset (channel present only for stereo)
-    dc_offset: Optional[float] = None
-    channel: Optional[str] = None
+    dc_offset: float | None = None
+    channel: str | None = None
     # PROB-03 inter-sample peaks
-    true_peak_dbtp: Optional[float] = None
-    sample_peak_dbfs: Optional[float] = None
-    overshoot_db: Optional[float] = None
+    true_peak_dbtp: float | None = None
+    sample_peak_dbfs: float | None = None
+    overshoot_db: float | None = None
     # PROB-04/05 noise floor + SNR (share values). Declared in the SNR
     # detector's construction order so the serialized key order matches the
     # raw dicts exactly; the noise-floor item carries only noise_floor_dbfs.
-    snr_db: Optional[float] = None
-    signal_rms_dbfs: Optional[float] = None
-    noise_floor_dbfs: Optional[float] = None
-    quality: Optional[str] = None
+    snr_db: float | None = None
+    signal_rms_dbfs: float | None = None
+    noise_floor_dbfs: float | None = None
+    quality: str | None = None
     # PROB-06 hum
-    primary_frequency_hz: Optional[float] = None
-    primary_salience: Optional[float] = None
-    num_components: Optional[int] = None
-    frequencies_hz: Optional[list[float]] = None
+    primary_frequency_hz: float | None = None
+    primary_salience: float | None = None
+    num_components: int | None = None
+    frequencies_hz: list[float] | None = None
     # PROB-07/08/09 band excess
-    band_energy_db: Optional[float] = None
-    overall_energy_db: Optional[float] = None
-    excess_db: Optional[float] = None
+    band_energy_db: float | None = None
+    overall_energy_db: float | None = None
+    excess_db: float | None = None
     # PROB-10 resonances
-    num_resonances: Optional[int] = None
-    resonances: Optional[list[dict[str, float]]] = None
+    num_resonances: int | None = None
+    resonances: list[dict[str, float]] | None = None
     # PROB-13 lossy codec
-    shelf_drop_db: Optional[float] = None
-    energy_14_16khz_db: Optional[float] = None
-    energy_16_20khz_db: Optional[float] = None
+    shelf_drop_db: float | None = None
+    energy_14_16khz_db: float | None = None
+    energy_16_20khz_db: float | None = None
     # batch sample-rate mismatch (inject_sample_rate_mismatch)
-    sample_rates: Optional[dict[str, int]] = None
+    sample_rates: dict[str, int] | None = None
 
 
 class ProblemItem(BaseModel):
@@ -555,7 +553,7 @@ def _detect_hum(mono: np.ndarray, sample_rate: int) -> list[ProblemItem]:
         numberHarmonics=5,
         timeWindow=time_window,
     )
-    _, frequencies, saliences, starts, ends = hd(mono)
+    _, frequencies, saliences, _starts, _ends = hd(mono)
 
     if len(frequencies) == 0:
         return []

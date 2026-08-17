@@ -7,6 +7,8 @@ or unexpected nesting before reaching clients.
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 import pytest
 
 from phantom.spectral import SpectralResult
@@ -1147,7 +1149,7 @@ class TestRoundedModel:
             ratio: float | None = None
             untouched: int = 0
 
-            _ROUND_FIELDS = {"db": round_db, "ratio": round_ratio}
+            _ROUND_FIELDS: ClassVar[dict] = {"db": round_db, "ratio": round_ratio}
 
         result = Sample(db=-14.12345, ratio=0.12345678, untouched=3).model_dump()
         assert result == {"db": -14.12, "ratio": 0.1235, "untouched": 3}
@@ -1160,7 +1162,7 @@ class TestRoundedModel:
         class Sample(RoundedModel):
             db: float | None = None
 
-            _ROUND_FIELDS = {"db": round_db}
+            _ROUND_FIELDS: ClassVar[dict] = {"db": round_db}
 
         assert Sample(db=None).model_dump() == {"db": None}
 
@@ -1171,7 +1173,7 @@ class TestRoundedModel:
         class Sample(RoundedModel):
             db: float | None = None
 
-            _ROUND_FIELDS = {"db": round_db}
+            _ROUND_FIELDS: ClassVar[dict] = {"db": round_db}
 
         raw = {"db": -14.12345}
         Sample.model_validate(raw)
@@ -1186,7 +1188,7 @@ class TestRoundedModel:
             db: float | None = None
             raw: float | None = None
 
-            _ROUND_FIELDS = {"db": round_db}
+            _ROUND_FIELDS: ClassVar[dict] = {"db": round_db}
 
         assert Sample(db=1.23456, raw=9.87654321).model_dump()["raw"] == 9.87654321
 

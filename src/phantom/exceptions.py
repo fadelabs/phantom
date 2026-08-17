@@ -13,31 +13,21 @@ RECOMMENDED_PYTHON = "3.13"
 class PhantomError(Exception):
     """Base exception for all Phantom errors."""
 
-    pass
-
 
 class AudioLoadError(PhantomError):
     """Raised when an audio file cannot be loaded or is unsupported."""
-
-    pass
 
 
 class AnalysisError(PhantomError):
     """Raised when an analysis algorithm fails."""
 
-    pass
-
 
 class ProfileLoadError(PhantomError):
     """Raised when a reference profile cannot be loaded or is malformed."""
 
-    pass
-
 
 class PathSecurityError(PhantomError):
     """Raised when a file path violates security restrictions."""
-
-    pass
 
 
 class DependencyMissingError(PhantomError):

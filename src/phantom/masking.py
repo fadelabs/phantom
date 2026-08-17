@@ -14,6 +14,7 @@ from collections.abc import Callable
 from typing import ClassVar
 
 import numpy as np
+from pydantic import Field
 
 from phantom.audio import AudioData
 from phantom._resample import align_sample_rates, resample_to_match
@@ -66,7 +67,7 @@ class MaskingBand(RoundedModel):
 class MaskingResult(RoundedModel):
     """Result of pairwise masking analysis."""
 
-    bands: list[MaskingBand] = []
+    bands: list[MaskingBand] = Field(default_factory=list)
     overall_severity: str = "none"
     overall_score: float = 0.0
 
@@ -92,7 +93,7 @@ class MaskingPair(RoundedModel):
 class MaskingMatrixResult(RoundedModel):
     """Result of multi-stem masking matrix analysis."""
 
-    pairs: list[MaskingPair] = []
+    pairs: list[MaskingPair] = Field(default_factory=list)
     stem_count: int = 0
     pair_count: int = 0
 

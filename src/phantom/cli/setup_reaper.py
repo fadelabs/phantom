@@ -74,7 +74,7 @@ def _backup_dir(path: Path) -> Path:
     Returns the backup path. Used in place of shutil.rmtree so a setup-reaper
     run never irrecoverably deletes a user's prior install (issue #6).
     """
-    ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+    ts = datetime.now().strftime("%Y%m%d-%H%M%S")  # noqa: DTZ005 -- local timestamp is intended for backup dir names
     backup = path.parent / f"{path.name}.bak.{ts}"
     suffix = 1
     while backup.exists():
@@ -653,6 +653,7 @@ def setup_reaper(
                 capture_output=True,
                 text=True,
                 timeout=10,
+                check=False,
             )
             remote_url = result.stdout.strip()
         except Exception:

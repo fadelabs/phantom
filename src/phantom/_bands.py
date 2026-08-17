@@ -10,7 +10,7 @@ an underscore-prefixed helper.
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 import essentia.standard as es
@@ -109,7 +109,7 @@ class FlatMapModel(BaseModel):
         """
         return self._flat()[key]
 
-    def __eq__(self, other: Any) -> bool:
+    def __eq__(self, other: object) -> bool:
         """Equality against the serialized flat view.
 
         A map equals the dict it serializes to, in both directions, so
@@ -157,7 +157,7 @@ def octave_band_map_model(name: str, value_type: type) -> type[FlatMapModel]:
     """
     fields = {
         field_name: (
-            Optional[value_type],
+            value_type | None,
             Field(None, alias=key, serialization_alias=key),
         )
         for field_name, key in OCTAVE_BAND_KEY_PAIRS

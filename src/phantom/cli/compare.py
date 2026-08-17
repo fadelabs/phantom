@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import sys
-from typing import Optional
 
 import rich_click as click
 from rich.panel import Panel
@@ -61,14 +60,14 @@ def _format_metric_name(key: str) -> str:
     return " ".join(result)
 
 
-def _fmt(value: Optional[float]) -> str:
+def _fmt(value: float | None) -> str:
     """Format a float for table display, or dash if None."""
     if value is None:
         return "-"
     return f"{value:.2f}"
 
 
-def _fmt_range(target_range: Optional[list[float]]) -> str:
+def _fmt_range(target_range: list[float] | None) -> str:
     """Format a target range for display."""
     if target_range is None or len(target_range) < 2:
         return "-"

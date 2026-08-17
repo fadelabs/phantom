@@ -141,7 +141,7 @@ def _detect_sample_rate_mismatch(
     if len(unique_rates) <= 1:
         return
 
-    for stem_name, stem_data in all_results.items():
+    for stem_data in all_results.values():
         if "error" in stem_data:
             continue
 

@@ -294,10 +294,9 @@ def update(yes: bool) -> None:
         )
         return
 
-    if not yes:
-        if not click.confirm("Update now?", default=True):
-            console.print("[dim]Update cancelled[/dim]")
-            return
+    if not yes and not click.confirm("Update now?", default=True):
+        console.print("[dim]Update cancelled[/dim]")
+        return
 
     console.print(f"[dim]Installing phantom-audio {latest}...[/dim]")
 
@@ -307,6 +306,7 @@ def update(yes: bool) -> None:
             capture_output=True,
             text=True,
             timeout=120,
+            check=False,
         )
 
         # NOTE (brittle, intentionally deferred): the extras-preserving reinstall
@@ -325,6 +325,7 @@ def update(yes: bool) -> None:
                     capture_output=True,
                     text=True,
                     timeout=30,
+                    check=False,
                 )
                 installed_pkg = _installed_package_spec(list_proc.stdout)
             except Exception:
@@ -337,6 +338,7 @@ def update(yes: bool) -> None:
                 capture_output=True,
                 text=True,
                 timeout=120,
+                check=False,
             )
     except subprocess.TimeoutExpired:
         console.print(

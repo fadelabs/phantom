@@ -14,7 +14,8 @@ import hashlib
 import logging
 import threading
 from collections import OrderedDict
-from typing import TYPE_CHECKING, Any, Callable, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
+from collections.abc import Callable
 
 from phantom._settings import AnalysisSettings, analysis_settings
 
@@ -53,7 +54,7 @@ class AnalysisCache:
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _content_digest(self, audio: AudioData) -> "hashlib._Hash":
+    def _content_digest(self, audio: AudioData) -> hashlib._Hash:
         """Return a SHA-256 object pre-fed with the per-instance content bytes.
 
         The digest state (sample bytes + sample rate + channel count) is

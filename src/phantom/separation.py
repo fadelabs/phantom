@@ -13,7 +13,7 @@ that pulls in phantom-audio-separation.
 from __future__ import annotations
 
 from importlib.metadata import entry_points
-from typing import Callable, Optional
+from collections.abc import Callable
 
 from pydantic import BaseModel
 
@@ -30,7 +30,7 @@ class SeparationResult(BaseModel):
     stems: dict[str, str]
 
 
-def _load_backend() -> Optional[Callable[[str, str], SeparationResult]]:
+def _load_backend() -> Callable[[str, str], SeparationResult] | None:
     """Discover and load the first installed separation backend plugin.
 
     Returns the backend callable, or None when no plugin is installed.

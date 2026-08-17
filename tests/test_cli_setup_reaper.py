@@ -515,16 +515,16 @@ class TestRunStepTimeout:
         """_run_step raises ClickException with 'timed out' when subprocess times out."""
         from phantom.cli.setup_reaper import _run_step
 
-        with patch(
-            "phantom.cli.setup_reaper.subprocess.run",
-            side_effect=subprocess.TimeoutExpired(
-                cmd=["git", "clone", "https://example.com"], timeout=30
+        with (
+            patch(
+                "phantom.cli.setup_reaper.subprocess.run",
+                side_effect=subprocess.TimeoutExpired(
+                    cmd=["git", "clone", "https://example.com"], timeout=30
+                ),
             ),
+            pytest.raises(click.ClickException, match="timed out"),
         ):
-            with pytest.raises(click.ClickException, match="timed out"):
-                _run_step(
-                    ["git", "clone", "https://example.com"], "Git clone", timeout=30
-                )
+            _run_step(["git", "clone", "https://example.com"], "Git clone", timeout=30)
 
     def test_timeout_passes_to_subprocess(self):
         """_run_step passes timeout parameter to subprocess.run."""
@@ -541,14 +541,16 @@ class TestRunStepTimeout:
         """Timeout error message includes '30 seconds' and 'Check your connection'."""
         from phantom.cli.setup_reaper import _run_step
 
-        with patch(
-            "phantom.cli.setup_reaper.subprocess.run",
-            side_effect=subprocess.TimeoutExpired(cmd=["git", "pull"], timeout=30),
-        ):
-            with pytest.raises(
+        with (
+            patch(
+                "phantom.cli.setup_reaper.subprocess.run",
+                side_effect=subprocess.TimeoutExpired(cmd=["git", "pull"], timeout=30),
+            ),
+            pytest.raises(
                 click.ClickException, match=r"30 seconds.*Check your connection"
-            ):
-                _run_step(["git", "pull"], "Git pull", timeout=30)
+            ),
+        ):
+            _run_step(["git", "pull"], "Git pull", timeout=30)
 
     def test_git_clone_uses_timeout_constant(self, runner, tmp_path):
         """setup-reaper passes _GIT_TIMEOUT_SECONDS to git clone call."""

@@ -327,7 +327,7 @@ async def test_match_to_reference_live(client, live_mix, live_stems, tmp_path):
         pytest.skip("No live stems available for reference matching")
 
     # Use the first available stem as target, mix as reference
-    target_path = list(live_stems.values())[0]
+    target_path = next(iter(live_stems.values()))
     output_path = str(tmp_path / "matched.wav")
 
     result = await client.call_tool(
@@ -393,7 +393,7 @@ async def test_compare_to_reference_live(client, live_mix, live_stems):
     if not live_stems:
         pytest.skip("No live stems available for reference comparison")
 
-    reference_path = list(live_stems.values())[0]
+    reference_path = next(iter(live_stems.values()))
     result = await client.call_tool(
         "compare_to_reference",
         {"file_path": live_mix, "reference_path": reference_path},

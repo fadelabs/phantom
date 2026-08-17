@@ -10,7 +10,7 @@ Uses Essentia's standard-mode algorithms for all spectral feature extraction.
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import ClassVar, Optional
+from typing import ClassVar
 
 import numpy as np
 import essentia.standard as es
@@ -36,12 +36,12 @@ from phantom._utils import guarded_mono, wrap_errors
 class SpectralResult(RoundedModel):
     """Result of spectral analysis."""
 
-    spectral_centroid_hz: Optional[float] = None
-    spectral_rolloff_hz: Optional[float] = None
-    spectral_flatness: Optional[float] = None
-    spectral_contrast: Optional[list[float]] = None
-    dissonance: Optional[float] = None
-    octave_band_energy_db: Optional[OctaveBandEnergyDb] = None
+    spectral_centroid_hz: float | None = None
+    spectral_rolloff_hz: float | None = None
+    spectral_flatness: float | None = None
+    spectral_contrast: list[float] | None = None
+    dissonance: float | None = None
+    octave_band_energy_db: OctaveBandEnergyDb | None = None
 
     _ROUND_FIELDS: ClassVar[dict[str, Callable[[object], object]]] = {
         "spectral_centroid_hz": round_hz,

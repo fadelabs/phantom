@@ -120,6 +120,14 @@ extend-ignore = [
     "B904",  # raise inside except without `from` (13x)
     "B905",  # zip without strict= (7x)
     "I001",  # unsorted imports (97x) -- run `ruff check --fix --select I001`
+
+    # Not debt -- deliberate design. Broad `except Exception` backs the
+    # PhantomError hierarchy's graceful degradation, and silent
+    # try/except-pass or try/except-continue is how fire-and-forget and
+    # best-effort cleanup paths avoid ever crashing the caller.
+    "BLE001",  # blind `except Exception` (20x)
+    "S110",  # `try`-`except`-`pass` (5x)
+    "S112",  # `try`-`except`-`continue` (2x)
 ]
 
 [tool.ruff.lint.per-file-ignores]

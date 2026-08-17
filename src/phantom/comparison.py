@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from collections.abc import Callable
 from functools import partial
-from typing import ClassVar, Optional
+from typing import ClassVar
 
 import numpy as np
 from pydantic import BaseModel
@@ -66,19 +66,19 @@ _BASS_MONO_THRESHOLD = 0.95
 class DeviationResult(BaseModel):
     """Deviation of a measured value from a target or reference."""
 
-    value: Optional[float] = None
-    target: Optional[float] = None
-    reference: Optional[float] = None
-    deviation: Optional[float] = None
+    value: float | None = None
+    target: float | None = None
+    reference: float | None = None
+    deviation: float | None = None
     rating: str = "unmeasurable"
 
 
 class RangeDeviationResult(RoundedModel):
     """Deviation of a measured value from a target range."""
 
-    value: Optional[float] = None
-    target_range: Optional[list[float]] = None
-    deviation: Optional[float] = None
+    value: float | None = None
+    target_range: list[float] | None = None
+    deviation: float | None = None
     rating: str = "unmeasurable"
 
     # Unit-neutral list rounding: target_range is a LUFS/dB bound pair, not a
@@ -134,9 +134,9 @@ class StereoReferenceComparisonSection(BaseModel):
 
 
 class MetricDiff(RoundedModel):
-    before: Optional[float] = None
-    after: Optional[float] = None
-    change: Optional[float] = None
+    before: float | None = None
+    after: float | None = None
+    change: float | None = None
 
     _ROUND_FIELDS: ClassVar[dict[str, Callable[[object], object]]] = {
         "before": round_db,
@@ -159,17 +159,17 @@ class MatchAdjustments(BaseModel):
 
 
 class ProfileComparisonResult(BaseModel):
-    loudness: Optional[LoudnessProfileComparisonSection] = None
-    frequency: Optional[FrequencyDeviationMap] = None
-    dynamics: Optional[DynamicsComparisonSection] = None
-    stereo: Optional[StereoProfileComparisonSection] = None
+    loudness: LoudnessProfileComparisonSection | None = None
+    frequency: FrequencyDeviationMap | None = None
+    dynamics: DynamicsComparisonSection | None = None
+    stereo: StereoProfileComparisonSection | None = None
 
 
 class ReferenceComparisonResult(BaseModel):
-    loudness: Optional[LoudnessReferenceComparisonSection] = None
-    frequency: Optional[FrequencyDeviationMap] = None
-    dynamics: Optional[DynamicsReferenceComparisonSection] = None
-    stereo: Optional[StereoReferenceComparisonSection] = None
+    loudness: LoudnessReferenceComparisonSection | None = None
+    frequency: FrequencyDeviationMap | None = None
+    dynamics: DynamicsReferenceComparisonSection | None = None
+    stereo: StereoReferenceComparisonSection | None = None
 
 
 class MatchResult(BaseModel):
@@ -714,21 +714,21 @@ def match_to_reference(
 
 
 __all__ = [
+    "DeviationResult",
+    "DynamicsComparisonSection",
+    "DynamicsReferenceComparisonSection",
+    "LoudnessProfileComparisonSection",
+    "LoudnessReferenceComparisonSection",
+    "MatchAdjustments",
+    "MatchResult",
+    "MetricDiff",
+    "MonoBelowResult",
+    "ProfileComparisonResult",
+    "RangeDeviationResult",
+    "ReferenceComparisonResult",
+    "StereoProfileComparisonSection",
+    "StereoReferenceComparisonSection",
     "compare_to_profile",
     "compare_to_reference",
     "match_to_reference",
-    "DeviationResult",
-    "RangeDeviationResult",
-    "MonoBelowResult",
-    "ProfileComparisonResult",
-    "ReferenceComparisonResult",
-    "MatchResult",
-    "MatchAdjustments",
-    "MetricDiff",
-    "LoudnessProfileComparisonSection",
-    "DynamicsComparisonSection",
-    "StereoProfileComparisonSection",
-    "LoudnessReferenceComparisonSection",
-    "DynamicsReferenceComparisonSection",
-    "StereoReferenceComparisonSection",
 ]

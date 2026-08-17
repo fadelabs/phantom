@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import os
 from functools import cached_property
-from typing import Optional
 
 import numpy as np
 import soundfile as sf
@@ -68,10 +67,10 @@ class AudioData(BaseModel):
     num_channels: int
     duration: float
     num_samples: int
-    file_path: Optional[str] = None
+    file_path: str | None = None
 
     @model_validator(mode="after")
-    def _validate_samples(self) -> "AudioData":
+    def _validate_samples(self) -> AudioData:
         """Validate that samples array shape matches declared metadata.
 
         Raises:

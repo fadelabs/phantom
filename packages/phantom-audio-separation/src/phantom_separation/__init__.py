@@ -15,4 +15,4 @@ except PackageNotFoundError:
 
 from phantom_separation.demucs_backend import separate_stems
 
-__all__ = ["separate_stems", "__version__"]
+__all__ = ["__version__", "separate_stems"]

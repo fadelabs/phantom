@@ -121,7 +121,7 @@ class TestClipping:
         samples, sr = clipped_sine
         audio = _make_audio(samples, sr)
         result = detect_problems(audio)
-        clipping = [p for p in result.problems if p.type == "clipping"][0]
+        clipping = next(p for p in result.problems if p.type == "clipping")
         assert clipping.severity == "dealbreaker"
 
     def test_clipping_details_has_count_and_percent(self, clipped_sine):
@@ -129,7 +129,7 @@ class TestClipping:
         samples, sr = clipped_sine
         audio = _make_audio(samples, sr)
         result = detect_problems(audio)
-        clipping = [p for p in result.problems if p.type == "clipping"][0]
+        clipping = next(p for p in result.problems if p.type == "clipping")
         assert clipping.details.clipped_samples > 0
         assert clipping.details.clipped_percent > 0
 
@@ -164,7 +164,7 @@ class TestDCOffset:
         samples, sr = dc_offset_sine
         audio = _make_audio(samples, sr)
         result = detect_problems(audio)
-        dc = [p for p in result.problems if p.type == "dc_offset"][0]
+        dc = next(p for p in result.problems if p.type == "dc_offset")
         assert dc.severity == "minor"
 
     def test_dc_offset_value_approx_correct(self, dc_offset_sine):
@@ -172,7 +172,7 @@ class TestDCOffset:
         samples, sr = dc_offset_sine
         audio = _make_audio(samples, sr)
         result = detect_problems(audio)
-        dc = [p for p in result.problems if p.type == "dc_offset"][0]
+        dc = next(p for p in result.problems if p.type == "dc_offset")
         assert dc.details.dc_offset == pytest.approx(0.05, abs=0.01)
 
     def test_dc_offset_below_threshold_no_detection(self):
@@ -325,7 +325,7 @@ class TestNoiseFloor:
         samples, sr = noisy_signal
         audio = _make_audio(samples, sr)
         result = detect_problems(audio)
-        nf = [p for p in result.problems if p.type == "noise_floor"][0]
+        nf = next(p for p in result.problems if p.type == "noise_floor")
         assert "noise_floor_dbfs" in nf.details
 
     def test_clean_sine_no_noise_floor_problem(self, mono_sine_440hz):
@@ -359,7 +359,7 @@ class TestSNR:
         samples, sr = noisy_signal
         audio = _make_audio(samples, sr)
         result = detect_problems(audio)
-        snr = [p for p in result.problems if p.type == "snr"][0]
+        snr = next(p for p in result.problems if p.type == "snr")
         assert "snr_db" in snr.details
         assert "quality" in snr.details
 
@@ -522,7 +522,7 @@ class TestHum:
         samples, sr = signal_with_hum
         audio = _make_audio(samples, sr)
         result = detect_problems(audio)
-        hum = [p for p in result.problems if p.type == "hum"][0]
+        hum = next(p for p in result.problems if p.type == "hum")
         assert hum.severity == "significant"
 
     def test_hum_details_has_frequency(self, signal_with_hum):
@@ -530,7 +530,7 @@ class TestHum:
         samples, sr = signal_with_hum
         audio = _make_audio(samples, sr)
         result = detect_problems(audio)
-        hum = [p for p in result.problems if p.type == "hum"][0]
+        hum = next(p for p in result.problems if p.type == "hum")
         assert "primary_frequency_hz" in hum.details
         assert hum.details.primary_frequency_hz == pytest.approx(60.0, abs=5.0)
 

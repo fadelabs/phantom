@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from functools import partial
-from typing import ClassVar, Optional
+from typing import ClassVar
 
 import numpy as np
 import scipy.signal as sig
@@ -42,20 +42,20 @@ class PerBandCorrelation(FlatMapModel):
     the file's sample rate are simply absent (fields stay unset).
     """
 
-    sub: Optional[float] = None
-    low: Optional[float] = None
-    low_mid: Optional[float] = None
-    mid: Optional[float] = None
-    high: Optional[float] = None
-    air: Optional[float] = None
+    sub: float | None = None
+    low: float | None = None
+    low_mid: float | None = None
+    mid: float | None = None
+    high: float | None = None
+    air: float | None = None
 
 
 class PhaseResult(RoundedModel):
     """Result of phase coherence analysis."""
 
-    phase_correlation: Optional[float] = None
-    per_band_correlation: Optional[PerBandCorrelation] = None
-    polarity_inverted: Optional[bool] = None
+    phase_correlation: float | None = None
+    per_band_correlation: PerBandCorrelation | None = None
+    polarity_inverted: bool | None = None
 
     _ROUND_FIELDS: ClassVar[dict[str, Callable[[object], object]]] = {
         "phase_correlation": round_ratio,
@@ -68,10 +68,10 @@ class PhaseResult(RoundedModel):
 class PhaseCompareResult(RoundedModel):
     """Result of cross-file phase comparison."""
 
-    delay_samples: Optional[int] = None
-    delay_ms: Optional[float] = None
-    correlation: Optional[float] = None
-    polarity_inverted: Optional[bool] = None
+    delay_samples: int | None = None
+    delay_ms: float | None = None
+    correlation: float | None = None
+    polarity_inverted: bool | None = None
 
     _ROUND_FIELDS: ClassVar[dict[str, Callable[[object], object]]] = {
         "delay_ms": round_ms,

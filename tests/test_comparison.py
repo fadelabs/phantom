@@ -351,7 +351,7 @@ class TestCompareToProfile:
         result = compare_to_profile(audio_3s, profile)
         freq = result.frequency
         # Each band entry should be a DeviationResult with value and rating
-        for band_key, dev in freq.items():
+        for dev in freq.values():
             assert isinstance(dev, DeviationResult)
             assert dev.value is not None or dev.rating == "unmeasurable"
 
@@ -434,7 +434,7 @@ class TestCompareToReference:
         result = compare_to_reference(audio_3s, audio_3s)
         freq = result.frequency
         # Each band should be a DeviationResult
-        for band_key, dev in freq.items():
+        for dev in freq.values():
             assert isinstance(dev, DeviationResult)
             assert dev.value is not None or dev.rating == "unmeasurable"
             assert dev.reference is not None or dev.rating == "unmeasurable"
@@ -687,9 +687,11 @@ class TestMatchToReferenceOverwrite:
             f.write("existing")
 
         mock_mg = MagicMock()
-        with patch.dict("sys.modules", {"matchering": mock_mg}):
-            with pytest.raises(AnalysisError, match="already exists"):
-                match_to_reference(target_path, ref_path, output_path)
+        with (
+            patch.dict("sys.modules", {"matchering": mock_mg}),
+            pytest.raises(AnalysisError, match="already exists"),
+        ):
+            match_to_reference(target_path, ref_path, output_path)
 
 
 class TestMatchToReference:
@@ -725,9 +727,11 @@ class TestMatchToReference:
         nonexistent = str(tmp_path / "nonexistent.wav")
 
         mock_mg = MagicMock()
-        with patch.dict("sys.modules", {"matchering": mock_mg}):
-            with pytest.raises(AudioLoadError, match="Target file not found"):
-                match_to_reference(nonexistent, ref_path, str(tmp_path / "out.wav"))
+        with (
+            patch.dict("sys.modules", {"matchering": mock_mg}),
+            pytest.raises(AudioLoadError, match="Target file not found"),
+        ):
+            match_to_reference(nonexistent, ref_path, str(tmp_path / "out.wav"))
 
     def test_missing_reference_raises_file_not_found(self, tmp_path, wav_file_factory):
         """AudioLoadError when reference_path does not exist."""
@@ -738,9 +742,11 @@ class TestMatchToReference:
         nonexistent = str(tmp_path / "nonexistent_ref.wav")
 
         mock_mg = MagicMock()
-        with patch.dict("sys.modules", {"matchering": mock_mg}):
-            with pytest.raises(AudioLoadError, match="Reference file not found"):
-                match_to_reference(target_path, nonexistent, str(tmp_path / "out.wav"))
+        with (
+            patch.dict("sys.modules", {"matchering": mock_mg}),
+            pytest.raises(AudioLoadError, match="Reference file not found"),
+        ):
+            match_to_reference(target_path, nonexistent, str(tmp_path / "out.wav"))
 
     def test_successful_match_returns_adjustment_summary(
         self, tmp_path, wav_file_factory
@@ -794,22 +800,26 @@ class TestMatchToReference:
         mock_mg.process.side_effect = RuntimeError("Matchering internal error")
         mock_mg.pcm24 = MagicMock(return_value="pcm24_result")
 
-        with patch.dict("sys.modules", {"matchering": mock_mg}):
-            with pytest.raises(AnalysisError, match="Reference matching failed"):
-                match_to_reference(target_path, ref_path, output_path)
+        with (
+            patch.dict("sys.modules", {"matchering": mock_mg}),
+            pytest.raises(AnalysisError, match="Reference matching failed"),
+        ):
+            match_to_reference(target_path, ref_path, output_path)
 
     def test_function_signature(self, tmp_path):
         """match_to_reference accepts exactly 3 positional string args."""
         # Calling with keyword args to verify the signature; AudioLoadError
         # is expected -- we're just verifying it accepts these parameter names.
         mock_mg = MagicMock()
-        with patch.dict("sys.modules", {"matchering": mock_mg}):
-            with pytest.raises(AudioLoadError):
-                match_to_reference(
-                    target_path=str(tmp_path / "a.wav"),
-                    reference_path=str(tmp_path / "b.wav"),
-                    output_path=str(tmp_path / "c.wav"),
-                )
+        with (
+            patch.dict("sys.modules", {"matchering": mock_mg}),
+            pytest.raises(AudioLoadError),
+        ):
+            match_to_reference(
+                target_path=str(tmp_path / "a.wav"),
+                reference_path=str(tmp_path / "b.wav"),
+                output_path=str(tmp_path / "c.wav"),
+            )
 
 
 class TestCompareToProfileSerialization:

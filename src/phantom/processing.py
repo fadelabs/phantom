@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from typing import Callable
+from collections.abc import Callable
 
 from pydantic import BaseModel
 
@@ -216,7 +216,7 @@ _ALLOWED_OPS_CACHE: dict[str, type] | None = None
 
 def get_allowed_operations() -> dict[str, type]:
     """Return the ALLOWED_OPERATIONS dict, building it on first call."""
-    global _ALLOWED_OPS_CACHE  # noqa: PLW0603
+    global _ALLOWED_OPS_CACHE
     if _ALLOWED_OPS_CACHE is None:
         _ALLOWED_OPS_CACHE = _build_allowed_operations()
     return _ALLOWED_OPS_CACHE
@@ -514,7 +514,7 @@ def _build_chain_from_problems(problems: list[ProblemItem]) -> list:
 # Module-level import for detect_problems so tests can monkeypatch it.
 # Already imported ProblemItem and ProblemsResult at the top; this adds
 # the function reference used by fix_audio at runtime.
-from phantom.problems import detect_problems  # noqa: E402
+from phantom.problems import detect_problems
 
 
 @wrap_errors("Audio processing failed")

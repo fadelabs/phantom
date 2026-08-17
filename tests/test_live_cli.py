@@ -27,6 +27,7 @@ def _run_phantom(*args, timeout=120):
         capture_output=True,
         text=True,
         timeout=timeout,
+        check=False,
     )
 
 
