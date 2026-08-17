@@ -73,10 +73,9 @@ jobs:
       - name: Run install.ps1 the way users do
         shell: powershell
         run: |
-          $inner = '$src = [System.IO.File]::ReadAllText("' + $PWD.Path + '\install.ps1", ' +
-                   '[System.Text.Encoding]::UTF8); Invoke-Expression $src'
           $p = Start-Process powershell -NoNewWindow -Wait -PassThru -ArgumentList `
-            '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', $inner
+            '-NoProfile', '-ExecutionPolicy', 'Bypass',
+            '-File', "$PWD\tests\install_ps1\run_installer.ps1"
           Write-Host "installer exit code: $($p.ExitCode)"
           exit $p.ExitCode
 
