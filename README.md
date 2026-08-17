@@ -45,8 +45,11 @@ Four layers that work together:
 No install needed. Run this on any audio file:
 
 ```bash
-uvx phantom-audio analyze your-track.wav
+uvx --from phantom-audio phantom analyze your-track.wav
 ```
+
+The distribution is `phantom-audio`; the command it installs is `phantom`. `uvx` assumes those
+match, so `--from` is required here.
 
 Or install it:
 
@@ -194,16 +197,21 @@ Both installers (`install.sh` and `install.ps1`) report anonymized install telem
 
 Two of those codes are specific to `install.sh`: the Windows installer rejects no architecture (`unsupported_arch`) and needs no external downloader (`no_downloader`).
 
-Telemetry is on by default. Opt out by setting the flag for the install command:
+Telemetry is on by default. Opt out by setting the flag on the shell that runs the script:
 
 ```bash
 # macOS / Linux
-PHANTOM_NO_TELEMETRY=1 curl -sSL https://fadelab.net/install | bash
+curl -sSL https://fadelab.net/install | PHANTOM_NO_TELEMETRY=1 bash
 ```
 
+The variable has to go on `bash`, not on `curl`. `PHANTOM_NO_TELEMETRY=1 curl ... | bash` exports it
+to the download process only, and the installer never sees it.
+
 ```powershell
-# Windows
-$env:PHANTOM_NO_TELEMETRY = "1"; irm https://fadelab.net/install.ps1 | iex
+# Windows (install.ps1 honors the same variable, but see the Windows note above —
+# the install cannot currently succeed on Windows)
+$env:PHANTOM_NO_TELEMETRY = "1"
+irm https://raw.githubusercontent.com/fadelabs/phantom/main/install.ps1 | iex
 ```
 
 ## Usage
