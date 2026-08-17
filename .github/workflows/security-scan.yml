@@ -27,7 +27,11 @@ jobs:
     name: PII and policy checks
     runs-on: ubuntu-latest
     steps:
+      # Full history: the planning-docs step below diffs against origin/main,
+      # which a shallow checkout does not fetch.
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - name: Check for PII
         run: |
@@ -61,7 +65,14 @@ jobs:
 
       - name: Check for planning docs
         run: |
-          if git diff --name-only origin/main...HEAD | grep -qE '^(\.planning/|\.claude/|docs/superpowers/)'; then
+          set -euo pipefail
+          # Resolve the base ref explicitly. Previously a shallow checkout made
+          # this diff fail, the pipeline handed grep an empty stream, grep
+          # exited 1, and the `if` read that as "nothing found" -- so the gate
+          # passed on every PR while looking green. Fail loudly instead.
+          git rev-parse --verify origin/main >/dev/null
+          CHANGED=$(git diff --name-only origin/main...HEAD)
+          if echo "$CHANGED" | grep -qE '^(\.planning/|\.claude/|docs/superpowers/)'; then
             echo "::error::Planning/internal docs detected in PR"
             exit 1
           fi
