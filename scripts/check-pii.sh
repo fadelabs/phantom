@@ -3,8 +3,11 @@
 set -euo pipefail
 
 # Check staged files only (not all tracked files)
+# ps1 and bats were missing: install.ps1, the four tests/install_ps1/*.ps1
+# helpers and the bats suites are tracked text in a public repo, so they carry
+# the same privacy rule as everything else and were never scanned.
 STAGED=$(git diff --cached --name-only --diff-filter=ACM | \
-  grep -E '\.(py|md|toml|json|yml|yaml|cfg|txt|rst|sh)$' | \
+  grep -E '\.(py|md|toml|json|yml|yaml|cfg|txt|rst|sh|ps1|bats)$' | \
   grep -v '^LICENSE$' | \
   grep -v '^README.md$' | \
   grep -v '^scripts/pre-push$' | \
