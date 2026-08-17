@@ -5,7 +5,8 @@ param(
     [string]$InstallScript = (Join-Path $PSScriptRoot '../../install.ps1')
 )
 
-$src = Get-Content $InstallScript -Raw
+# UTF-8 explicitly; see the note in scenario.ps1.
+$src = [System.IO.File]::ReadAllText((Resolve-Path $InstallScript).Path, [System.Text.Encoding]::UTF8)
 $src2 = $src -replace '(?m)^Main\s*$', '' -replace '(?m)^\[Net\.ServicePointManager\].*$', ''
 Invoke-Expression $src2
 

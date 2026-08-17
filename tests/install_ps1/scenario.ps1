@@ -6,7 +6,10 @@ param(
     [string]$InstallScript = (Join-Path $PSScriptRoot '../../install.ps1')
 )
 
-$src = Get-Content $InstallScript -Raw
+# Decoded as UTF-8 explicitly to match how `irm | iex` delivers the script.
+# Get-Content would assume ANSI on Windows PowerShell 5.1 for a file with no
+# byte-order mark, which mangles the script's Unicode glyphs into stray quotes.
+$src = [System.IO.File]::ReadAllText((Resolve-Path $InstallScript).Path, [System.Text.Encoding]::UTF8)
 
 # Drop the bottom-of-file `Main` invocation so sourcing only defines functions.
 $src = $src -replace '(?m)^Main\s*$', ''
