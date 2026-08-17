@@ -14,6 +14,7 @@ from phantom.facade import ANALYSIS_TYPES, AnalysisSpec
 from phantom.comparison import (
     FrequencyDeviationMap,
     _check_mono_below,
+    _CORRELATION_THRESHOLDS,
     _map_width_to_range,
     _normalize_band_energies,
     _rate_deviation,
@@ -1066,3 +1067,125 @@ class TestStereoWidthRating:
             _THRESHOLD_SLIGHT,
             _THRESHOLD_MODERATE,
         )
+
+
+# ---------------------------------------------------------------------------
+# TestReferenceStereoRating -- the compare_to_reference half of issue #56
+# ---------------------------------------------------------------------------
+
+
+class TestReferenceStereoRating:
+    """compare_to_reference must rate stereo on the ratio scale too.
+
+    compare_to_profile was fixed for issue #56, but the reference path called
+    _rate_deviation_ref without thresholds, so both stereo quantities fell back
+    to the dB defaults (1.0/3.0/6.0). Width gaps top out near 1.2 and
+    correlation gaps at 2.0, so on that scale almost everything read
+    "on_target" and "significantly_*" was unreachable for correlation.
+    """
+
+    @staticmethod
+    def _near_mono_3s() -> AudioData:
+        """3s stereo sine with the channels almost identical."""
+        sr = 44100
+        t = np.linspace(0, 3.0, sr * 3, endpoint=False, dtype=np.float32)
+        left = (0.5 * np.sin(2 * np.pi * 440 * t)).astype(np.float32)
+        right = left * np.float32(0.999)
+        return _make_stereo_audio(left, right, sr)
+
+    @staticmethod
+    def _decorrelated_3s() -> AudioData:
+        """3s stereo with an unrelated tone per channel: wide, uncorrelated."""
+        sr = 44100
+        t = np.linspace(0, 3.0, sr * 3, endpoint=False, dtype=np.float32)
+        left = (0.5 * np.sin(2 * np.pi * 440 * t)).astype(np.float32)
+        right = (0.5 * np.sin(2 * np.pi * 660 * t)).astype(np.float32)
+        return _make_stereo_audio(left, right, sr)
+
+    def test_width_difference_is_rated_not_collapsed(self):
+        """A near-mono mix against a wide reference cannot be on_target."""
+        result = compare_to_reference(self._near_mono_3s(), self._decorrelated_3s())
+        width = result.stereo.stereo_width
+        assert width.rating != "on_target"
+        assert width.rating.startswith("significantly")
+
+    def test_correlation_difference_is_rated_not_collapsed(self):
+        """Correlation near 1.0 against near 0.0 cannot be on_target."""
+        result = compare_to_reference(self._near_mono_3s(), self._decorrelated_3s())
+        corr = result.stereo.correlation
+        assert corr.rating != "on_target"
+        assert corr.rating.startswith("significantly")
+
+    def test_identical_audio_still_rates_on_target(self):
+        """Tightening the thresholds must not invent a deviation."""
+        audio = self._near_mono_3s()
+        result = compare_to_reference(audio, audio)
+        assert result.stereo.stereo_width.rating == "on_target"
+        assert result.stereo.correlation.rating == "on_target"
+
+    def test_correlation_thresholds_are_ratio_scaled_not_db(self):
+        """Guard against the dB thresholds being reintroduced here."""
+        assert _CORRELATION_THRESHOLDS[2] < 2.0, (
+            "significance threshold must sit below the 2.0 maximum gap between "
+            "two correlation values, or that rating is unreachable"
+        )
+        assert _CORRELATION_THRESHOLDS < (
+            _THRESHOLD_ON_TARGET,
+            _THRESHOLD_SLIGHT,
+            _THRESHOLD_MODERATE,
+        )
+
+
+# ---------------------------------------------------------------------------
+# TestFrequencyNormalization -- the comparison paths must actually normalize
+# ---------------------------------------------------------------------------
+
+
+class TestFrequencyNormalization:
+    """Frequency comparison must use normalized bands, not absolute ones.
+
+    _normalize_band_energies had unit tests, but nothing checked that
+    compare_to_profile and compare_to_reference *call* it: bypassing both call
+    sites while leaving the helper intact left the entire suite green.
+
+    Normalization is what lets a quiet mix and a loud one with the same
+    spectral shape compare the same way, so that is what these assert. Without
+    it, scaling the input by 0.1 shifts every band by -20 dB and both
+    assertions fail.
+    """
+
+    @staticmethod
+    def _shaped_noise(scale: float) -> AudioData:
+        """2s of fixed spectral shape at an arbitrary level.
+
+        Broadband rather than a few tones: every octave band needs real energy
+        for a level change to be a clean constant offset. With tones, the empty
+        top bands carry only numerical noise and do not scale linearly.
+        """
+        sr = 44100
+        rng = np.random.default_rng(4242)
+        sig = scale * 0.25 * rng.standard_normal(sr * 2)
+        return _make_audio(sig.astype(np.float32), sr)
+
+    def test_profile_comparison_is_level_invariant(self):
+        """Same spectral shape at two levels must give the same deviations."""
+        profile = _make_profile()
+        loud = [
+            d.deviation
+            for d in compare_to_profile(
+                self._shaped_noise(1.0), profile
+            ).frequency.values()
+        ]
+        quiet = [
+            d.deviation
+            for d in compare_to_profile(
+                self._shaped_noise(0.1), profile
+            ).frequency.values()
+        ]
+        assert loud == pytest.approx(quiet, abs=0.1)
+
+    def test_reference_comparison_is_level_invariant(self):
+        """A quiet mix against a loud reference of the same shape is on target."""
+        result = compare_to_reference(self._shaped_noise(0.1), self._shaped_noise(1.0))
+        deviations = [d.deviation for d in result.frequency.values()]
+        assert deviations == pytest.approx([0.0] * len(deviations), abs=0.1)

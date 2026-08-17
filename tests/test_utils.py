@@ -9,6 +9,7 @@ import pytest
 
 from phantom._utils import (
     _block_rms_db,
+    enforce_decode_limits,
     _get_env_float,
     _get_env_int,
     guarded_mono,
@@ -529,3 +530,40 @@ class TestAtomicWriteText:
         atomic_write_text(target, "safe")
         assert target.read_text() == "safe"
         assert outside.read_text() == "untouched"  # not clobbered
+
+
+# ---------------------------------------------------------------------------
+# enforce_decode_limits -- size check must honour the documented error type
+# ---------------------------------------------------------------------------
+
+
+class TestEnforceDecodeLimitsErrors:
+    """The size check sits under the same AudioLoadError contract as the read."""
+
+    def test_size_check_failure_raises_audio_load_error(self, tmp_path, monkeypatch):
+        """A file that vanishes after the header read must not leak an OSError.
+
+        sf.info is wrapped, but os.path.getsize sat outside the guard, so a
+        file removed or made unreadable between the two calls surfaced a raw
+        FileNotFoundError instead of the documented AudioLoadError.
+        """
+        import soundfile as sf
+
+        wav = tmp_path / "vanishing.wav"
+        sr = 44100
+        samples = (0.2 * np.sin(2 * np.pi * 440 * np.arange(sr) / sr)).astype(
+            np.float32
+        )
+        sf.write(str(wav), samples, sr)
+
+        real_getsize = os.path.getsize
+
+        def vanishing(p):
+            if str(p).endswith("vanishing.wav"):
+                raise FileNotFoundError(2, "No such file or directory", str(p))
+            return real_getsize(p)
+
+        monkeypatch.setattr(os.path, "getsize", vanishing)
+
+        with pytest.raises(AudioLoadError):
+            enforce_decode_limits(str(wav))

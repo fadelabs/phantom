@@ -116,10 +116,13 @@ def fix(
                     f"{problem.type}: {problem.message}[/{style}]"
                 )
 
-            # Ask user to select problems
+            # Ask user to select problems. Pass the module's console: without
+            # it rich builds its own bound to stdout, which puts the prompt in
+            # front of the JSON document under --json (Pitfall 1).
             selection = Prompt.ask(
                 "\nEnter problem numbers to fix (comma-separated, or 'all')",
                 default="all",
+                console=console,
             )
 
             if selection.strip().lower() != "all":
