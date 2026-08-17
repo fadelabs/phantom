@@ -279,8 +279,12 @@ main() {
     # ── Step 4: Configure MCP server (CR-01: check exit code properly) ──
     printf "\n  %sConfiguring%s\n\n" "$BOLD" "$RESET"
 
+    # PIPESTATUS[0], not pipefail: grep -v exits 1 when it selects no lines, so
+    # under pipefail a setup that succeeded quietly -- or printed only the
+    # warnings this filter exists to drop -- was reported as a failure. What we
+    # want is phantom's own status, with grep only shaping the output.
     run_with_spinner "MCP server" \
-        bash -c 'set -o pipefail; cd "$HOME" && phantom setup --skip-plugin --skip-reaper 2>&1 | grep -v "DeprecationWarning\|AuthlibDeprecation\|scipy.ndimage\|from authlib\|from scipy\|It will be compatible" > /dev/null' \
+        bash -c 'cd "$HOME" || exit 1; phantom setup --skip-plugin --skip-reaper 2>&1 | grep -v "DeprecationWarning\|AuthlibDeprecation\|scipy.ndimage\|from authlib\|from scipy\|It will be compatible" > /dev/null; exit ${PIPESTATUS[0]}' \
         || warn "MCP setup had issues — run 'phantom setup' to retry"
 
     # ── Step 5: Reaper bridge ───────────────────────────────
@@ -292,7 +296,7 @@ main() {
 
     if [ -d "$REAPER_SCRIPTS" ]; then
         run_with_spinner "Reaper bridge" \
-            bash -c 'set -o pipefail; phantom setup-reaper 2>&1 | grep -v "DeprecationWarning\|AuthlibDeprecation\|scipy.ndimage\|from authlib\|from scipy\|It will be compatible" > /dev/null' \
+            bash -c 'phantom setup-reaper 2>&1 | grep -v "DeprecationWarning\|AuthlibDeprecation\|scipy.ndimage\|from authlib\|from scipy\|It will be compatible" > /dev/null; exit ${PIPESTATUS[0]}' \
             || warn "Reaper setup had issues — run 'phantom setup-reaper' to retry"
     else
         info "Reaper not detected — skipping bridge"
