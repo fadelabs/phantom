@@ -117,7 +117,7 @@ main() {
     case "$OS" in
         Darwin) PLATFORM="macOS" ;;
         Linux)  PLATFORM="Linux" ;;
-        *)      err "Unsupported OS: $OS (phantom supports macOS and Linux). Windows users: see install.ps1" "unsupported_os" ;;
+        *)      err "Unsupported OS: $OS (phantom supports macOS and Linux). Windows cannot install phantom-audio yet — essentia publishes no Windows package. Run this under WSL. See https://github.com/fadelabs/phantom/issues/52" "unsupported_os" ;;
     esac
 
     case "$ARCH" in

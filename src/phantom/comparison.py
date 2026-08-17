@@ -53,7 +53,29 @@ _WIDTH_RANGES: dict[str, tuple[float, float]] = {
     "narrow": (0.0, 0.3),
     "moderate": (0.3, 0.7),
     "wide": (0.7, 1.2),
+    # Used by the ambient profile. Without an entry it fell through to the
+    # (0.0, 2.0) default in _map_width_to_range, which spans the entire usable
+    # domain -- so every width, mono included, rated "on_target" and the check
+    # did nothing (issue #56). Continues the ladder; 2.0 matches the ceiling
+    # the old fallback already implied.
+    "very_wide": (1.2, 2.0),
 }
+
+# Stereo width is a side/mid ratio, not a dB quantity, so the dB thresholds
+# above do not apply to it. The largest possible below-range deviation is 0.7
+# (a mono file against a "wide" profile), which is under _THRESHOLD_ON_TARGET
+# -- rating width on the dB scale collapsed every result to "on_target".
+#
+# 0.25 for "significantly off" is set by the tightest constraint: "moderate"
+# (0.3-0.7) is the most common descriptor and only allows a 0.3 below-range
+# deviation, so the threshold has to sit under that for a mono mix to register
+# as significantly below its target. The 0.05/0.15 steps keep roughly the 1:3:6
+# shape of the dB thresholds.
+#
+# A "narrow" target starts at 0.0, so nothing can fall below it -- the
+# below-range ratings are unreachable there by construction, not by
+# calibration.
+_WIDTH_THRESHOLDS = (0.05, 0.15, 0.25)
 
 _BASS_MONO_THRESHOLD = 0.95
 
@@ -424,7 +446,10 @@ def compare_to_profile(
     width_range = _map_width_to_range(profile.stereo.width)
     if stereo.stereo_width is not None:
         width_dev = _rate_range_deviation(
-            stereo.stereo_width, width_range, round_fn=round_ratio
+            stereo.stereo_width,
+            width_range,
+            thresholds=_WIDTH_THRESHOLDS,
+            round_fn=round_ratio,
         )
     else:
         width_dev = RangeDeviationResult(rating="unmeasurable")

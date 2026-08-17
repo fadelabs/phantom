@@ -14,10 +14,16 @@ from phantom.facade import ANALYSIS_TYPES, AnalysisSpec
 from phantom.comparison import (
     FrequencyDeviationMap,
     _check_mono_below,
+    _map_width_to_range,
     _normalize_band_energies,
     _rate_deviation,
     _rate_range_deviation,
+    _THRESHOLD_MODERATE,
+    _THRESHOLD_ON_TARGET,
+    _THRESHOLD_SLIGHT,
     _unmeasurable_deviation,
+    _WIDTH_RANGES,
+    _WIDTH_THRESHOLDS,
     compare_to_profile,
     compare_to_reference,
     match_to_reference,
@@ -41,6 +47,8 @@ from phantom.exceptions import (
 )
 from phantom._profiles import (
     FrequencyTargets,
+    list_profiles,
+    load_profile,
     LoudnessTargets,
     ReferenceProfile,
     SpatialConventions,
@@ -964,3 +972,97 @@ class TestMatchOutputValidation:
                 "/nonexistent/r.wav",
                 str(tmp_path / "elsewhere" / "out.wav"),
             )
+
+
+# ---------------------------------------------------------------------------
+# TestStereoWidthRating -- regression cover for issue #56
+# ---------------------------------------------------------------------------
+
+
+class TestStereoWidthRating:
+    """Stereo width must actually be rated, not collapse to on_target.
+
+    Width is a side/mid ratio, not a dB value. Rating it with the dB
+    thresholds (1.0/3.0/6.0) made every below-range branch unreachable,
+    because the largest possible below-range deviation is 0.7.
+    """
+
+    @staticmethod
+    def _near_mono_3s() -> AudioData:
+        """3s stereo sine with the channels almost identical (width ~0)."""
+        sr = 44100
+        t = np.linspace(0, 3.0, sr * 3, endpoint=False, dtype=np.float32)
+        left = (0.5 * np.sin(2 * np.pi * 440 * t)).astype(np.float32)
+        right = left * np.float32(0.999)
+        return _make_stereo_audio(left, right, sr)
+
+    def test_near_mono_against_wide_profile_is_not_on_target(self):
+        """A near-mono mix cannot be 'on_target' for a wide-profile genre."""
+        audio = self._near_mono_3s()
+        result = compare_to_profile(
+            audio,
+            _make_profile(stereo=StereoConventions(width="wide", mono_below_hz=120.0)),
+        )
+        width = result.stereo.width
+        assert width.rating != "on_target"
+        assert width.rating == "significantly_below"
+        assert width.deviation < 0
+
+    def test_near_mono_against_moderate_profile_is_not_on_target(self):
+        """'moderate' is the most common descriptor and the tightest band.
+
+        Its below-range span is only 0.3, so the significance threshold has to
+        sit under that for a mono mix to register at all.
+        """
+        audio = self._near_mono_3s()
+        result = compare_to_profile(
+            audio,
+            _make_profile(
+                stereo=StereoConventions(width="moderate", mono_below_hz=120.0)
+            ),
+        )
+        assert result.stereo.width.rating == "significantly_below"
+
+    def test_narrow_profile_accepts_near_mono(self):
+        """A narrow target starts at 0.0, so near-mono genuinely is on target."""
+        audio = self._near_mono_3s()
+        result = compare_to_profile(
+            audio,
+            _make_profile(
+                stereo=StereoConventions(width="narrow", mono_below_hz=120.0)
+            ),
+        )
+        assert result.stereo.width.rating == "on_target"
+
+    def test_very_wide_descriptor_has_a_real_range(self):
+        """'very_wide' is used by the ambient profile.
+
+        Without a _WIDTH_RANGES entry it fell through to the (0.0, 2.0)
+        catch-all, which spans the whole usable domain and made the check a
+        no-op for every input.
+        """
+        assert "very_wide" in _WIDTH_RANGES
+        low, high = _map_width_to_range("very_wide")
+        assert low > 0.0
+        assert (low, high) != (0.0, 2.0)
+
+    def test_every_bundled_profile_width_descriptor_is_mapped(self):
+        """No shipped profile may rely on the catch-all range."""
+        for name in list_profiles():
+            descriptor = load_profile(name).stereo.width
+            assert descriptor in _WIDTH_RANGES, (
+                f"profile '{name}' uses unmapped width descriptor "
+                f"'{descriptor}', which silently disables its width check"
+            )
+
+    def test_width_thresholds_are_ratio_scaled_not_db(self):
+        """Guard against the dB thresholds being reintroduced here."""
+        assert _WIDTH_THRESHOLDS[2] < 0.3, (
+            "significance threshold must sit below the 0.3 below-range span of "
+            "the 'moderate' descriptor, or that rating is unreachable"
+        )
+        assert _WIDTH_THRESHOLDS < (
+            _THRESHOLD_ON_TARGET,
+            _THRESHOLD_SLIGHT,
+            _THRESHOLD_MODERATE,
+        )
