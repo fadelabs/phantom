@@ -1134,3 +1134,58 @@ class TestReferenceStereoRating:
             _THRESHOLD_SLIGHT,
             _THRESHOLD_MODERATE,
         )
+
+
+# ---------------------------------------------------------------------------
+# TestFrequencyNormalization -- the comparison paths must actually normalize
+# ---------------------------------------------------------------------------
+
+
+class TestFrequencyNormalization:
+    """Frequency comparison must use normalized bands, not absolute ones.
+
+    _normalize_band_energies had unit tests, but nothing checked that
+    compare_to_profile and compare_to_reference *call* it: bypassing both call
+    sites while leaving the helper intact left the entire suite green.
+
+    Normalization is what lets a quiet mix and a loud one with the same
+    spectral shape compare the same way, so that is what these assert. Without
+    it, scaling the input by 0.1 shifts every band by -20 dB and both
+    assertions fail.
+    """
+
+    @staticmethod
+    def _shaped_noise(scale: float) -> AudioData:
+        """2s of fixed spectral shape at an arbitrary level.
+
+        Broadband rather than a few tones: every octave band needs real energy
+        for a level change to be a clean constant offset. With tones, the empty
+        top bands carry only numerical noise and do not scale linearly.
+        """
+        sr = 44100
+        rng = np.random.default_rng(4242)
+        sig = scale * 0.25 * rng.standard_normal(sr * 2)
+        return _make_audio(sig.astype(np.float32), sr)
+
+    def test_profile_comparison_is_level_invariant(self):
+        """Same spectral shape at two levels must give the same deviations."""
+        profile = _make_profile()
+        loud = [
+            d.deviation
+            for d in compare_to_profile(
+                self._shaped_noise(1.0), profile
+            ).frequency.values()
+        ]
+        quiet = [
+            d.deviation
+            for d in compare_to_profile(
+                self._shaped_noise(0.1), profile
+            ).frequency.values()
+        ]
+        assert loud == pytest.approx(quiet, abs=0.1)
+
+    def test_reference_comparison_is_level_invariant(self):
+        """A quiet mix against a loud reference of the same shape is on target."""
+        result = compare_to_reference(self._shaped_noise(0.1), self._shaped_noise(1.0))
+        deviations = [d.deviation for d in result.frequency.values()]
+        assert deviations == pytest.approx([0.0] * len(deviations), abs=0.1)
