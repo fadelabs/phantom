@@ -39,23 +39,14 @@ jobs:
         with:
           python-version: "3.12"
 
+      # The interpreter is chosen inside `run` rather than via `shell`, because
+      # `shell` is not an expression-enabled key and a matrix reference there
+      # makes the whole workflow fail to load.
       - name: Report PowerShell version
-        shell: ${{ matrix.pwsh }}
-        run: $PSVersionTable | Format-List
+        run: ${{ matrix.pwsh }} -NoProfile -Command '$PSVersionTable | Format-List'
 
       - name: Parse check
-        shell: ${{ matrix.pwsh }}
-        run: |
-          $errors = $null; $tokens = $null
-          [System.Management.Automation.Language.Parser]::ParseFile(
-            "$PWD\install.ps1", [ref]$tokens, [ref]$errors) | Out-Null
-          if ($errors) {
-            $errors | ForEach-Object {
-              Write-Host "PARSE ERROR line $($_.Extent.StartLineNumber): $($_.Message)"
-            }
-            exit 1
-          }
-          Write-Host "install.ps1 parses clean"
+        run: ${{ matrix.pwsh }} -NoProfile -File tests/install_ps1/parse_check.ps1
 
       - name: Verify telemetry payload
         env:
