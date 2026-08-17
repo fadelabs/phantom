@@ -538,3 +538,64 @@ class TestPhatWindow:
         delay_samples, delay_ms = _gcc_phat_delay(sig1, sig2, sr)
         assert isinstance(delay_samples, int)
         assert isinstance(delay_ms, float)
+
+
+# ---------------------------------------------------------------------------
+# TestShortSignalDelay -- the lag window must stay inside the correlation
+# ---------------------------------------------------------------------------
+
+
+class TestShortSignalDelay:
+    """_gcc_phat_delay must not run its lag window past the correlation length.
+
+    max_shift is 2205 samples at 44.1 kHz (50 ms). Left unclamped, short inputs
+    overlapped the two halves of the lag region, and inputs shorter than
+    max_shift itself clamped the negative slice to the whole array and pinned
+    every result at -max_shift. compare_phase truncates both signals to the
+    shorter one, so one short clip was enough to trigger it against any file.
+
+    Broadband noise is used rather than a tone: a 440 Hz tone repeats every
+    ~100 samples, so its correlation peak is genuinely ambiguous at these lags.
+    """
+
+    @staticmethod
+    def _delayed_pair(length: int, delay: int) -> tuple[np.ndarray, np.ndarray]:
+        """Return (sig1, sig2) where sig2 is sig1 delayed by *delay* samples."""
+        rng = np.random.default_rng(1234)
+        sig1 = (0.3 * rng.standard_normal(length)).astype(np.float32)
+        if delay == 0:
+            return sig1, sig1.copy()
+        sig2 = np.concatenate(
+            [np.zeros(delay, dtype=np.float32), sig1[: length - delay]]
+        )
+        return sig1, sig2
+
+    @pytest.mark.parametrize(
+        "length,delay",
+        [
+            (1000, 0),
+            (1000, 100),
+            (600, 50),
+            (1500, 300),
+        ],
+    )
+    def test_short_inputs_report_the_true_delay(self, length, delay):
+        """Inputs below the 50 ms lag window must still measure correctly."""
+        sig1, sig2 = self._delayed_pair(length, delay)
+        measured, _ = _gcc_phat_delay(sig1, sig2, 44100)
+        assert measured == delay
+
+    def test_short_input_is_not_pinned_to_the_window_edge(self):
+        """The old failure mode: a constant -max_shift regardless of input."""
+        max_shift = int(50.0 / 1000.0 * 44100)
+        for delay in (0, 100):
+            sig1, sig2 = self._delayed_pair(1000, delay)
+            measured, _ = _gcc_phat_delay(sig1, sig2, 44100)
+            assert measured != -max_shift
+
+    @pytest.mark.parametrize("delay", [0, 100, 1000])
+    def test_long_inputs_are_unaffected(self, delay):
+        """The clamp must not disturb signals longer than the lag window."""
+        sig1, sig2 = self._delayed_pair(44100, delay)
+        measured, _ = _gcc_phat_delay(sig1, sig2, 44100)
+        assert measured == delay
