@@ -82,17 +82,59 @@ uv tool install phantom-audio --python 3.13 --force
 phantom --version
 ```
 
-## Step 4: Update the Marketplace
+## Step 4: Confirm the Anthropic catalog pin advanced
 
-If the plugin is on the official Anthropic marketplace, the marketplace entry has a `ref` and `sha` that pin to a specific version. Anthropic manages this on their end after you notify them of a new release. For your own marketplace:
+**There is no "notify Anthropic" step. That was wrong.** Anthropic's community
+catalog pins each plugin to a **commit SHA on your default branch** and a nightly
+CI sweep (07:23 UTC) opens a `bump/<name>` PR when your `main` moves ahead. A
+human on their side merges it, and the public directory syncs nightly after that.
+Normal turnaround is one to three days.
+
+Two consequences worth internalizing:
+
+- **They track `main`, not our tag.** Their entry carries `"ref": "main"` plus a
+  pinned `sha`. Our own `.claude-plugin/marketplace.json` says `"ref": "v1.5.0"`,
+  and the D-01 test asserts that matches the tag and `plugin.json`. That
+  invariant governs *our* marketplace only — the Anthropic catalog never reads it.
+- **The version users see comes from `plugin/.claude-plugin/plugin.json` at the
+  pinned SHA.** So bumping that file and pushing to `main` is normally all it
+  takes.
+
+Check the pin after every release:
 
 ```bash
-# Update .claude-plugin/marketplace.json with new ref and sha
-# ref = the tag name, sha = the commit hash
-git rev-parse HEAD  # get the sha
+curl -sSL https://raw.githubusercontent.com/anthropics/claude-plugins-community/main/.claude-plugin/marketplace.json \
+  | python3 -c "import json,sys; p=[x for x in json.load(sys.stdin)['plugins'] if x['name']=='phantom'][0]; print(p['source'])"
+git rev-list --count <that-sha>..main   # 0 means the pin is current
 ```
 
-Update the `ref` and `sha` fields, commit, and push.
+If the pin is stale, first run the same validation their sweep runs — a failure
+there produces no PR and no notification, the pin just silently holds:
+
+```bash
+claude plugin validate ./plugin --strict
+```
+
+If validation passes and the pin still has not moved after a few days, re-submit
+through <https://clau.de/plugin-directory-submission> and say in the notes which
+SHA it is stuck on. **Do not open a PR against `anthropics/claude-plugins-community`
+— external PRs are auto-closed.**
+
+Directory description, homepage and category come from the submission record, not
+the repo. Editing the repo will not change them. Never change the plugin's `name`;
+it breaks existing installs.
+
+### Our own marketplace
+
+Separately, update `.claude-plugin/marketplace.json` so users who add
+`fadelabs/phantom` directly get the new version:
+
+```bash
+# ref = the tag name
+git rev-parse HEAD  # if you also want to record a sha
+```
+
+Update the `ref`, commit, and push.
 
 ## Quick Reference
 
