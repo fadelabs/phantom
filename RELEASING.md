@@ -59,8 +59,12 @@ git push && git push origin vX.Y.Z
 
 ```bash
 uv build
-uv publish --token "$(security find-generic-password -a __token__ -s pypi -w)"
+uv publish --token "$(security find-generic-password -a pypi -s pypi -w)"
 ```
+
+Without file arguments, `uv publish` uploads **every** file in `dist/` —
+including artifacts left over from earlier releases. Clear `dist/` before
+building, or pass explicit paths: `uv publish --token ... dist/phantom_audio-X.Y.Z*`.
 
 **Sibling package:** the stem-separation plugin lives in
 `packages/phantom-audio-separation` (its own version in
@@ -69,7 +73,7 @@ release, build and publish it too:
 
 ```bash
 uv build --package phantom-audio-separation
-uv publish --token "$(security find-generic-password -a __token__ -s pypi -w)" dist/phantom_audio_separation-*
+uv publish --token "$(security find-generic-password -a pypi -s pypi -w)" dist/phantom_audio_separation-*
 ```
 
 Verify it works:
@@ -99,7 +103,7 @@ Update the `ref` and `sha` fields, commit, and push.
 | Tests | local | `uv run pytest tests/ -x -q` |
 | Lint | local | `uv run ruff check src/ tests/ packages/` |
 | Build | local | `uv build` |
-| Publish to PyPI | pypi.org | `uv publish --token "$(security find-generic-password -a __token__ -s pypi -w)"` |
+| Publish to PyPI | pypi.org | `uv publish --token "$(security find-generic-password -a pypi -s pypi -w)"` |
 | Tag | GitHub | `git tag vX.Y.Z && git push origin vX.Y.Z` |
 | Install test | local | `uv tool install phantom-audio --python 3.13 --force` |
 
@@ -122,7 +126,7 @@ git push && git push origin v1.2.0
 
 # 4. Build and publish to PyPI
 uv build
-uv publish --token "$(security find-generic-password -a __token__ -s pypi -w)"
+uv publish --token "$(security find-generic-password -a pypi -s pypi -w)"
 
 # 5. Verify
 uv tool install phantom-audio --python 3.13 --force
