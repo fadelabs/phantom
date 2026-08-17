@@ -14,6 +14,7 @@ from phantom.facade import ANALYSIS_TYPES, AnalysisSpec
 from phantom.comparison import (
     FrequencyDeviationMap,
     _check_mono_below,
+    _CORRELATION_THRESHOLDS,
     _map_width_to_range,
     _normalize_band_energies,
     _rate_deviation,
@@ -1062,6 +1063,73 @@ class TestStereoWidthRating:
             "the 'moderate' descriptor, or that rating is unreachable"
         )
         assert _WIDTH_THRESHOLDS < (
+            _THRESHOLD_ON_TARGET,
+            _THRESHOLD_SLIGHT,
+            _THRESHOLD_MODERATE,
+        )
+
+
+# ---------------------------------------------------------------------------
+# TestReferenceStereoRating -- the compare_to_reference half of issue #56
+# ---------------------------------------------------------------------------
+
+
+class TestReferenceStereoRating:
+    """compare_to_reference must rate stereo on the ratio scale too.
+
+    compare_to_profile was fixed for issue #56, but the reference path called
+    _rate_deviation_ref without thresholds, so both stereo quantities fell back
+    to the dB defaults (1.0/3.0/6.0). Width gaps top out near 1.2 and
+    correlation gaps at 2.0, so on that scale almost everything read
+    "on_target" and "significantly_*" was unreachable for correlation.
+    """
+
+    @staticmethod
+    def _near_mono_3s() -> AudioData:
+        """3s stereo sine with the channels almost identical."""
+        sr = 44100
+        t = np.linspace(0, 3.0, sr * 3, endpoint=False, dtype=np.float32)
+        left = (0.5 * np.sin(2 * np.pi * 440 * t)).astype(np.float32)
+        right = left * np.float32(0.999)
+        return _make_stereo_audio(left, right, sr)
+
+    @staticmethod
+    def _decorrelated_3s() -> AudioData:
+        """3s stereo with an unrelated tone per channel: wide, uncorrelated."""
+        sr = 44100
+        t = np.linspace(0, 3.0, sr * 3, endpoint=False, dtype=np.float32)
+        left = (0.5 * np.sin(2 * np.pi * 440 * t)).astype(np.float32)
+        right = (0.5 * np.sin(2 * np.pi * 660 * t)).astype(np.float32)
+        return _make_stereo_audio(left, right, sr)
+
+    def test_width_difference_is_rated_not_collapsed(self):
+        """A near-mono mix against a wide reference cannot be on_target."""
+        result = compare_to_reference(self._near_mono_3s(), self._decorrelated_3s())
+        width = result.stereo.stereo_width
+        assert width.rating != "on_target"
+        assert width.rating.startswith("significantly")
+
+    def test_correlation_difference_is_rated_not_collapsed(self):
+        """Correlation near 1.0 against near 0.0 cannot be on_target."""
+        result = compare_to_reference(self._near_mono_3s(), self._decorrelated_3s())
+        corr = result.stereo.correlation
+        assert corr.rating != "on_target"
+        assert corr.rating.startswith("significantly")
+
+    def test_identical_audio_still_rates_on_target(self):
+        """Tightening the thresholds must not invent a deviation."""
+        audio = self._near_mono_3s()
+        result = compare_to_reference(audio, audio)
+        assert result.stereo.stereo_width.rating == "on_target"
+        assert result.stereo.correlation.rating == "on_target"
+
+    def test_correlation_thresholds_are_ratio_scaled_not_db(self):
+        """Guard against the dB thresholds being reintroduced here."""
+        assert _CORRELATION_THRESHOLDS[2] < 2.0, (
+            "significance threshold must sit below the 2.0 maximum gap between "
+            "two correlation values, or that rating is unreachable"
+        )
+        assert _CORRELATION_THRESHOLDS < (
             _THRESHOLD_ON_TARGET,
             _THRESHOLD_SLIGHT,
             _THRESHOLD_MODERATE,
