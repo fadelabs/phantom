@@ -210,6 +210,27 @@ async def test_multi_stem_masking_aggregate_limit(client, make_wav, monkeypatch)
         await client.call_tool("multi_stem_masking", {"file_paths": [path_a, path_b]})
 
 
+@pytest.mark.parametrize("bad_value", ["0", "-2"])
+async def test_multi_stem_masking_rejects_non_positive_top_n(
+    client, make_wav, monkeypatch, bad_value
+):
+    """PHANTOM_MASKING_TOP_N below 1 is rejected rather than silently applied.
+
+    pairs are sorted worst-first, so "0" returned an empty list and a negative
+    value sliced off the most severe pairs -- inverting the ranking the tool
+    documents rather than trimming it.
+    """
+    sr = 44100
+    t = np.linspace(0, 1.0, sr, endpoint=False, dtype=np.float32)
+    stem_a = (0.5 * np.sin(2 * np.pi * 300 * t)).astype(np.float32)
+    stem_b = (0.5 * np.sin(2 * np.pi * 350 * t)).astype(np.float32)
+    path_a = make_wav(stem_a, sr, name=f"topn_a_{bad_value}.wav")
+    path_b = make_wav(stem_b, sr, name=f"topn_b_{bad_value}.wav")
+    monkeypatch.setenv("PHANTOM_MASKING_TOP_N", bad_value)
+    with pytest.raises(ToolError, match="positive integer"):
+        await client.call_tool("multi_stem_masking", {"file_paths": [path_a, path_b]})
+
+
 async def test_batch_diagnostic_aggregate_limit(client, make_wav, monkeypatch):
     """Combined batch size over PHANTOM_MAX_AGGREGATE_BYTES is rejected."""
     sr = 44100
