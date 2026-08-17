@@ -104,7 +104,7 @@ Then talk to Claude:
 | Dynamics | `analyze_dynamics` | RMS, peak, crest factor, dynamic range, dynamic complexity |
 | Stereo | `analyze_stereo` | Width, balance, mid/side ratio, correlation, panorama distribution |
 | Phase | `analyze_phase`, `compare_phase` | Phase coherence per band, polarity, inter-channel delay |
-| Problems | `detect_problems` | Clipping, DC offset, inter-sample peaks, hum, sibilance, mud, harshness, resonances |
+| Problems | `detect_problems` | Clipping, DC offset, inter-sample peaks, noise floor, SNR, hum, sibilance, mud, harshness, resonances, lossy-codec artifacts |
 | Masking | `analyze_masking`, `multi_stem_masking` | Per-octave frequency overlap between stems, collision severity ranking |
 | Comparison | `compare_to_profile`, `compare_to_reference` | Deviation from genre targets or reference tracks across all dimensions |
 | Matching | `match_to_reference` | Automated spectral/loudness/width matching to a reference WAV |
@@ -112,7 +112,7 @@ Then talk to Claude:
 | Fixing | `fix_audio` | Automatically fix detected problems (DC offset, clipping, hum, etc.) |
 | Processing | `apply_processing` | Apply a custom chain of audio processing operations |
 | Profiles | `list_profiles`, `load_profile` | Browse and inspect genre reference profiles |
-| Diagnostic | `full_diagnostic`, `batch_diagnostic` | All analysis types on one file or up to 50 files in parallel |
+| Diagnostic | `full_diagnostic`, `batch_diagnostic` | All analysis types on one file, or across up to 50 files in a single call |
 
 ## Domain Expert Skills
 
