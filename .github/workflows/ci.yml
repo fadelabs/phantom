@@ -42,7 +42,10 @@ jobs:
   optional-deps:
     name: Optional dependencies
     runs-on: ubuntu-latest
-    continue-on-error: true
+    # No continue-on-error: this is the only job that installs the extras, so
+    # it is the only place the pedalboard-backed processing surface runs at
+    # all. Swallowing its result meant a break in the shipped extras could not
+    # turn the check suite red.
 
     steps:
       - uses: actions/checkout@v7
@@ -57,8 +60,13 @@ jobs:
       - name: Install with optional extras
         run: uv sync --locked --python 3.12 --extra dev --extra matching --extra separation --extra processing
 
+      # The whole suite, not just test_optional_deps.py. tests/test_processing.py
+      # is 41 tests behind @skipif(not _has_pedalboard); the main jobs install
+      # only --extra dev, so they skip, and this job never selected the file --
+      # the pedalboard-backed surface ran in no CI job at all. Running tests/
+      # here also picks up anything else the extras unskip.
       - name: Test optional dependencies
-        run: uv run pytest tests/test_optional_deps.py packages/phantom-audio-separation/tests -x -q --tb=short
+        run: uv run pytest tests/ packages/phantom-audio-separation/tests -x -q --tb=short
 
   security:
     name: Dependency audit (pip-audit)
