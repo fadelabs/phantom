@@ -1,0 +1,97 @@
+name: Windows installer
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - install.ps1
+      - tests/install_ps1/**
+      - .github/workflows/install-windows.yml
+  pull_request:
+    branches: [main]
+    paths:
+      - install.ps1
+      - tests/install_ps1/**
+      - .github/workflows/install-windows.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  telemetry:
+    name: Telemetry payload (${{ matrix.label }})
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # What users actually run: the PowerShell that ships with Windows.
+          - label: Windows PowerShell 5.1
+            pwsh: powershell
+          - label: PowerShell 7
+            pwsh: pwsh
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      # The interpreter is chosen inside `run` rather than via `shell`, because
+      # `shell` is not an expression-enabled key and a matrix reference there
+      # makes the whole workflow fail to load.
+      - name: Report PowerShell version
+        run: ${{ matrix.pwsh }} -NoProfile -Command '$PSVersionTable | Format-List'
+
+      - name: Parse check
+        run: ${{ matrix.pwsh }} -NoProfile -File tests/install_ps1/parse_check.ps1
+
+      - name: Verify telemetry payload
+        env:
+          PWSH: ${{ matrix.pwsh }}
+        run: python tests/install_ps1/verify_telemetry.py
+
+  end-to-end:
+    name: Real install on Windows (known to fail)
+    runs-on: windows-latest
+    # Expected to fail today, and non-blocking for that reason: essentia is a
+    # core dependency pinned to a version that publishes no win_amd64 wheel, so
+    # `uv tool install phantom-audio` cannot resolve on Windows at all. The job
+    # still earns its place — it gets as far as bootstrapping uv and running
+    # install.ps1 under real Windows PowerShell, and it will go green by itself
+    # the day the dependency gap closes. Make it blocking then.
+    continue-on-error: true
+    # Telemetry stays off: this job exercises the install mechanics, and a real
+    # ping would put synthetic installs into production analytics. The payload
+    # itself is covered by the telemetry job above.
+    env:
+      PHANTOM_NO_TELEMETRY: "1"
+
+    steps:
+      - uses: actions/checkout@v7
+
+      # Models the documented path (`irm ... | iex`): decode as UTF-8, the
+      # charset GitHub raw serves, then Invoke-Expression the resulting string.
+      # Runs in a child process so the installer's own exit code is unambiguous
+      # — invoking it inline would let a stale $LASTEXITCODE from a command
+      # install.ps1 already handled fail the step.
+      - name: Run install.ps1 the way users do
+        shell: powershell
+        run: |
+          $p = Start-Process powershell -NoNewWindow -Wait -PassThru -ArgumentList `
+            '-NoProfile', '-ExecutionPolicy', 'Bypass',
+            '-File', "$PWD\tests\install_ps1\run_installer.ps1"
+          Write-Host "installer exit code: $($p.ExitCode)"
+          exit $p.ExitCode
+
+      - name: Verify phantom is installed and on PATH
+        shell: powershell
+        run: |
+          $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" +
+                      [System.Environment]::GetEnvironmentVariable("Path", "User")
+          $cmd = Get-Command phantom -ErrorAction Stop
+          Write-Host "phantom resolved to $($cmd.Source)"
+          phantom --version
+          phantom doctor

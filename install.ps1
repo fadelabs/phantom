@@ -13,24 +13,58 @@ function Write-Fail  { param([string]$msg) Write-Host "  ✗ $msg" -ForegroundCo
 function Write-Info  { param([string]$msg) Write-Host "  ▸ $msg" -ForegroundColor Cyan }
 function Write-Warn  { param([string]$msg) Write-Host "  ! $msg" -ForegroundColor Yellow }
 
+# Values are reduced to a safe charset so they stay predictable in reporting.
+function ConvertTo-SafeValue {
+    param([string]$value)
+    return ($value -replace '[^A-Za-z0-9._,+-]', '')
+}
+
 function Send-Ping {
     # Fire-and-forget install telemetry. Never fails the install, never blocks.
-    param([string]$event, [string]$version = "unknown")
+    # Mirrors install.sh: POST + JSON to the same endpoint, same three events,
+    # same per-run iid so start/complete/failed can be joined server-side.
+    # $reason is sent only with install_failed. Full enumerated set (keep in sync
+    # with install.sh and fadelab.net reporting): unsupported_os,
+    # unsupported_arch, no_downloader, uv_install_failed, pkg_install_failed,
+    # not_on_path. unsupported_arch and no_downloader never fire here — this
+    # script rejects no architecture and needs no external downloader.
+    param([string]$event, [string]$version = "unknown", [string]$reason = "")
     if ($env:PHANTOM_NO_TELEMETRY -eq "1") { return }
-    if (-not $script:InstallId) { return }
     try {
-        $url = "https://fadelab.net/api/ping?event=$event" +
-               "&os=$($script:PingOs)" +
-               "&arch=$([uri]::EscapeDataString($script:PingArch))" +
-               "&version=$([uri]::EscapeDataString($version))" +
-               "&extras=$($script:InstallExtras)" +
-               "&iid=$($script:InstallId)"
+        $safeVersion = ConvertTo-SafeValue $version
+        if (-not $safeVersion) { $safeVersion = "unknown" }
+        $safeExtras = ConvertTo-SafeValue $script:InstallExtras
+        if (-not $safeExtras) { $safeExtras = "none" }
+
+        $body = [ordered]@{
+            event   = $event
+            iid     = $script:InstallId
+            os      = $script:PingOs
+            arch    = $script:PingArch
+            version = $safeVersion
+            extras  = $safeExtras
+            method  = "uv"
+        }
+        if ($reason) { $body.reason = ConvertTo-SafeValue $reason }
+
         # Synchronous with a short timeout, deliberately. Start-Job would be
         # backgrounded like install.sh's `curl &`, but the failure-path pings are
         # immediately followed by `exit 1`, which kills a pending job before it
         # runs. A blocking call with a 3s cap is the reliable choice here.
-        Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 3 -ErrorAction Stop | Out-Null
+        Invoke-WebRequest -Uri "https://fadelab.net/api/ping" -Method Post `
+            -ContentType "application/json" -Body ($body | ConvertTo-Json -Compress) `
+            -UseBasicParsing -TimeoutSec 3 -ErrorAction Stop | Out-Null
     } catch { }
+}
+
+function Stop-Install {
+    # Mirrors install.sh's err(): report, send install_failed with an enumerated
+    # reason code, then exit.
+    param([string]$msg, [string]$reason, [string]$hint = "")
+    Write-Fail $msg
+    if ($hint) { Write-Host "    $hint" -ForegroundColor DarkGray }
+    Send-Ping "install_failed" "" $reason
+    exit 1
 }
 
 function Publish-EnvironmentChange {
@@ -80,11 +114,20 @@ function Main {
     Write-Host " — AI Audio Engineering" -ForegroundColor DarkGray
     Write-Host ""
 
+    # ── Telemetry (opt-out via PHANTOM_NO_TELEMETRY=1) ─────
+    # Initialized above the first failure point so an unsupported-Windows exit
+    # still reports. Stable per-run id joins the events of a single install.
+    # extras stays "none" until an install is actually attempted, so a failure
+    # before that point reports the same value install.sh would.
+    $script:InstallId = [guid]::NewGuid().ToString()
+    $script:InstallExtras = "none"
+    $script:PingOs = "windows"
+    $script:PingArch = "unknown"
+
     # ── Windows version check ───────────────────────────────
     $build = [System.Environment]::OSVersion.Version.Build
     if ($build -lt 17763) {
-        Write-Fail "Windows 10 version 1809 or later required (build 17763+). You have build $build."
-        exit 1
+        Stop-Install "Windows 10 version 1809 or later required (build 17763+). You have build $build." "unsupported_os"
     }
 
     $arch = if ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture) {
@@ -94,13 +137,13 @@ function Main {
     }
     Write-Ok "Detected Windows $arch (build $build)"
 
-    # ── Telemetry (opt-out via PHANTOM_NO_TELEMETRY=1) ─────
-    # Mirrors install.sh. Stable per-run id so install_started/install_complete
-    # can be joined server-side.
-    $script:InstallId = [guid]::NewGuid().ToString()
-    $script:InstallExtras = "all"
-    $script:PingOs = "windows"
-    $script:PingArch = "$arch"
+    # Normalize to install.sh's labels so both installers share one arch axis.
+    $script:PingArch = switch ("$arch") {
+        "X64"   { "x86_64" }
+        "Amd64" { "x86_64" }
+        "Arm64" { "arm64" }
+        default { ConvertTo-SafeValue ("$arch".ToLower()) }
+    }
     Send-Ping "install_started"
 
     # ── Check/install uv ────────────────────────────────────
@@ -117,10 +160,7 @@ function Main {
             }
             Write-Ok "uv installed"
         } catch {
-            Write-Fail "uv installation failed: $_"
-            Write-Host "    See https://docs.astral.sh/uv/" -ForegroundColor DarkGray
-            Send-Ping "install_failed"
-            exit 1
+            Stop-Install "uv installation failed: $_" "uv_install_failed" "See https://docs.astral.sh/uv/"
         }
     }
 
@@ -132,6 +172,7 @@ function Main {
 
     Write-Info "Installing phantom (this may take a minute)..."
     $uvPath = (Get-Command uv).Source
+    $script:InstallExtras = "all"
     $installLog = & $uvPath tool install "phantom-audio[all]" --python 3.13 --force 2>&1 | Out-String
     if ($LASTEXITCODE -eq 0 -or $installLog -match 'Installed.*executable') {
         Write-Ok "Phantom installed"
@@ -142,10 +183,7 @@ function Main {
             $script:InstallExtras = "none"
             Write-Ok "Phantom core installed (extras skipped)"
         } else {
-            Write-Fail "Installation failed."
-            Write-Host "    Check Python 3.13: uv python list | Select-String 3.13" -ForegroundColor DarkGray
-            Send-Ping "install_failed"
-            exit 1
+            Stop-Install "Installation failed." "pkg_install_failed" "Check Python 3.13: uv python list | Select-String 3.13"
         }
     }
 
@@ -155,13 +193,14 @@ function Main {
     if (-not (Get-Command phantom -ErrorAction SilentlyContinue)) {
         Add-ToUserPath $uvToolBin
         if (-not (Get-Command phantom -ErrorAction SilentlyContinue)) {
-            Write-Fail "phantom not found on PATH. Add $uvToolBin to your PATH."
-            Send-Ping "install_failed"
-            exit 1
+            Stop-Install "phantom not found on PATH. Add $uvToolBin to your PATH." "not_on_path"
         }
     }
 
-    $version = (phantom --version 2>$null | Select-Object -First 1)
+    # `phantom --version` prints "phantom, version X.Y.Z" — report the bare
+    # version so it matches what install.sh sends.
+    $versionRaw = (phantom --version 2>$null | Select-Object -First 1)
+    $version = if ("$versionRaw" -match '\d+\.\d+\.\d+[\w.+-]*') { $Matches[0] } else { "unknown" }
     Write-Ok "Phantom $version"
     Send-Ping "install_complete" $version
 

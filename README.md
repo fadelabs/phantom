@@ -193,9 +193,9 @@ uv sync --extra dev
 
 ## Telemetry
 
-The Unix installer (`install.sh`) reports anonymized install telemetry to `fadelab.net` at the start, completion, and failure of an install. Each report is a small JSON payload carrying the OS, architecture, phantom version (when known), the chosen extras, and the install method (currently always `uv`), plus a per-run install ID used to join the start and completion events of a single install. A failure report also includes one of six fixed reason codes (`unsupported_os`, `unsupported_arch`, `no_downloader`, `uv_install_failed`, `pkg_install_failed`, `not_on_path`) — never raw error text or log contents. No audio, file names, or other personal data is sent, and the request has no effect on the install.
+Both installers (`install.sh` and `install.ps1`) report anonymized install telemetry to `fadelab.net` at the start, completion, and failure of an install. Each report is a small JSON payload carrying the OS, architecture, phantom version (when known), the chosen extras, and the install method (currently always `uv`), plus a per-run install ID used to join the start and completion events of a single install. A failure report also includes one of six fixed reason codes (`unsupported_os`, `unsupported_arch`, `no_downloader`, `uv_install_failed`, `pkg_install_failed`, `not_on_path`) — never raw error text or log contents. No audio, file names, or other personal data is sent, and the request has no effect on the install.
 
-The Windows installer (`install.ps1`) reports the same three events with the same opt-out.
+Two of those codes are specific to `install.sh`: the Windows installer rejects no architecture (`unsupported_arch`) and needs no external downloader (`no_downloader`).
 
 Telemetry is on by default. Opt out by setting the flag for the install command:
 
