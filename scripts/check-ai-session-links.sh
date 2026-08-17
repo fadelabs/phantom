@@ -19,7 +19,13 @@ MSG=$(sed -n '/^# ------------------------ >8 ------------------------$/q;p' "$M
 TRAILER_HITS=$(echo "$MSG" | grep -inE '^[a-z0-9-]*session[a-z0-9-]*:[[:space:]]*(https?://|[a-z0-9_/+=-]{12,}[[:space:]]*$)' || true)
 
 # 2. Session/conversation/share URLs on known AI assistant hosts.
-URL_HITS=$(echo "$MSG" | grep -inE 'claude\.(ai|com)/[a-z/]*(session|share|chat)|chat\.openai\.com/(share|c)/|chatgpt\.com/(share|c|codex|g)/|gemini\.google\.com/(share|app)/|g\.co/gemini|copilot\.microsoft\.com/(shares|chats)|github\.com/copilot/(share|c)|cursor\.(com|sh)/(share|s|agents|composer)|app\.devin\.ai/session|windsurf\.com/(share|s)/|grok\.com/(share|c)/|poe\.com/s/|perplexity\.ai/search' || true)
+#    claude.ai/c/<id> and claude.ai/code/<id> are listed explicitly: the
+#    (session|share|chat) alternation never matched them, because the opaque id
+#    sits where those words would be. Those two are the shapes Claude Code and
+#    claude.ai actually hand out, so the canonical case was the one getting
+#    through as a bare URL. Only the trailer rule above caught it, and only when
+#    it carried a Claude-Session: key.
+URL_HITS=$(echo "$MSG" | grep -inE 'claude\.(ai|com)/[a-z/]*(session|share|chat)|claude\.(ai|com)/(c|code)/[A-Za-z0-9][A-Za-z0-9_-]{7,}|chat\.openai\.com/(share|c)/|chatgpt\.com/(share|c|codex|g)/|gemini\.google\.com/(share|app)/|g\.co/gemini|copilot\.microsoft\.com/(shares|chats)|github\.com/copilot/(share|c)|cursor\.(com|sh)/(share|s|agents|composer)|app\.devin\.ai/session|windsurf\.com/(share|s)/|grok\.com/(share|c)/|poe\.com/s/|perplexity\.ai/search' || true)
 
 # 3. Any URL carrying an opaque session/conversation/thread id -- catches
 #    assistants not on the list above.
