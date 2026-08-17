@@ -599,3 +599,49 @@ class TestShortSignalDelay:
         sig1, sig2 = self._delayed_pair(44100, delay)
         measured, _ = _gcc_phat_delay(sig1, sig2, 44100)
         assert measured == delay
+
+
+# ---------------------------------------------------------------------------
+# TestPhatWindowTruncates -- the window must change what the correlation sees
+# ---------------------------------------------------------------------------
+
+
+class TestPhatWindowTruncates:
+    """PHANTOM_PHAT_WINDOW_S must change what GCC-PHAT actually sees.
+
+    The TestPhatWindow cases above assert only isinstance on the return
+    values, so they pass with the truncation block deleted outright and cannot
+    tell a 5s window from a 10s one from no window at all.
+
+    These build a signal whose answer depends on the window: the first 5
+    seconds carry one delay, the following 10 seconds carry a different one. A
+    5s window can only see the first; a 15s window is dominated by the second,
+    which has twice as much correlated material behind it.
+    """
+
+    @staticmethod
+    def _two_segment_pair(sr: int = 44100):
+        rng = np.random.default_rng(99)
+        seg_a = (0.3 * rng.standard_normal(sr * 5)).astype(np.float32)
+        seg_b = (0.3 * rng.standard_normal(sr * 10)).astype(np.float32)
+
+        def shifted(x: np.ndarray, d: int) -> np.ndarray:
+            return np.concatenate([np.zeros(d, dtype=np.float32), x[: len(x) - d]])
+
+        sig1 = np.concatenate([seg_a, seg_b])
+        sig2 = np.concatenate([shifted(seg_a, 100), shifted(seg_b, 800)])
+        return sig1, sig2
+
+    def test_short_window_sees_only_the_first_segment(self, monkeypatch) -> None:
+        """A 5s window measures the delay carried by the first 5 seconds."""
+        monkeypatch.setenv("PHANTOM_PHAT_WINDOW_S", "5")
+        sig1, sig2 = self._two_segment_pair()
+        delay_samples, _ = _gcc_phat_delay(sig1, sig2, 44100)
+        assert delay_samples == 100
+
+    def test_long_window_sees_the_dominant_second_segment(self, monkeypatch) -> None:
+        """A 15s window takes the delay of the longer, dominant segment."""
+        monkeypatch.setenv("PHANTOM_PHAT_WINDOW_S", "15")
+        sig1, sig2 = self._two_segment_pair()
+        delay_samples, _ = _gcc_phat_delay(sig1, sig2, 44100)
+        assert delay_samples == 800
