@@ -79,6 +79,21 @@ def _contained_json_files(real_base: str) -> list[str]:
     return files
 
 
+def _newest_snapshot(candidates: list[str]) -> str:
+    """Return the most recently written snapshot among *candidates*.
+
+    A snapshot can vanish between listing and selection when its plugin
+    instance closes -- the same race the read path handles -- so the mtime
+    probe is guarded here rather than left to escape as a raw OSError.
+    """
+    if not candidates:
+        raise AnalysisError(_NO_METRICS_MSG)
+    try:
+        return max(candidates, key=os.path.getmtime)
+    except OSError as e:
+        raise AnalysisError(_NO_METRICS_MSG) from e
+
+
 def read_live_metrics(instance_id: str | None = None) -> LiveMetricsResult:
     """Read the newest (or a specific instance's) live metrics snapshot.
 
@@ -113,9 +128,7 @@ def read_live_metrics(instance_id: str | None = None) -> LiveMetricsResult:
             )
         chosen = wanted
     else:
-        if not candidates:
-            raise AnalysisError(_NO_METRICS_MSG)
-        chosen = max(candidates, key=os.path.getmtime)
+        chosen = _newest_snapshot(candidates)
 
     try:
         mtime = os.path.getmtime(chosen)
