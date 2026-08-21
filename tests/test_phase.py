@@ -498,6 +498,39 @@ class TestComparePhaseResample:
         assert isinstance(result, PhaseCompareResult)
         assert result.delay_samples is not None
 
+    def test_resampling_preserves_a_known_delay(self):
+        """A known time offset survives a 2:1 sample rate mismatch.
+
+        The three tests above only assert that compare_phase returns a result
+        on mismatched rates. They all still pass with the align_sample_rates
+        call deleted outright, because the rates are then simply reinterpreted
+        and the delay estimate comes back wrong but still a number. Asserting
+        the measured delay is what makes the resampling load-bearing.
+        """
+        hi_sr, lo_sr = 48000, 24000
+        delay_hi = 96  # even, so decimating by 2 lands on an exact sample
+        n = hi_sr * 2
+        rng = np.random.default_rng(7)
+
+        # Band-limit below the lower Nyquist so decimation is exact rather than
+        # aliased. GCC-PHAT still needs broadband content to resolve the delay,
+        # which a pure tone would not give it.
+        spec = np.fft.rfft(rng.standard_normal(n))
+        spec[int((lo_sr / 2) * 0.9 * n / hi_sr) :] = 0
+        base = np.fft.irfft(spec, n).astype(np.float32)
+        base /= np.max(np.abs(base))
+
+        delayed = np.zeros_like(base)
+        delayed[delay_hi:] = base[:-delay_hi]
+
+        result = compare_phase(
+            _make_audio(base, hi_sr),
+            _make_audio(delayed[::2].copy(), lo_sr),
+        )
+
+        assert result.delay_samples == pytest.approx(delay_hi, abs=2)
+        assert result.delay_ms == pytest.approx(delay_hi / hi_sr * 1000.0, abs=0.1)
+
 
 class TestPhatWindow:
     """Tests for PHANTOM_PHAT_WINDOW_S env var controlling GCC-PHAT truncation."""

@@ -122,3 +122,50 @@ class TestCrestFactorCrossValidation:
         result = analyze_dynamics(_make_audio(samples, sr))
         expected = result.peak_dbfs - result.rms_dbfs
         assert result.crest_factor_db == pytest.approx(expected, abs=0.01)
+
+
+class TestDynamicComplexityCrossValidation:
+    """Cross-validate dynamic_complexity and loudness_db.
+
+    Both fields previously had no value coverage anywhere in the suite -- only
+    isinstance(x, float) shape checks. Replacing the Essentia DynamicComplexity
+    call with hardcoded constants passed all 1178 tests. There is no independent
+    reference implementation to check against, so these assert properties the
+    measurement must hold regardless of how it is computed, which constants
+    cannot satisfy.
+    """
+
+    @staticmethod
+    def _tone(amplitude: float, sr: int = 44100, seconds: float = 3.0) -> np.ndarray:
+        t = np.linspace(0, seconds, int(sr * seconds), endpoint=False, dtype=np.float32)
+        return (amplitude * np.sin(2 * np.pi * 440 * t)).astype(np.float32)
+
+    @pytest.mark.parametrize("amplitude", [0.5, 0.25, 0.125])
+    def test_loudness_db_tracks_amplitude(self, amplitude):
+        """Halving amplitude drops loudness_db by 6.02 dB, the definition of half.
+
+        Anchored at -9.86 dB for amplitude 0.5, so the absolute scale is pinned
+        as well as the ratio.
+        """
+        result = analyze_dynamics(_make_audio(self._tone(amplitude), 44100))
+        expected = -9.86 + 20 * np.log10(amplitude / 0.5)
+        assert result.loudness_db == pytest.approx(expected, abs=TOLERANCE_DB)
+
+    def test_dynamic_complexity_separates_steady_from_varying(self):
+        """A level-varying signal must read far more complex than a steady one.
+
+        This is the property the name describes, and it is the one a constant
+        cannot have: a constant returns the same number for both inputs.
+        """
+        steady = analyze_dynamics(_make_audio(self._tone(0.5), 44100))
+
+        sr = 44100
+        t = np.linspace(0, 3.0, sr * 3, endpoint=False, dtype=np.float32)
+        envelope = np.where((np.floor(t * 2) % 2) == 0, 1.0, 0.05).astype(np.float32)
+        varying = analyze_dynamics(
+            _make_audio((self._tone(0.5) * envelope).astype(np.float32), sr)
+        )
+
+        assert steady.dynamic_complexity < 0.5
+        assert varying.dynamic_complexity > 5.0
+        assert varying.dynamic_complexity > steady.dynamic_complexity
