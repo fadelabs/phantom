@@ -55,16 +55,19 @@ _WIDTH_RANGES: dict[str, tuple[float, float]] = {
     "wide": (0.7, 1.2),
     # Used by the ambient profile. Without an entry it fell through to the
     # (0.0, 2.0) default in _map_width_to_range, which spans the entire usable
-    # domain -- so every width, mono included, rated "on_target" and the check
-    # did nothing (issue #56). Continues the ladder; 2.0 matches the ceiling
-    # the old fallback already implied.
+    # domain -- so any width a real mix produces, mono included, rated
+    # "on_target" and the check did nothing (issue #56). Continues the ladder;
+    # 2.0 matches the ceiling the old fallback already implied.
     "very_wide": (1.2, 2.0),
 }
 
 # Stereo width is a side/mid ratio, not a dB quantity, so the dB thresholds
 # above do not apply to it. The largest possible below-range deviation is 0.7
 # (a mono file against a "wide" profile), which is under _THRESHOLD_ON_TARGET
-# -- rating width on the dB scale collapsed every result to "on_target".
+# -- rating width on the dB scale collapsed every result in that range to
+# "on_target". The ratio has no upper bound, so an anti-phase signal could
+# still clear the dB thresholds from above; that was the only input the old
+# scale graded, and not one real material produces.
 #
 # 0.25 for "significantly off" is set by the tightest constraint: "moderate"
 # (0.3-0.7) is the most common descriptor and only allows a 0.3 below-range
