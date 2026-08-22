@@ -349,6 +349,7 @@ class TestStereoResultSerialization:
             "correlation",
             "stereo_width",
             "mid_side_ratio_db",
+            "mid_side_state",
             "balance_db",
             "panorama_pct",
         }
