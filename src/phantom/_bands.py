@@ -27,6 +27,18 @@ _SQRT2 = np.sqrt(2)
 OCTAVE_EDGES = [OCTAVE_CENTERS[0] / _SQRT2] + [c * _SQRT2 for c in OCTAVE_CENTERS]
 
 # Band label keys for the output dict.
+#
+# These are identifiers, not measurements. int() truncates, so the two lowest
+# centres serialize as "31_hz" and "62_hz" while the real centres are 31.25 Hz
+# and 62.5 Hz (OCTAVE_CENTERS above is the authority; analysis always uses the
+# exact values). Read a label as the name of a band, never as its frequency.
+#
+# The spelling is a wire format and cannot be corrected in place. It is the key
+# vocabulary of every MCP band response, all nine bundled profile JSONs, any
+# user profile under PHANTOM_PROFILES_DIR, and the phantom-studio plugin, whose
+# C++ hardcodes the same strings (GenreProfile.cpp) so that a profile saved in
+# Studio stays readable by this engine. Changing it is a coordinated migration
+# across two codebases plus every profile on disk, not an edit here.
 _BAND_LABELS = [f"{int(c)}_hz" if c >= 1 else f"{c}_hz" for c in OCTAVE_CENTERS]
 
 # (field_name, serialized_key) pairs for the typed octave-band maps (C.2).

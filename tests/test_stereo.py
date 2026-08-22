@@ -339,7 +339,7 @@ class TestResultStructure:
         assert isinstance(result, StereoResult)
 
     def test_all_keys_present(self, identical_stereo):
-        """Result model should have exactly the 5 expected keys."""
+        """Result model should have exactly the 6 expected keys."""
         samples, sr = identical_stereo
         audio = _make_stereo_audio(samples, sr)
         result = analyze_stereo(audio)
@@ -347,7 +347,71 @@ class TestResultStructure:
             "correlation",
             "stereo_width",
             "mid_side_ratio_db",
+            "mid_side_state",
             "balance_db",
             "panorama_pct",
         }
         assert set(result.model_dump().keys()) == expected_keys
+
+
+class TestMidSideState:
+    """The two undefined-ratio cases must be distinguishable.
+
+    mid_side_ratio_db is None at both extremes -- a mono file has no side
+    energy, a fully inverted one has no mid -- and those are opposite
+    conditions. Mono is usually fine; fully inverted is a serious fault. Before
+    mid_side_state existed, both reported a bare None and a client had no way
+    to tell which it was looking at.
+    """
+
+    @staticmethod
+    def _stereo(left, right, sr=44100):
+        return AudioData(
+            samples=np.stack([left, right], axis=1),
+            sample_rate=sr,
+            num_channels=2,
+            duration=len(left) / sr,
+            num_samples=len(left),
+        )
+
+    @staticmethod
+    def _tone(sr=44100):
+        t = np.linspace(0, 1.0, sr, endpoint=False, dtype=np.float32)
+        return (0.5 * np.sin(2 * np.pi * 440 * t)).astype(np.float32)
+
+    def test_pure_mid_is_labelled(self):
+        """Identical channels carry no side energy."""
+        tone = self._tone()
+        result = analyze_stereo(self._stereo(tone, tone.copy()))
+        assert result.mid_side_ratio_db is None
+        assert result.mid_side_state == "pure_mid"
+
+    def test_pure_side_is_labelled(self):
+        """Inverted channels cancel to no mid energy."""
+        tone = self._tone()
+        result = analyze_stereo(self._stereo(tone, -tone))
+        assert result.mid_side_ratio_db is None
+        assert result.mid_side_state == "pure_side"
+
+    def test_the_two_extremes_are_distinguishable(self):
+        """The whole point: same ratio, different state."""
+        tone = self._tone()
+        mid = analyze_stereo(self._stereo(tone, tone.copy()))
+        side = analyze_stereo(self._stereo(tone, -tone))
+        assert mid.mid_side_ratio_db == side.mid_side_ratio_db is None
+        assert mid.mid_side_state != side.mid_side_state
+
+    def test_measurable_ratio_leaves_state_unset(self):
+        """An ordinary stereo file has a real ratio and no degenerate state."""
+        sr = 44100
+        t = np.linspace(0, 1.0, sr, endpoint=False, dtype=np.float32)
+        left = (0.5 * np.sin(2 * np.pi * 440 * t)).astype(np.float32)
+        right = (0.5 * np.sin(2 * np.pi * 550 * t)).astype(np.float32)
+        result = analyze_stereo(self._stereo(left, right))
+        assert result.mid_side_ratio_db is not None
+        assert result.mid_side_state is None
+
+    def test_mono_input_reports_pure_mid(self):
+        """The mono short-circuit path sets it too, not just the stereo path."""
+        result = analyze_stereo(_make_audio(self._tone(), 44100))
+        assert result.mid_side_state == "pure_mid"

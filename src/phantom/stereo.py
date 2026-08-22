@@ -43,6 +43,14 @@ class StereoResult(RoundedModel):
     correlation: float | None = None
     stereo_width: float | None = None
     mid_side_ratio_db: float | None = None
+    # Why mid_side_ratio_db is None, when it is. The ratio is undefined at both
+    # extremes -- a mono file has no side energy and an inverted one has no mid
+    # -- and those are opposite conditions: mono is usually fine, fully
+    # inverted is a serious fault. Reporting both as a bare None left a client
+    # unable to tell them apart. "pure_mid" and "pure_side" say which.
+    # None here means the ratio was measured, or that stereo analysis returned
+    # nothing at all.
+    mid_side_state: str | None = None
     balance_db: float | None = None
     panorama_pct: PanoramaDistribution | None = None
 
@@ -157,7 +165,8 @@ def analyze_stereo(
         return StereoResult(
             correlation=1.0,
             stereo_width=0.0,
-            mid_side_ratio_db=None,  # effectively infinite: pure mid, no side
+            mid_side_ratio_db=None,  # effectively +inf: pure mid, no side
+            mid_side_state="pure_mid",
             balance_db=0.0,
             panorama_pct=PanoramaDistribution(left=0.0, center=100.0, right=0.0),
         )
@@ -195,11 +204,15 @@ def analyze_stereo(
     # STER-02: Stereo width (side/mid energy ratio)
     stereo_width = float(rms_side / (rms_mid + 1e-10))
 
-    # STER-03: Mid/side ratio in dB
+    # STER-03: Mid/side ratio in dB. Undefined at both extremes, so the state
+    # field records which extreme it was rather than collapsing both to None.
+    mid_side_state: str | None = None
     if rms_side < 1e-10:
-        mid_side_ratio_db = None  # effectively infinite: pure mid, no side
+        mid_side_ratio_db = None  # effectively +inf: pure mid, no side
+        mid_side_state = "pure_mid"
     elif rms_mid < 1e-10:
-        mid_side_ratio_db = None  # effectively infinite: pure side, no mid
+        mid_side_ratio_db = None  # effectively -inf: pure side, no mid
+        mid_side_state = "pure_side"
     else:
         mid_side_ratio_db = float(20 * np.log10(rms_mid / rms_side))
 
@@ -215,6 +228,7 @@ def analyze_stereo(
         correlation=correlation,
         stereo_width=stereo_width,
         mid_side_ratio_db=mid_side_ratio_db,
+        mid_side_state=mid_side_state,
         balance_db=balance_db,
         panorama_pct=panorama_pct,
     )
