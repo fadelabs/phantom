@@ -44,6 +44,22 @@ def overlapping_stems():
 
 
 @pytest.fixture
+def low_overlap_stems():
+    """Two 1-second sines at 300 Hz and 600 Hz.
+
+    An octave apart, so their skirts still share the 62_hz and 125_hz bands but
+    only weakly: 0.234 and 0.181 respectively, both inside the "low" range and
+    clear of both boundaries. Nothing else in the fixture set lands a band
+    between 0.1 and 0.3, which is why the low branch had no real coverage.
+    """
+    sr = 44100
+    t = np.linspace(0, 1.0, sr, endpoint=False, dtype=np.float32)
+    audio_a = _make_audio((0.5 * np.sin(2 * np.pi * 300 * t)).astype(np.float32), sr)
+    audio_b = _make_audio((0.5 * np.sin(2 * np.pi * 600 * t)).astype(np.float32), sr)
+    return audio_a, audio_b
+
+
+@pytest.fixture
 def non_overlapping_stems():
     """Two 1-second sines at 100 Hz (125_hz band) and 4000 Hz (4000_hz band).
 
@@ -306,27 +322,44 @@ class TestBandSeverity:
                     f"but severity '{band.severity}' (expected 'high')"
                 )
 
-    def test_moderate_severity_threshold(self, identical_stems):
-        """Band with 0.3 <= overlap_score < 0.6 should have severity 'moderate'."""
-        audio_a, audio_b = identical_stems
+    def test_moderate_severity_threshold(self, overlapping_stems):
+        """Band with 0.3 <= overlap_score < 0.6 should have severity 'moderate'.
+
+        Uses overlapping_stems, whose 250_hz band scores 0.495. This previously
+        used identical_stems, where every scored band sits at exactly 1.0, so
+        the loop body never ran and the test asserted nothing -- it passed with
+        the moderate branch returning any value at all. The count guard below
+        stops it silently going vacuous again.
+        """
+        audio_a, audio_b = overlapping_stems
         result = analyze_masking(audio_a, audio_b)
+        checked = 0
         for band in result.bands:
             if 0.3 <= band.overlap_score < 0.6:
+                checked += 1
                 assert band.severity == "moderate", (
                     f"Band {band.band} has score {band.overlap_score:.3f} "
                     f"but severity '{band.severity}' (expected 'moderate')"
                 )
+        assert checked > 0, "fixture produced no band in the moderate range"
 
-    def test_low_severity_threshold(self, identical_stems):
-        """Band with 0.1 <= overlap_score < 0.3 should have severity 'low'."""
-        audio_a, audio_b = identical_stems
+    def test_low_severity_threshold(self, low_overlap_stems):
+        """Band with 0.1 <= overlap_score < 0.3 should have severity 'low'.
+
+        Same vacuity problem as the moderate case above, and no fixture in this
+        file produced a band in this range at all until low_overlap_stems.
+        """
+        audio_a, audio_b = low_overlap_stems
         result = analyze_masking(audio_a, audio_b)
+        checked = 0
         for band in result.bands:
             if 0.1 <= band.overlap_score < 0.3:
+                checked += 1
                 assert band.severity == "low", (
                     f"Band {band.band} has score {band.overlap_score:.3f} "
                     f"but severity '{band.severity}' (expected 'low')"
                 )
+        assert checked > 0, "fixture produced no band in the low range"
 
     def test_none_severity_threshold(self, non_overlapping_stems):
         """Band with overlap_score < 0.1 should have severity 'none'."""
