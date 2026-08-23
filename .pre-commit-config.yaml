@@ -25,7 +25,9 @@ repos:
         name: Block planning and internal docs
         entry: "BLOCKED: Planning/internal docs must not be committed. These are gitignored for a reason."
         language: fail
-        files: '^(\.planning/|\.claude/|docs/superpowers/)'
+        files: '^(\.planning(/|$)|\.claude/|docs/superpowers/)'
+        types: []
+        types_or: [file, symlink]
 
       # Block large audio binaries (>1MB)
       - id: check-large-binaries

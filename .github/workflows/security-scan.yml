@@ -72,7 +72,7 @@ jobs:
           # passed on every PR while looking green. Fail loudly instead.
           git rev-parse --verify origin/main >/dev/null
           CHANGED=$(git diff --name-only origin/main...HEAD)
-          if echo "$CHANGED" | grep -qE '^(\.planning/|\.claude/|docs/superpowers/)'; then
+          if echo "$CHANGED" | grep -qE '^(\.planning(/|$)|\.claude/|docs/superpowers/)'; then
             echo "::error::Planning/internal docs detected in PR"
             exit 1
           fi
