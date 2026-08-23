@@ -48,7 +48,7 @@ build/
 venv/
 
 # Development planning (internal only)
-.planning/
+.planning
 
 # Claude Code local config
 .claude/

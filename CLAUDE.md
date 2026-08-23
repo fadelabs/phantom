@@ -8,6 +8,17 @@ Phantom is an AI audio engineering system. It combines an MCP server for audio a
 
 **Core Value:** Claude can analyze any audio file or set of stems and produce actionable, measurement-backed mixing and mastering guidance calibrated to a reference target.
 
+## Planning Docs
+
+`.planning/` is a symlink to `~/Projects/phantom-planning/planning`, a separate
+private repo. The files are real and every existing path still works -- read and
+write `.planning/...` from here exactly as before -- but they are committed in
+that repo, not this one. Planning docs never land in phantom: `.gitignore` and
+the `check-planning-docs` pre-commit hook both block them.
+
+Before committing there: no AI session or artifact links, no absolute home
+paths. Its README carries the two grep commands.
+
 ## Architecture
 
 - **MCP Server** (`src/phantom/`) -- Python, audio analysis via Essentia + scipy/numpy, served through FastMCP
