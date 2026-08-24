@@ -16,7 +16,7 @@ from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from pydantic import BaseModel
 
-from phantom._utils import _get_env_int
+from phantom._utils import _get_env_int, validate_input_path
 from phantom.audio import load_audio
 from phantom.exceptions import AnalysisError, PhantomError
 from phantom.facade import (
@@ -496,6 +496,10 @@ def multi_stem_masking(file_paths: list[str]) -> dict:
             )
         )
 
+    # Validate confinement before any metadata read. sf.info() opens the
+    # path, so doing it first would bypass PHANTOM_AUDIO_DIR validation.
+    validated_paths = [validate_input_path(path) for path in file_paths]
+
     # Aggregate memory guard: this tool holds every stem in memory at once, so
     # the per-file size/duration limits in load_audio aren't sufficient. Peek
     # each header and reject if the combined decoded size would be excessive
@@ -504,7 +508,7 @@ def multi_stem_masking(file_paths: list[str]) -> dict:
 
     max_aggregate = _get_env_int("PHANTOM_MAX_AGGREGATE_BYTES", 4_000_000_000)
     total_bytes = 0
-    for p in file_paths:
+    for p in validated_paths:
         try:
             info = sf.info(p)
         except Exception:
@@ -524,7 +528,7 @@ def multi_stem_masking(file_paths: list[str]) -> dict:
             )
         )
 
-    stems = [load_audio(p) for p in file_paths]
+    stems = [load_audio(p) for p in validated_paths]
     matrix_result = _analyze_masking_matrix(stems)
 
     # Adaptive default: scale with stem count, floor of 10, capped at total pairs
@@ -550,7 +554,7 @@ def multi_stem_masking(file_paths: list[str]) -> dict:
         pairs=matrix_result.pairs[:top_n],
         stem_count=matrix_result.stem_count,
         pair_count=matrix_result.pair_count,
-        stem_paths={f"stem_{i}": os.path.basename(p) for i, p in enumerate(file_paths)},
+        stem_paths={f"stem_{i}": os.path.basename(p) for i, p in enumerate(validated_paths)},
     )
     return result.model_dump()
 
