@@ -257,3 +257,7 @@ After spatial processing, run `analyze_stereo`:
 5. HPF reverb and delay returns — low-end in effects builds mud
 6. Time delays to tempo — BPM math for invisible integration
 7. EQ reverb returns — the most overlooked technique for clean spatial processing
+
+## Ableton Live
+
+For Live sessions, follow [the Ableton workflow](../session-architect/ableton-workflow.md). Inspect the connected bridge and its tool schemas; do not run Reaper-specific recipes in Live.

@@ -11,30 +11,6 @@ from typing import ClassVar
 
 import pytest
 
-from phantom.spectral import SpectralResult
-from phantom.loudness import LoudnessResult, LufsStats
-from phantom.dynamics import DynamicsResult
-from phantom.stereo import StereoResult, PanoramaDistribution
-from phantom.phase import PhaseResult, PhaseCompareResult
-from phantom.problems import ProblemsResult, ProblemItem, ProblemSummary
-from phantom.masking import MaskingResult, MaskingBand, MaskingMatrixResult, MaskingPair
-from phantom.comparison import (
-    DeviationResult,
-    RangeDeviationResult,
-    MonoBelowResult,
-    ProfileComparisonResult,
-    ReferenceComparisonResult,
-    MatchResult,
-    LoudnessProfileComparisonSection,
-    DynamicsComparisonSection,
-    StereoProfileComparisonSection,
-    LoudnessReferenceComparisonSection,
-    DynamicsReferenceComparisonSection,
-    StereoReferenceComparisonSection,
-    MetricDiff,
-    MatchAdjustments,
-    _rate_deviation,
-)
 from phantom._rounding import (
     round_db,
     round_db_dict,
@@ -46,8 +22,31 @@ from phantom._rounding import (
     round_ratio,
     round_ratio_list,
 )
+from phantom.comparison import (
+    DeviationResult,
+    DynamicsComparisonSection,
+    DynamicsReferenceComparisonSection,
+    LoudnessProfileComparisonSection,
+    LoudnessReferenceComparisonSection,
+    MatchAdjustments,
+    MatchResult,
+    MetricDiff,
+    MonoBelowResult,
+    ProfileComparisonResult,
+    RangeDeviationResult,
+    ReferenceComparisonResult,
+    StereoProfileComparisonSection,
+    StereoReferenceComparisonSection,
+    _rate_deviation,
+)
+from phantom.dynamics import DynamicsResult
+from phantom.loudness import LoudnessResult, LufsStats
+from phantom.masking import MaskingBand, MaskingMatrixResult, MaskingPair, MaskingResult
+from phantom.phase import PhaseCompareResult, PhaseResult
+from phantom.problems import ProblemItem, ProblemsResult, ProblemSummary
 from phantom.separation import SeparationResult
-
+from phantom.spectral import SpectralResult
+from phantom.stereo import PanoramaDistribution, StereoResult
 
 # ---------------------------------------------------------------------------
 # Non-finite rounding (AUD-02): NaN/Inf must map to None so serialization

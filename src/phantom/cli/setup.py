@@ -48,7 +48,11 @@ def _setup_mcp_config(console, json_mode: bool) -> dict:
             existing = json.loads(target.read_text())
         else:
             existing = {}
-    except (json.JSONDecodeError, OSError):
+        if not isinstance(existing, dict) or not isinstance(
+            existing.get("mcpServers", {}), dict
+        ):
+            raise TypeError("MCP configuration must contain an object")
+    except (TypeError, ValueError, OSError):
         if not json_mode:
             console.print(f"  {WARN} Could not parse {target}")
         return {
@@ -146,8 +150,8 @@ def _setup_reaper(console, json_mode: bool) -> dict:
             console.print(f"  {SKIP} Reaper not detected — skipped")
         return {"step": "reaper", "status": "skipped", "message": "Reaper not detected"}
 
-    import io
     import contextlib
+    import io
 
     try:
         from phantom.cli.setup_reaper import setup_reaper as _run_reaper_setup
@@ -264,7 +268,7 @@ def setup(json_output: bool, skip_reaper: bool, skip_plugin: bool) -> None:
 
     if missing_extras:
         console.print("[bold]Optional extras not installed:[/bold]")
-        for extra, label in missing_extras:
+        for _extra, label in missing_extras:
             console.print(f"  [dim]•[/dim] {label}")
         console.print()
         if sys.stdin.isatty() and click.confirm(

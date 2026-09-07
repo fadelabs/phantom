@@ -14,8 +14,8 @@ import hashlib
 import logging
 import threading
 from collections import OrderedDict
-from typing import TYPE_CHECKING, Any, TypeVar
 from collections.abc import Callable
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from phantom._settings import AnalysisSettings, analysis_settings
 
@@ -76,6 +76,8 @@ class AnalysisCache:
         h.update(audio.samples.tobytes())
         h.update(str(audio.sample_rate).encode())
         h.update(str(audio.num_channels).encode())
+        if audio.pcm_bits is not None:
+            h.update(f"|pcm:{audio.pcm_bits}|".encode())
         audio.__dict__["_content_hash"] = h
         return h
 

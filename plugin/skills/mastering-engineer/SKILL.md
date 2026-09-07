@@ -238,3 +238,7 @@ Before delivery — each step is pass/fail with explicit thresholds. If any fail
 6. Total-chain GR budget — 6-8 dB across comp + multiband + limiter combined
 7. Mono the bass — 100-150 Hz digital, 100+ Hz vinyl
 8. QC on headphones — catches what monitors mask
+
+## Ableton Live
+
+For Live sessions, follow [the Ableton workflow](../session-architect/ableton-workflow.md). Inspect the connected bridge and its tool schemas; do not run Reaper-specific recipes in Live.

@@ -30,6 +30,7 @@ same tuned geometry.
 from __future__ import annotations
 
 import hashlib
+import math
 from dataclasses import dataclass
 
 from phantom._utils import _get_env_float, _get_env_int
@@ -134,6 +135,23 @@ class AnalysisSettings:
     octave_hop_size: int = 2048
     flatness_frame_size: int = 4096
     spectrum_frame_size: int = 8192
+
+    def __post_init__(self) -> None:
+        from phantom.exceptions import AnalysisError
+
+        for name, value in vars(self).items():
+            if not isinstance(value, (int, float)) or not math.isfinite(value):
+                raise AnalysisError(f"{name} must be a finite number")
+            if name.endswith(("frame_size", "hop_size")):
+                minimum = 2 if name.endswith("frame_size") else 1
+                if (
+                    isinstance(value, bool)
+                    or not isinstance(value, int)
+                    or value < minimum
+                ):
+                    raise AnalysisError(f"{name} must be an integer >= {minimum}")
+        if self.phat_window_s <= 0:
+            raise AnalysisError("phat_window_s must be positive")
 
     def fingerprint(self) -> str:
         """Deterministic per-value hash used for analysis cache keys.

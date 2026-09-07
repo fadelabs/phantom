@@ -12,8 +12,6 @@ import json
 import numpy as np
 import pytest
 import soundfile as sf
-
-
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
 
@@ -662,6 +660,7 @@ async def test_adaptive_top_n_env_override(client, make_wav, monkeypatch):
 async def test_windows_path_stripped_from_error(client):
     """Windows-style paths are stripped from PhantomError messages (SC-8)."""
     from unittest.mock import patch
+
     from phantom.exceptions import AudioLoadError
 
     with (
@@ -680,6 +679,7 @@ async def test_windows_path_stripped_from_error(client):
 async def test_mixed_paths_stripped_from_error(client):
     """Both Unix and Windows paths are stripped from error messages."""
     from unittest.mock import patch
+
     from phantom.exceptions import AudioLoadError
 
     # Build paths via concatenation to avoid PII pre-commit hook false positive
@@ -701,6 +701,7 @@ async def test_mixed_paths_stripped_from_error(client):
 async def test_spaced_path_stripped_from_error(client):
     """Paths with spaces inside components are stripped (AUD-04)."""
     from unittest.mock import patch
+
     from phantom.exceptions import AudioLoadError
 
     # Built via concatenation to avoid PII pre-commit hook false positives.
@@ -722,6 +723,7 @@ async def test_spaced_path_stripped_from_error(client):
 async def test_unc_path_stripped_from_error(client):
     """Windows UNC share paths are stripped from error messages (AUD-04)."""
     from unittest.mock import patch
+
     from phantom.exceptions import AudioLoadError
 
     # UNC built via concatenation to keep the hook's path scanner quiet.
@@ -742,6 +744,7 @@ async def test_unc_path_stripped_from_error(client):
 async def test_apostrophe_path_stripped_from_error(client):
     """Paths containing apostrophes are fully stripped, not truncated at the quote."""
     from unittest.mock import patch
+
     from phantom.exceptions import AudioLoadError
 
     # Concatenated to keep the hook's path scanner quiet.
@@ -981,8 +984,9 @@ async def test_apply_processing_tool_registered(client):
 async def test_fix_audio_tool_returns_result(client, mono_sine_440hz, make_wav):
     """fix_audio MCP tool returns dict with output_path key."""
     from unittest.mock import patch
-    from phantom.processing import FixResult
+
     from phantom.problems import ProblemsResult
+    from phantom.processing import FixResult
 
     samples, sr = mono_sine_440hz
     path = make_wav(samples, sr)
@@ -1006,6 +1010,7 @@ async def test_fix_audio_tool_returns_result(client, mono_sine_440hz, make_wav):
 async def test_apply_processing_tool_returns_result(client, mono_sine_440hz, make_wav):
     """apply_processing MCP tool returns dict with output_path key."""
     from unittest.mock import patch
+
     from phantom.processing import FixResult
 
     samples, sr = mono_sine_440hz
@@ -1034,8 +1039,9 @@ async def test_apply_processing_tool_returns_result(client, mono_sine_440hz, mak
 async def test_fix_audio_with_problems_parameter(client, mono_sine_440hz, make_wav):
     """fix_audio with problems parameter passes through to processing.fix_audio."""
     from unittest.mock import patch
-    from phantom.processing import FixResult
+
     from phantom.problems import ProblemsResult
+    from phantom.processing import FixResult
 
     samples, sr = mono_sine_440hz
     path = make_wav(samples, sr)

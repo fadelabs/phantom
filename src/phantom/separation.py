@@ -12,13 +12,13 @@ that pulls in phantom-audio-separation.
 
 from __future__ import annotations
 
-from importlib.metadata import entry_points
 from collections.abc import Callable
+from importlib.metadata import entry_points
 
 from pydantic import BaseModel
 
-from phantom.exceptions import DependencyMissingError
 from phantom._utils import wrap_errors
+from phantom.exceptions import DependencyMissingError
 
 #: Entry-point group that separation backend plugins register under.
 SEPARATION_EP_GROUP = "phantom.separation"

@@ -13,8 +13,8 @@ from math import gcd
 import numpy as np
 import pytest
 
-from phantom.audio import AudioData
 from phantom._resample import align_sample_rates, resample_to_match
+from phantom.audio import AudioData
 
 
 def _make_audio(

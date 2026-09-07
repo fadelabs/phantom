@@ -26,7 +26,14 @@ def cli(ctx: click.Context) -> None:
     with professional terminal output.
     """
     # Auto-setup on first run (skip for setup/uninstall/version/update)
-    if ctx.invoked_subcommand not in (None, "setup", "uninstall", "version", "update"):
+    if ctx.invoked_subcommand not in (
+        None,
+        "setup",
+        "setup-ableton",
+        "uninstall",
+        "version",
+        "update",
+    ):
         try:
             import json
 
@@ -56,7 +63,14 @@ def cli(ctx: click.Context) -> None:
             pass
 
     # Check for updates
-    if ctx.invoked_subcommand not in (None, "version", "update", "setup", "uninstall"):
+    if ctx.invoked_subcommand not in (
+        None,
+        "version",
+        "update",
+        "setup",
+        "setup-ableton",
+        "uninstall",
+    ):
         try:
             from phantom.cli.update import _parse_version, check_for_update
 
@@ -87,6 +101,7 @@ _COMMANDS = {
     "phantom.cli.compare": ("compare", None),
     "phantom.cli.separate": ("separate", None),
     "phantom.cli.render": ("render", None),
+    "phantom.cli.setup_ableton": ("setup_ableton", "setup-ableton"),
     "phantom.cli.setup_reaper": ("setup_reaper", "setup-reaper"),
     "phantom.cli.doctor": ("doctor", None),
     "phantom.cli.fix": ("fix", None),
@@ -97,10 +112,11 @@ for _module_path, (_attr_name, _cli_name) in _COMMANDS.items():
         _mod = importlib.import_module(_module_path)
         _cmd = getattr(_mod, _attr_name)
         cli.add_command(_cmd, name=_cli_name)
-    except ModuleNotFoundError:
-        pass  # Module genuinely doesn't exist yet (development)
+    except ModuleNotFoundError as _exc:
+        if _exc.name != _module_path:
+            warnings.warn(f"Failed to load {_module_path}: {_exc}", stacklevel=2)
     except ImportError as _exc:
-        warnings.warn(f"Failed to load {_module_path}: {_exc}")
+        warnings.warn(f"Failed to load {_module_path}: {_exc}", stacklevel=2)
 
 
 # ---------------------------------------------------------------------------

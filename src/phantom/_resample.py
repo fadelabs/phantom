@@ -14,7 +14,8 @@ from math import gcd
 import numpy as np
 from scipy.signal import resample_poly
 
-from phantom.audio import AudioData
+from phantom._utils import check_decoded_size
+from phantom.audio import MAX_SAMPLE_RATE, AudioData
 from phantom.exceptions import AnalysisError
 
 logger = logging.getLogger(__name__)
@@ -40,6 +41,12 @@ def resample_to_match(audio: AudioData, target_sr: int) -> AudioData:
             analyzer @wrap_errors decorator can still catch it; the message is
             unchanged.
     """
+    if (
+        isinstance(target_sr, bool)
+        or not isinstance(target_sr, int)
+        or target_sr > MAX_SAMPLE_RATE
+    ):
+        raise AnalysisError(f"target_sr must be an integer <= {MAX_SAMPLE_RATE}")
     if target_sr == audio.sample_rate:
         return audio
 
@@ -48,6 +55,11 @@ def resample_to_match(audio: AudioData, target_sr: int) -> AudioData:
             f"target_sr must be >= audio sample rate "
             f"({target_sr} < {audio.sample_rate})"
         )
+
+    frames = (
+        audio.num_samples * target_sr + audio.sample_rate - 1
+    ) // audio.sample_rate
+    check_decoded_size(frames, audio.num_channels)
 
     # Compute rational resampling ratio via GCD
     g = gcd(audio.sample_rate, target_sr)

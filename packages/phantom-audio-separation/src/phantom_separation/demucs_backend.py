@@ -15,16 +15,17 @@ from __future__ import annotations
 import hashlib
 import os
 import re
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FuturesTimeout
 
-from phantom.exceptions import AnalysisError, AudioLoadError, DependencyMissingError
-from phantom.separation import SeparationResult
 from phantom._utils import (
     enforce_decode_limits,
     validate_input_path,
     validate_output_path,
     wrap_errors,
 )
+from phantom.exceptions import AnalysisError, AudioLoadError, DependencyMissingError
+from phantom.separation import SeparationResult
 
 
 @wrap_errors("Source separation failed")
@@ -60,12 +61,12 @@ def separate_stems(input_path: str, output_dir: str) -> SeparationResult:
 
     # Step 1: Guard -- import demucs inside function body (per D-06, SEP-02)
     try:
-        from demucs.pretrained import get_model
+        import soundfile as sf
+        import torch
         from demucs.apply import apply_model
         from demucs.audio import AudioFile
-        import torch
-        import soundfile as sf
-    except ImportError:
+        from demucs.pretrained import get_model
+    except ImportError as _exc:
         raise DependencyMissingError(
             package="Demucs",
             extra="separation",
@@ -73,7 +74,7 @@ def separate_stems(input_path: str, output_dir: str) -> SeparationResult:
                 "Demucs provides AI-powered source separation into "
                 "vocals, drums, bass, and other stems."
             ),
-        )
+        ) from _exc
 
     # Step 2: Validate input file exists
     if not os.path.isfile(input_path):
@@ -114,11 +115,11 @@ def separate_stems(input_path: str, output_dir: str) -> SeparationResult:
         future = executor.submit(_run_model)
         try:
             sources = future.result(timeout=_SEPARATION_TIMEOUT)
-        except FuturesTimeout:
+        except FuturesTimeout as _exc:
             raise AnalysisError(
                 f"Source separation timed out after {_SEPARATION_TIMEOUT}s. "
                 "Try a shorter audio file."
-            )
+            ) from _exc
     sources = sources[0]
     sources = sources * ref.std() + ref.mean()
 

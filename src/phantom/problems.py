@@ -14,16 +14,15 @@ Near-silent audio returns an empty problems list with clean=True (per D-12).
 from __future__ import annotations
 
 import numpy as np
-import essentia.standard as es
 import scipy.signal as sig
+from pydantic import BaseModel, ConfigDict
 from scipy.fft import rfft, rfftfreq
 
-from pydantic import BaseModel, ConfigDict
-
-from phantom.audio import AudioData
+import phantom._essentia as es
 from phantom._bands import FlatMapModel
 from phantom._settings import AnalysisSettings, analysis_settings
 from phantom._utils import guarded_mono, wrap_errors
+from phantom.audio import AudioData
 
 _SEVERITY_SORT_ORDER = {"dealbreaker": 0, "significant": 1, "moderate": 2, "minor": 3}
 
@@ -212,13 +211,15 @@ def detect_problems(
         return _empty_result()
 
     problems: list[ProblemItem] = []
-    problems.extend(_detect_clipping(mono, effective))
+    problems.extend(_detect_clipping(audio.samples, effective, pcm_bits=audio.pcm_bits))
     problems.extend(_detect_dc_offset(audio, effective))
     problems.extend(_detect_inter_sample_peaks(audio, effective))
     # Noise floor + SNR are ~half identical (P10 block-RMS percentile and the
     # dynamic-spread guard); both inputs are memoized on AudioData (A.2).
     problems.extend(
-        _detect_noise_and_snr(audio.block_rms_db, audio.mono_rms, effective)
+        _detect_noise_and_snr(
+            audio.analysis_block_rms_db, audio.analysis_rms, effective
+        )
     )
     problems.extend(_detect_hum(mono, audio.sample_rate))
 
@@ -298,9 +299,17 @@ def detect_problems(
 # ---------------------------------------------------------------------------
 
 
-def _detect_clipping(mono: np.ndarray, settings: AnalysisSettings) -> list[ProblemItem]:
-    """Detect samples at digital maximum (+/-1.0). PROB-01."""
-    clipped_mask = np.abs(mono) >= settings.clipping_threshold
+def _detect_clipping(
+    mono: np.ndarray, settings: AnalysisSettings, *, pcm_bits: int | None = None
+) -> list[ProblemItem]:
+    """Count frames reaching either channel's digital rail. PROB-01."""
+    threshold = settings.clipping_threshold
+    positive_threshold = threshold
+    if pcm_bits is not None and threshold == 1.0:
+        positive_threshold = 1.0 - 2.0 ** (1 - pcm_bits)
+    clipped_mask = (mono >= positive_threshold) | (mono <= -threshold)
+    if clipped_mask.ndim == 2:
+        clipped_mask = np.any(clipped_mask, axis=1)
     n_clipped = int(np.sum(clipped_mask))
     if n_clipped == 0:
         return []
@@ -560,7 +569,7 @@ def _detect_hum(mono: np.ndarray, sample_rate: int) -> list[ProblemItem]:
 
     # Filter for mains hum (50Hz or 60Hz +/- 5Hz tolerance)
     hum_freqs: list[tuple[float, float]] = []
-    for f, s in zip(frequencies, saliences):
+    for f, s in zip(frequencies, saliences, strict=False):
         matched = False
         for mains in (50, 60):
             if matched:

@@ -26,8 +26,7 @@ from phantom.cli._formatting import (
     render_spectral_chart,
 )
 from phantom.exceptions import DependencyMissingError, PhantomError
-from phantom.problems import ProblemItem, ProblemSummary, ProblemsResult
-
+from phantom.problems import ProblemItem, ProblemsResult, ProblemSummary
 
 # ---------------------------------------------------------------------------
 # Style maps
@@ -154,6 +153,7 @@ def test_render_error_generic_exception():
 
 def test_render_error_generic_for_unexpected(capsys):
     from rich.console import Console
+
     from phantom.cli._formatting import render_error
 
     console = Console()
@@ -167,8 +167,9 @@ def test_render_error_generic_for_unexpected(capsys):
 
 def test_render_error_phantom_redacts_paths(capsys):
     from rich.console import Console
-    from phantom.exceptions import AudioLoadError
+
     from phantom.cli._formatting import render_error
+    from phantom.exceptions import AudioLoadError
 
     console = Console()
     render_error(
@@ -181,8 +182,9 @@ def test_render_error_phantom_redacts_paths(capsys):
 def test_render_error_redacts_spaced_paths(capsys):
     """Paths containing spaces have their directories redacted, basename kept."""
     from rich.console import Console
-    from phantom.exceptions import AudioLoadError
+
     from phantom.cli._formatting import render_error
+    from phantom.exceptions import AudioLoadError
 
     console = Console()
     render_error(
@@ -196,8 +198,9 @@ def test_render_error_redacts_spaced_paths(capsys):
 def test_render_error_redacts_apostrophe_paths(capsys):
     """Paths containing apostrophes are stripped to the basename, not truncated."""
     from rich.console import Console
-    from phantom.exceptions import AudioLoadError
+
     from phantom.cli._formatting import render_error
+    from phantom.exceptions import AudioLoadError
 
     console = Console()
     # Concatenated to keep the hook's path scanner quiet.
@@ -324,8 +327,9 @@ def test_python_m_phantom_routes_to_cli():
 
     assert cli_obj is not None, "phantom.cli.cli must be importable"
     # Verify __main__ imports cli, not main from server
-    import phantom.__main__ as main_module
     import inspect
+
+    import phantom.__main__ as main_module
 
     source = inspect.getsource(main_module)
     assert "from phantom.cli import cli" in source, (

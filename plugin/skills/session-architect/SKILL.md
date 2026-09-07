@@ -253,3 +253,7 @@ Names should tell anyone what the track is without soloing it.
 10. Non-mixing elements (reference, click, talkback) routed to hardware output, bypassing mix bus
 11. Delivery format routing confirmed — stem buses solo-render cleanly if multi-format delivery required
 12. Session saved as versioned snapshot before any processing begins
+
+## Ableton Live
+
+For Live sessions, follow [the Ableton workflow](../session-architect/ableton-workflow.md). Inspect the connected bridge and its tool schemas; do not run Reaper-specific recipes in Live.

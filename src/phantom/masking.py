@@ -16,12 +16,12 @@ from typing import ClassVar
 import numpy as np
 from pydantic import Field
 
-from phantom.audio import AudioData
-from phantom._resample import align_sample_rates, resample_to_match
 from phantom._bands import _BAND_LABELS, _octave_band_energies
+from phantom._resample import align_sample_rates, resample_to_match
 from phantom._rounding import RoundedModel, round_ratio
 from phantom._settings import AnalysisSettings, analysis_settings
 from phantom._utils import guarded_mono, wrap_errors
+from phantom.audio import AudioData
 
 # Severity thresholds for per-band overlap classification now live in
 # AnalysisSettings (C.1): severity_high/moderate/low (0.6/0.3/0.1).
@@ -193,7 +193,7 @@ def _compute_pairwise_result(
             severity=_classify_severity(float(score), settings),
             overlap_score=float(score),
         )
-        for label, score in zip(_BAND_LABELS, overlap_scores)
+        for label, score in zip(_BAND_LABELS, overlap_scores, strict=False)
     ]
 
     # Weighted overall score

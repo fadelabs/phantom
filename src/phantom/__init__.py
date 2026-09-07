@@ -8,7 +8,28 @@ try:
 except PackageNotFoundError:
     __version__ = "unknown"
 
+from phantom._profiles import ReferenceProfile, list_profiles, load_profile
 from phantom.audio import AudioData, load_audio
+from phantom.comparison import (
+    DeviationResult,
+    DynamicsComparisonSection,
+    DynamicsReferenceComparisonSection,
+    LoudnessProfileComparisonSection,
+    LoudnessReferenceComparisonSection,
+    MatchAdjustments,
+    MatchResult,
+    MetricDiff,
+    MonoBelowResult,
+    ProfileComparisonResult,
+    RangeDeviationResult,
+    ReferenceComparisonResult,
+    StereoProfileComparisonSection,
+    StereoReferenceComparisonSection,
+    compare_to_profile,
+    compare_to_reference,
+    match_to_reference,
+)
+from phantom.dynamics import DynamicsResult, analyze_dynamics
 from phantom.exceptions import (
     AnalysisError,
     AudioLoadError,
@@ -17,48 +38,27 @@ from phantom.exceptions import (
     PhantomError,
     ProfileLoadError,
 )
-from phantom.loudness import analyze_loudness, LoudnessResult
-from phantom.spectral import analyze_spectrum, SpectralResult
-from phantom.dynamics import analyze_dynamics, DynamicsResult
-from phantom.stereo import analyze_stereo, StereoResult, PanoramaDistribution
-from phantom.phase import analyze_phase, compare_phase, PhaseResult, PhaseCompareResult
-from phantom.problems import (
-    detect_problems,
-    build_summary,
-    ProblemsResult,
-    ProblemItem,
-    ProblemSummary,
-)
+from phantom.loudness import LoudnessResult, analyze_loudness
 from phantom.masking import (
-    analyze_masking,
-    analyze_masking_matrix,
-    MaskingResult,
     MaskingBand,
     MaskingMatrixResult,
     MaskingPair,
+    MaskingResult,
+    analyze_masking,
+    analyze_masking_matrix,
 )
-from phantom._profiles import ReferenceProfile, load_profile, list_profiles
-from phantom.comparison import (
-    compare_to_profile,
-    compare_to_reference,
-    match_to_reference,
-    DeviationResult,
-    RangeDeviationResult,
-    MonoBelowResult,
-    LoudnessProfileComparisonSection,
-    DynamicsComparisonSection,
-    StereoProfileComparisonSection,
-    LoudnessReferenceComparisonSection,
-    DynamicsReferenceComparisonSection,
-    StereoReferenceComparisonSection,
-    MetricDiff,
-    MatchAdjustments,
-    ProfileComparisonResult,
-    ReferenceComparisonResult,
-    MatchResult,
+from phantom.phase import PhaseCompareResult, PhaseResult, analyze_phase, compare_phase
+from phantom.problems import (
+    ProblemItem,
+    ProblemsResult,
+    ProblemSummary,
+    build_summary,
+    detect_problems,
 )
-from phantom.separation import separate_stems, SeparationResult
-from phantom.processing import fix_audio, apply_processing, FixResult, FixComparison
+from phantom.processing import FixComparison, FixResult, apply_processing, fix_audio
+from phantom.separation import SeparationResult, separate_stems
+from phantom.spectral import SpectralResult, analyze_spectrum
+from phantom.stereo import PanoramaDistribution, StereoResult, analyze_stereo
 
 __all__ = [
     "AnalysisError",

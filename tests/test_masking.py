@@ -7,17 +7,16 @@ All test audio is generated in-memory via inline fixtures.
 import numpy as np
 import pytest
 
+from phantom._settings import AnalysisSettings
 from phantom.audio import AudioData
 from phantom.masking import (
+    MaskingMatrixResult,
+    MaskingResult,
+    _compute_band_energies,
     analyze_masking,
     analyze_masking_matrix,
-    _compute_band_energies,
-    MaskingResult,
-    MaskingMatrixResult,
 )
-from phantom._settings import AnalysisSettings
 from tests.conftest import _make_audio
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -558,12 +557,12 @@ class TestMatrixStreamingParity:
         import itertools
 
         from phantom._resample import align_sample_rates
+        from phantom._utils import is_near_silent
         from phantom.masking import (
             _compute_band_energies,
             _compute_pairwise_result,
             _no_masking_result,
         )
-        from phantom._utils import is_near_silent
 
         aligned = list(align_sample_rates(*stems))
         energies: list = []
@@ -606,7 +605,7 @@ class TestMatrixStreamingParity:
             assert pair.overall_score == ref.overall_score
             assert pair.overall_severity == ref.overall_severity
             assert len(pair.bands) == len(ref.bands)
-            for got_band, exp_band in zip(pair.bands, ref.bands):
+            for got_band, exp_band in zip(pair.bands, ref.bands, strict=False):
                 assert got_band.band == exp_band.band
                 assert got_band.overlap_score == exp_band.overlap_score
                 assert got_band.severity == exp_band.severity
@@ -626,7 +625,7 @@ class TestMatrixStreamingParity:
         for pair in result.pairs:
             ref = expected[(pair.stem_a, pair.stem_b)]
             assert pair.overall_score == ref.overall_score
-            for got_band, exp_band in zip(pair.bands, ref.bands):
+            for got_band, exp_band in zip(pair.bands, ref.bands, strict=False):
                 assert got_band.overlap_score == exp_band.overlap_score
 
     def test_mixed_rate_with_silent_stem_parity(self):
@@ -647,7 +646,7 @@ class TestMatrixStreamingParity:
             ref = expected[(pair.stem_a, pair.stem_b)]
             assert pair.overall_score == ref.overall_score
             assert pair.overall_severity == ref.overall_severity
-            for got_band, exp_band in zip(pair.bands, ref.bands):
+            for got_band, exp_band in zip(pair.bands, ref.bands, strict=False):
                 assert got_band.overlap_score == exp_band.overlap_score
 
 

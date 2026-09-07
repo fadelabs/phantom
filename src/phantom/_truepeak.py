@@ -19,8 +19,8 @@ proven safe with this Pydantic v2 model.
 from __future__ import annotations
 
 import numpy as np
-import essentia.standard as es
 
+import phantom._essentia as es
 from phantom.audio import AudioData
 
 

@@ -7,11 +7,11 @@ from unittest.mock import patch
 
 import pytest
 import soundfile as sf
-
 from click.testing import CliRunner
+
 from phantom.cli import cli
-from phantom.processing import FixResult, FixComparison
-from phantom.problems import ProblemsResult, ProblemItem
+from phantom.problems import ProblemItem, ProblemsResult
+from phantom.processing import FixComparison, FixResult
 
 
 @pytest.fixture

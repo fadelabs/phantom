@@ -8,8 +8,8 @@ from unittest.mock import patch
 
 import pytest
 import soundfile as sf
-
 from click.testing import CliRunner
+
 from phantom.cli import cli
 from phantom.separation import SeparationResult
 

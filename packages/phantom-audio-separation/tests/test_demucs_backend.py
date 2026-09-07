@@ -11,12 +11,14 @@ core test environment where the plugin is not installed).
 
 import importlib
 import os
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
-from unittest.mock import patch, MagicMock
 
 pytest.importorskip("phantom_separation")
+
+from phantom_separation.demucs_backend import separate_stems
 
 from phantom.exceptions import (
     AnalysisError,
@@ -25,7 +27,6 @@ from phantom.exceptions import (
     PathSecurityError,
 )
 from phantom.separation import SeparationResult
-from phantom_separation.demucs_backend import separate_stems
 
 
 def _make_demucs_mocks(samplerate=44100):
@@ -222,6 +223,7 @@ class TestSeparateStems:
         """Importing the backend without demucs installed does not raise (SEP-02)."""
         import builtins
         import sys
+
         import phantom_separation.demucs_backend
 
         for mod in ["demucs", "demucs.pretrained", "demucs.apply", "demucs.audio"]:

@@ -11,7 +11,6 @@ import json
 import os
 
 import pytest
-
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
 
@@ -22,7 +21,6 @@ from phantom.live_metrics import (
     read_live_metrics,
 )
 from phantom.server import mcp
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

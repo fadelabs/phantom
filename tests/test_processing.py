@@ -15,7 +15,6 @@ import soundfile as sf
 
 from phantom.exceptions import AnalysisError, DependencyMissingError
 
-
 # ---------------------------------------------------------------------------
 # TestRecipes -- FIX-01: Recipe maps problem type to Pedalboard chain
 # ---------------------------------------------------------------------------
@@ -44,6 +43,7 @@ class TestRecipes:
 
     def test_recipe_mud_returns_two_plugins(self):
         import pedalboard as pb
+
         from phantom.processing import RECIPES
 
         chain = RECIPES["mud"].build_chain({})
@@ -57,6 +57,7 @@ class TestRecipes:
 
     def test_recipe_harshness_returns_one_peak_filter(self):
         import pedalboard as pb
+
         from phantom.processing import RECIPES
 
         chain = RECIPES["harshness"].build_chain({})
@@ -68,6 +69,7 @@ class TestRecipes:
 
     def test_recipe_hum_creates_notch_per_frequency(self):
         import pedalboard as pb
+
         from phantom.processing import RECIPES
 
         details = {"frequencies_hz": [60.0, 120.0, 180.0]}
@@ -83,6 +85,7 @@ class TestRecipes:
 
     def test_recipe_sibilance_returns_one_peak_filter(self):
         import pedalboard as pb
+
         from phantom.processing import RECIPES
 
         chain = RECIPES["sibilance"].build_chain({})
@@ -93,6 +96,7 @@ class TestRecipes:
 
     def test_recipe_dc_offset_returns_highpass(self):
         import pedalboard as pb
+
         from phantom.processing import RECIPES
 
         chain = RECIPES["dc_offset"].build_chain({})
@@ -102,6 +106,7 @@ class TestRecipes:
 
     def test_recipe_resonant_peak_uses_detected_values(self):
         import pedalboard as pb
+
         from phantom.processing import RECIPES
 
         details = {"resonances": [{"frequency_hz": 301.5, "q_factor": 15.2}]}
@@ -174,8 +179,8 @@ class TestOutputPath:
 
     def test_default_output_path_in_confined_dir(self, tmp_path):
         """Default output is '<stem>_fixed.wav' INSIDE the confined dir (Finding 5)."""
-        from phantom.processing import _resolve_output_path
         from phantom._utils import get_output_dir
+        from phantom.processing import _resolve_output_path
 
         result = _resolve_output_path("/audio/song.wav", None)
         assert result == os.path.join(get_output_dir(), "song_fixed.wav")
@@ -305,7 +310,7 @@ class TestApplyProcessing:
         output_path = str(tmp_path / "output.wav")
         sf.write(input_path, samples_2d, sr)
 
-        from phantom.processing import apply_processing, FixResult
+        from phantom.processing import FixResult, apply_processing
 
         result = apply_processing(
             input_path,
@@ -384,8 +389,8 @@ class TestCompareResults:
 
     def test_resolved_when_problem_gone(self):
         """Problem in before but not in after -> status='resolved'."""
+        from phantom.problems import ProblemItem, ProblemsResult
         from phantom.processing import _compare_results
-        from phantom.problems import ProblemsResult, ProblemItem
 
         before = ProblemsResult(
             problems=[
@@ -407,8 +412,8 @@ class TestCompareResults:
 
     def test_improved_when_severity_decreased(self):
         """Same problem type with lower severity after -> status='improved'."""
+        from phantom.problems import ProblemItem, ProblemsResult
         from phantom.processing import _compare_results
-        from phantom.problems import ProblemsResult, ProblemItem
 
         before = ProblemsResult(
             problems=[
@@ -441,8 +446,8 @@ class TestCompareResults:
 
     def test_unchanged_when_same_severity(self):
         """Same problem type with same severity -> status='unchanged'."""
+        from phantom.problems import ProblemItem, ProblemsResult
         from phantom.processing import _compare_results
-        from phantom.problems import ProblemsResult, ProblemItem
 
         before = ProblemsResult(
             problems=[
@@ -465,8 +470,8 @@ class TestCompareResults:
 
     def test_worsened_when_severity_increased(self):
         """Same problem with higher severity after -> status='worsened', in regressions."""
+        from phantom.problems import ProblemItem, ProblemsResult
         from phantom.processing import _compare_results
-        from phantom.problems import ProblemsResult, ProblemItem
 
         before = ProblemsResult(
             problems=[
@@ -495,8 +500,8 @@ class TestCompareResults:
 
     def test_multiple_problems_mixed_status(self):
         """Multiple problems with different status outcomes."""
+        from phantom.problems import ProblemItem, ProblemsResult
         from phantom.processing import _compare_results
-        from phantom.problems import ProblemsResult, ProblemItem
 
         before = ProblemsResult(
             problems=[
@@ -543,8 +548,8 @@ class TestCompareResults:
 
     def test_unknown_severity_raises_analysis_error(self):
         """Unknown severity in before or after raises AnalysisError."""
+        from phantom.problems import ProblemItem, ProblemsResult
         from phantom.processing import _compare_results
-        from phantom.problems import ProblemsResult, ProblemItem
 
         before = ProblemsResult(
             problems=[
@@ -573,8 +578,8 @@ class TestCompareResults:
 
     def test_unknown_severity_in_after_raises(self):
         """Unknown severity in after results raises AnalysisError."""
+        from phantom.problems import ProblemItem, ProblemsResult
         from phantom.processing import _compare_results
-        from phantom.problems import ProblemsResult, ProblemItem
 
         before = ProblemsResult(
             problems=[
@@ -614,8 +619,9 @@ class TestBuildChainFromProblems:
     def test_single_problem_returns_recipe_chain(self):
         """Single fixable problem returns its recipe's plugin chain."""
         import pedalboard as pb
-        from phantom.processing import _build_chain_from_problems
+
         from phantom.problems import ProblemItem
+        from phantom.processing import _build_chain_from_problems
 
         problems = [
             ProblemItem(type="mud", severity="moderate", message="Mud", details={})
@@ -627,8 +633,8 @@ class TestBuildChainFromProblems:
 
     def test_unfixable_problems_skipped(self):
         """Unfixable problem types produce no plugins."""
-        from phantom.processing import _build_chain_from_problems
         from phantom.problems import ProblemItem
+        from phantom.processing import _build_chain_from_problems
 
         problems = [
             ProblemItem(
@@ -641,8 +647,9 @@ class TestBuildChainFromProblems:
     def test_hpf_ordered_before_peak_filters(self):
         """HPF plugins come before peak/shelf plugins in chain."""
         import pedalboard as pb
-        from phantom.processing import _build_chain_from_problems
+
         from phantom.problems import ProblemItem
+        from phantom.processing import _build_chain_from_problems
 
         # harshness (PeakFilter) + mud (HPF + LowShelf) -- HPF should come first
         problems = [
@@ -664,8 +671,9 @@ class TestBuildChainFromProblems:
     def test_notch_before_peak_in_chain(self):
         """Notch filters (Q>10) come before peak filters (Q<=10)."""
         import pedalboard as pb
-        from phantom.processing import _build_chain_from_problems
+
         from phantom.problems import ProblemItem
+        from phantom.processing import _build_chain_from_problems
 
         # hum (notch Q=30) + harshness (peak Q=1.5)
         problems = [
@@ -693,8 +701,8 @@ class TestBuildChainFromProblems:
 
     def test_empty_for_no_fixable_problems(self):
         """No fixable problems returns empty chain."""
-        from phantom.processing import _build_chain_from_problems
         from phantom.problems import ProblemItem
+        from phantom.processing import _build_chain_from_problems
 
         problems = [
             ProblemItem(
@@ -709,8 +717,8 @@ class TestBuildChainFromProblems:
 
     def test_multiple_recipes_flattened(self):
         """Multiple fixable problems flatten into single chain."""
-        from phantom.processing import _build_chain_from_problems
         from phantom.problems import ProblemItem
+        from phantom.processing import _build_chain_from_problems
 
         problems = [
             ProblemItem(type="mud", severity="moderate", message="Mud", details={}),
@@ -747,8 +755,8 @@ class TestFixAudio:
 
     def test_fix_audio_returns_fix_result(self, stereo_wav, tmp_path, monkeypatch):
         """fix_audio returns a FixResult with all required fields."""
-        from phantom.processing import fix_audio, FixResult
         from phantom.problems import ProblemsResult
+        from phantom.processing import FixResult, fix_audio
 
         # Mock detect_problems to return no problems (clean audio)
         monkeypatch.setattr(
@@ -767,8 +775,8 @@ class TestFixAudio:
 
     def test_fix_audio_no_problems_writes_copy(self, stereo_wav, tmp_path, monkeypatch):
         """When no fixable problems detected, output is a copy of input."""
-        from phantom.processing import fix_audio
         from phantom.problems import ProblemsResult
+        from phantom.processing import fix_audio
 
         monkeypatch.setattr(
             "phantom.processing.detect_problems",
@@ -782,8 +790,8 @@ class TestFixAudio:
 
     def test_fix_audio_with_detected_problem(self, stereo_wav, tmp_path, monkeypatch):
         """fix_audio with detected fixable problem applies recipe and reports fix."""
+        from phantom.problems import ProblemItem, ProblemsResult
         from phantom.processing import fix_audio
-        from phantom.problems import ProblemsResult, ProblemItem
 
         before_result = ProblemsResult(
             problems=[
@@ -813,8 +821,8 @@ class TestFixAudio:
 
     def test_fix_audio_problems_filter(self, stereo_wav, tmp_path, monkeypatch):
         """problems parameter filters which problem types to fix."""
+        from phantom.problems import ProblemItem, ProblemsResult
         from phantom.processing import fix_audio
-        from phantom.problems import ProblemsResult, ProblemItem
 
         before_result = ProblemsResult(
             problems=[
@@ -849,8 +857,8 @@ class TestFixAudio:
         self, stereo_wav, tmp_path, monkeypatch
     ):
         """problems filter that matches no detected problems -> no processing."""
+        from phantom.problems import ProblemItem, ProblemsResult
         from phantom.processing import fix_audio
-        from phantom.problems import ProblemsResult, ProblemItem
 
         before_result = ProblemsResult(
             problems=[
@@ -876,8 +884,8 @@ class TestFixAudio:
 
     def test_fix_audio_regression_detection(self, stereo_wav, tmp_path, monkeypatch):
         """Worsened problems appear in FixResult.regressions."""
+        from phantom.problems import ProblemItem, ProblemsResult
         from phantom.processing import fix_audio
-        from phantom.problems import ProblemsResult, ProblemItem
 
         before_result = ProblemsResult(
             problems=[
@@ -911,8 +919,8 @@ class TestFixAudio:
 
     def test_fix_audio_unfixable_skipped(self, stereo_wav, tmp_path, monkeypatch):
         """Unfixable problems are skipped, not passed to recipe lookup."""
+        from phantom.problems import ProblemItem, ProblemsResult
         from phantom.processing import fix_audio
-        from phantom.problems import ProblemsResult, ProblemItem
 
         before_result = ProblemsResult(
             problems=[
@@ -945,9 +953,9 @@ class TestFixAudio:
 
     def test_fix_audio_default_output_path(self, stereo_wav, monkeypatch):
         """Default output is '<stem>_fixed.wav' inside the confined dir (Finding 5)."""
-        from phantom.processing import fix_audio
-        from phantom.problems import ProblemsResult
         from phantom._utils import get_output_dir
+        from phantom.problems import ProblemsResult
+        from phantom.processing import fix_audio
 
         monkeypatch.setattr(
             "phantom.processing.detect_problems",
@@ -962,8 +970,8 @@ class TestFixAudio:
 
     def test_fix_audio_improvements_list(self, stereo_wav, tmp_path, monkeypatch):
         """Resolved problems appear in improvements list."""
+        from phantom.problems import ProblemItem, ProblemsResult
         from phantom.processing import fix_audio
-        from phantom.problems import ProblemsResult, ProblemItem
 
         before_result = ProblemsResult(
             problems=[
@@ -1040,9 +1048,9 @@ class TestFixAudioPreloaded:
 
     def test_preloaded_audio_matches_default(self, stereo_wav, tmp_path, monkeypatch):
         """Result is identical whether `audio` is passed or loaded internally."""
-        from phantom.processing import fix_audio
         from phantom.audio import load_audio
-        from phantom.problems import ProblemsResult, ProblemItem
+        from phantom.problems import ProblemItem, ProblemsResult
+        from phantom.processing import fix_audio
 
         before_result = ProblemsResult(
             problems=[
@@ -1090,12 +1098,12 @@ class TestFixAudioPreloaded:
     def test_preloaded_audio_skips_input_load(self, stereo_wav, tmp_path, monkeypatch):
         """When audio= is provided, the input file is not re-decoded.
 
-        fix_audio still loads the *output* for after-detection, so exactly one
-        load_audio call happens (output only) instead of two (input + output).
+        After-detection uses the float samples written to the output, so no
+        redundant decode is needed when the input is already loaded.
         """
-        from phantom.processing import fix_audio
         from phantom.audio import load_audio
         from phantom.problems import ProblemsResult
+        from phantom.processing import fix_audio
 
         monkeypatch.setattr(
             "phantom.processing.detect_problems",
@@ -1116,16 +1124,15 @@ class TestFixAudioPreloaded:
         output = str(tmp_path / "output.wav")
         result = fix_audio(stereo_wav, output_path=output, audio=preloaded)
 
-        # Only the output was loaded (for after-detection); the input was reused.
+        # Input reused; after-detection uses the exact float output samples.
         assert result.output_path == output
-        assert len(loaded_paths) == 1
-        assert os.path.realpath(loaded_paths[0]) == os.path.realpath(output)
+        assert loaded_paths == []
 
     def test_default_still_loads_input(self, stereo_wav, tmp_path, monkeypatch):
-        """With audio=None, both input and output are loaded (unchanged behavior)."""
-        from phantom.processing import fix_audio
+        """With audio=None, the input is decoded exactly once."""
         from phantom.audio import load_audio
         from phantom.problems import ProblemsResult
+        from phantom.processing import fix_audio
 
         monkeypatch.setattr(
             "phantom.processing.detect_problems",
@@ -1144,5 +1151,5 @@ class TestFixAudioPreloaded:
         output = str(tmp_path / "output.wav")
         fix_audio(stereo_wav, output_path=output)
 
-        # Input + output both loaded: two calls, unchanged from pre-P-08.
-        assert len(loaded_paths) == 2
+        assert len(loaded_paths) == 1
+        assert os.path.realpath(loaded_paths[0]) == os.path.realpath(stereo_wav)

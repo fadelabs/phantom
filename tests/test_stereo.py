@@ -10,9 +10,8 @@ import pytest
 
 from phantom.audio import AudioData
 from phantom.exceptions import AnalysisError
-from phantom.stereo import analyze_stereo, StereoResult, PanoramaDistribution
+from phantom.stereo import PanoramaDistribution, StereoResult, analyze_stereo
 from tests.conftest import _make_audio
-
 
 # ---------------------------------------------------------------------------
 # Helpers

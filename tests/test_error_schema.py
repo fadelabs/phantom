@@ -6,12 +6,10 @@ import importlib
 import json
 
 import pytest
-
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
 
 from phantom.server import mcp
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

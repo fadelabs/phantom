@@ -11,7 +11,6 @@ from phantom.audio import AudioData
 from phantom.dynamics import DynamicsResult, analyze_dynamics
 from tests.conftest import _make_audio
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -158,6 +157,7 @@ class TestDynamicRange:
 def test_dynamic_range_none_for_ultrashort_audio():
     # < 2 RMS blocks => unmeasurable, not a misleading 0.0 (P-12).
     import numpy as np
+
     from phantom.audio import AudioData
     from phantom.dynamics import analyze_dynamics
 

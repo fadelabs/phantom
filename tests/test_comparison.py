@@ -5,62 +5,62 @@ All test audio is generated in-memory via inline fixtures.
 """
 
 import shutil
+from unittest.mock import MagicMock, patch
+
 import numpy as np
 import pytest
-from unittest.mock import patch, MagicMock
 
+from phantom._profiles import (
+    FrequencyTargets,
+    LoudnessTargets,
+    ReferenceProfile,
+    SpatialConventions,
+    StereoConventions,
+    list_profiles,
+    load_profile,
+)
 from phantom.audio import AudioData
-from phantom.facade import ANALYSIS_TYPES, AnalysisSpec
 from phantom.comparison import (
-    FrequencyDeviationMap,
-    _check_mono_below,
     _CORRELATION_THRESHOLDS,
+    _THRESHOLD_MODERATE,
+    _THRESHOLD_ON_TARGET,
+    _THRESHOLD_SLIGHT,
+    _WIDTH_RANGES,
+    _WIDTH_THRESHOLDS,
+    DeviationResult,
+    DynamicsComparisonSection,
+    FrequencyDeviationMap,
+    LoudnessProfileComparisonSection,
+    LoudnessReferenceComparisonSection,
+    MatchAdjustments,
+    MatchResult,
+    MetricDiff,
+    ProfileComparisonResult,
+    RangeDeviationResult,
+    ReferenceComparisonResult,
+    StereoProfileComparisonSection,
+    _check_mono_below,
     _map_width_to_range,
     _normalize_band_energies,
     _rate_deviation,
     _rate_range_deviation,
-    _THRESHOLD_MODERATE,
-    _THRESHOLD_ON_TARGET,
-    _THRESHOLD_SLIGHT,
     _unmeasurable_deviation,
-    _WIDTH_RANGES,
-    _WIDTH_THRESHOLDS,
     compare_to_profile,
     compare_to_reference,
     match_to_reference,
-    ProfileComparisonResult,
-    ReferenceComparisonResult,
-    MatchResult,
-    MatchAdjustments,
-    MetricDiff,
-    DeviationResult,
-    RangeDeviationResult,
-    LoudnessProfileComparisonSection,
-    DynamicsComparisonSection,
-    StereoProfileComparisonSection,
-    LoudnessReferenceComparisonSection,
 )
+from phantom.dynamics import DynamicsResult
 from phantom.exceptions import (
     AnalysisError,
     AudioLoadError,
     DependencyMissingError,
     PathSecurityError,
 )
-from phantom._profiles import (
-    FrequencyTargets,
-    list_profiles,
-    load_profile,
-    LoudnessTargets,
-    ReferenceProfile,
-    SpatialConventions,
-    StereoConventions,
-)
-from phantom.spectral import SpectralResult
+from phantom.facade import ANALYSIS_TYPES, AnalysisSpec
 from phantom.loudness import LoudnessResult
-from phantom.dynamics import DynamicsResult
+from phantom.spectral import SpectralResult
 from phantom.stereo import StereoResult
 from tests.conftest import _make_audio
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -457,7 +457,7 @@ class TestCompareToReference:
             dev = getattr(result.loudness, key)
             assert dev.rating == "on_target", f"loudness.{key} not on_target"
         # All frequency deviations should be on_target
-        for key, dev in result.frequency.items():
+        for dev in result.frequency.values():
             assert dev.rating == "on_target", f"frequency.{key} not on_target"
 
     def test_different_audio_non_zero_deviations(self, audio_3s, audio_3s_different):
@@ -474,7 +474,7 @@ class TestCompareToReference:
                     break
         # Check frequency
         if not has_nonzero and result.frequency is not None:
-            for key, dev in result.frequency.items():
+            for dev in result.frequency.values():
                 if dev.deviation is not None and dev.deviation != 0.0:
                     has_nonzero = True
                     break

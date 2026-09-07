@@ -15,9 +15,9 @@ from phantom._settings import AnalysisSettings, analysis_settings
 from phantom.audio import AudioData
 from phantom.dynamics import analyze_dynamics
 from phantom.exceptions import AnalysisError
+from phantom.masking import analyze_masking
 from phantom.phase import analyze_phase
 from phantom.problems import detect_problems
-from phantom.masking import analyze_masking
 
 
 def _audio(left: np.ndarray, right: np.ndarray) -> AudioData:

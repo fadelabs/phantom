@@ -179,8 +179,7 @@ main() {
         printf "  Extras unlock additional capabilities:\n"
         printf "    %s•%s Stem separation %s— split a track into vocals, drums, bass, other%s\n" "$CYAN" "$RESET" "$DIM" "$RESET"
         printf "    %s•%s Reference matching %s— auto-match your mix to a reference track%s\n" "$CYAN" "$RESET" "$DIM" "$RESET"
-        # TODO: uncomment when pedalboard integration is wired up
-        # printf "    %s•%s Audio processing %s— headless EQ, compression, effects without a DAW%s\n" "$CYAN" "$RESET" "$DIM" "$RESET"
+        printf "    %s•%s Audio processing %s— headless EQ, compression, effects without a DAW%s\n" "$CYAN" "$RESET" "$DIM" "$RESET"
         printf "\n"
         printf "    %s1)%s All extras %s(recommended)%s %s~2.5GB%s\n" "$CYAN" "$RESET" "$DIM" "$RESET" "$DIM" "$RESET"
         printf "    %s2)%s Core only %s~50MB%s\n" "$CYAN" "$RESET" "$DIM" "$RESET"
@@ -221,19 +220,18 @@ main() {
                     fi
                 fi
 
-                # TODO: uncomment when pedalboard integration is wired up
-                # printf "\n"
-                # printf "  %sAudio processing%s %s~5MB%s\n" "$BOLD" "$RESET" "$DIM" "$RESET"
-                # printf "  Headless EQ, compression, and effects without a DAW (Pedalboard)\n"
-                # printf "  Install? [Y/n]: "
-                # read -r PROC_CHOICE
-                # if [ "${PROC_CHOICE:-y}" != "n" ] && [ "${PROC_CHOICE:-y}" != "N" ]; then
-                #     if [ -n "$INSTALL_EXTRAS" ]; then
-                #         INSTALL_EXTRAS="${INSTALL_EXTRAS},processing"
-                #     else
-                #         INSTALL_EXTRAS="processing"
-                #     fi
-                # fi
+                printf "\n"
+                printf "  %sAudio processing%s %s~5MB%s\n" "$BOLD" "$RESET" "$DIM" "$RESET"
+                printf "  Headless EQ, compression, and effects without a DAW (Pedalboard)\n"
+                printf "  Install? [Y/n]: "
+                read -r PROC_CHOICE
+                if [ "${PROC_CHOICE:-y}" != "n" ] && [ "${PROC_CHOICE:-y}" != "N" ]; then
+                    if [ -n "$INSTALL_EXTRAS" ]; then
+                        INSTALL_EXTRAS="${INSTALL_EXTRAS},processing"
+                    else
+                        INSTALL_EXTRAS="processing"
+                    fi
+                fi
                 ;;
             *)
                 INSTALL_EXTRAS="all"

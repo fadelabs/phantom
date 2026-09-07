@@ -13,7 +13,6 @@ import soundfile as sf
 from phantom.audio import AudioData, load_audio
 from phantom.exceptions import AudioLoadError, PathSecurityError
 
-
 # ── AudioData model tests ──────────────────────────────────────────────
 
 

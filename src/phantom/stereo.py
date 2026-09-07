@@ -16,11 +16,11 @@ from typing import ClassVar
 
 import numpy as np
 
-from phantom.audio import AudioData
-from phantom.exceptions import AnalysisError
 from phantom._rounding import RoundedModel, round_db, round_pct, round_ratio
 from phantom._settings import AnalysisSettings
 from phantom._utils import guarded_mono, is_near_silent, wrap_errors
+from phantom.audio import AudioData
+from phantom.exceptions import AnalysisError
 
 
 class PanoramaDistribution(RoundedModel):

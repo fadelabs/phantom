@@ -7,6 +7,7 @@ malformed rejection, and alias resolution.
 import json
 
 import pytest
+from pydantic import ValidationError
 
 from phantom import (
     ProfileLoadError,
@@ -15,7 +16,6 @@ from phantom import (
     load_profile,
 )
 from phantom.exceptions import PhantomError
-
 
 # Expected genre names per REF-01 / D-03
 ALL_GENRES = [
@@ -370,7 +370,7 @@ class TestFrozenProfile:
 
     def test_cannot_modify_genre(self):
         profile = load_profile("rock")
-        with pytest.raises(Exception):  # ValidationError for frozen model
+        with pytest.raises(ValidationError, match="frozen"):
             profile.genre = "changed"
 
 
@@ -492,6 +492,7 @@ class TestProfileMtimeCache:
     def test_mtime_cache_invalidation(self, tmp_path, monkeypatch):
         """Editing a user profile mid-session reloads on next call."""
         import time
+
         from phantom._profiles import _profile_cache
 
         _profile_cache.clear()

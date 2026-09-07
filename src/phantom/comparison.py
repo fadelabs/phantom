@@ -11,6 +11,12 @@ import numpy as np
 from pydantic import BaseModel
 
 from phantom._bands import octave_band_map_model
+
+# Re-exported for backward compatibility: existing callers/tests import
+# ``_cached_analysis`` from this module (see tests/test_comparison.py). The
+# canonical definition now lives in phantom._cache (P-01).
+from phantom._cache import _cached_analysis
+from phantom._profiles import ReferenceProfile
 from phantom._rounding import (
     RoundedModel,
     round_db,
@@ -24,16 +30,10 @@ from phantom._utils import (
     validate_output_path,
     wrap_errors,
 )
-from phantom.audio import AudioData, load_audio
-
-# Re-exported for backward compatibility: existing callers/tests import
-# ``_cached_analysis`` from this module (see tests/test_comparison.py). The
-# canonical definition now lives in phantom._cache (P-01).
-from phantom._cache import _cached_analysis
+from phantom.audio import AudioData, load_audio, load_output_audio
 from phantom.exceptions import AnalysisError, AudioLoadError, DependencyMissingError
 from phantom.facade import ANALYSIS_TYPES
 from phantom.loudness import analyze_loudness
-from phantom._profiles import ReferenceProfile
 from phantom.spectral import analyze_spectrum
 
 # ---------------------------------------------------------------------------
@@ -644,12 +644,12 @@ def match_to_reference(
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", category=DeprecationWarning)
             import matchering as mg
-    except ImportError:
+    except ImportError as _exc:
         raise DependencyMissingError(
             package="Matchering",
             extra="matching",
             detail="Matchering provides automated spectral/loudness/width matching.",
-        )
+        ) from _exc
 
     if not os.path.isfile(target_path):
         raise AudioLoadError(f"Target file not found: {os.path.basename(target_path)}")
@@ -678,11 +678,11 @@ def match_to_reference(
     try:
         try:
             fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except OSError:
+        except OSError as _exc:
             raise AnalysisError(
                 f"Output path is locked by another process: {os.path.basename(output_path)}. "
                 "Try again shortly or choose a different output path."
-            )
+            ) from _exc
 
         # Atomically reserve the output name (Finding 3). O_CREAT|O_EXCL fails
         # if it already exists, closing the check-then-write TOCTOU of a prior
@@ -693,11 +693,11 @@ def match_to_reference(
                 os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW,
                 0o600,
             )
-        except FileExistsError:
+        except FileExistsError as _exc:
             raise AnalysisError(
                 f"Output file already exists: {os.path.basename(output_path)}. "
                 "Choose a different output path to avoid overwriting."
-            )
+            ) from _exc
         os.close(out_fd)
         created_output = True
 
@@ -705,13 +705,15 @@ def match_to_reference(
         before_loudness = analyze_loudness(before_audio)
         before_spectrum = analyze_spectrum(before_audio)
 
+        # Validate both inputs before the third-party decoder allocates memory.
+        load_audio(reference_path)
         mg.process(
             target=target_path,
             reference=reference_path,
             results=[mg.pcm24(output_path)],
         )
 
-        after_audio = load_audio(output_path)
+        after_audio = load_output_audio(output_path)
         after_loudness = analyze_loudness(after_audio)
         after_spectrum = analyze_spectrum(after_audio)
 
