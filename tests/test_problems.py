@@ -493,7 +493,7 @@ class TestMergedNoiseFloorSnr:
         compares the helper against itself and says nothing about whether
         detect_problems reuses the memo.
         """
-        import phantom.audio as audio_mod
+        from phantom import audio as audio_mod
         from phantom.dynamics import analyze_dynamics
 
         samples, sr = noisy_signal

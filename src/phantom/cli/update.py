@@ -99,7 +99,8 @@ def _fetch_json(url: str) -> dict | None:
             if resp.status == 200:
                 return json.loads(resp.read().decode())
     except (URLError, OSError, json.JSONDecodeError, ValueError):
-        pass
+        # Offline or malformed responses mean no version information is available.
+        return None
     return None
 
 
@@ -138,6 +139,7 @@ def _write_cache(latest: str, current: str) -> None:
             )
         )
     except OSError:
+        # Cache persistence is optional; the fetched version remains usable.
         pass
 
 
@@ -146,6 +148,7 @@ def _clear_cache() -> None:
     try:
         CACHE_FILE.unlink(missing_ok=True)
     except OSError:
+        # A read-only cache must not prevent an explicit update check.
         pass
 
 
@@ -192,8 +195,14 @@ def is_editable_install() -> bool:
         if direct_url_text:
             data = json.loads(direct_url_text)
             return data.get("dir_info", {}).get("editable", False)
-    except Exception:
-        pass
+    except (
+        importlib.metadata.PackageNotFoundError,
+        OSError,
+        ValueError,
+        AttributeError,
+    ):
+        # Missing or malformed installation metadata cannot establish editable mode.
+        return False
     return False
 
 

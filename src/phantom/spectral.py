@@ -15,9 +15,9 @@ from typing import ClassVar
 import numpy as np
 
 import phantom._essentia as es
-from phantom._bands import (  # re-exported for backward compatibility (B.6)
+from phantom import _bands
+from phantom._bands import (
     _BAND_LABELS,
-    OCTAVE_CENTERS,  # noqa: F401 -- tests import it from phantom.spectral
     OctaveBandEnergyDb,
     _octave_band_energies,
 )
@@ -31,6 +31,9 @@ from phantom._rounding import (
 from phantom._settings import AnalysisSettings, analysis_settings
 from phantom._utils import guarded_mono, wrap_errors
 from phantom.audio import AudioData
+
+# Preserve the historical public constant without an unused import.
+OCTAVE_CENTERS = _bands.OCTAVE_CENTERS
 
 
 class SpectralResult(RoundedModel):

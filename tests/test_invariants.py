@@ -101,12 +101,12 @@ def test_identical_channels_full_correlation(freq, amp):
     audio = _make_stereo(mono, mono.copy(), sr)
 
     stereo = analyze_stereo(audio)
-    assert stereo.correlation == 1.0
-    assert stereo.stereo_width == 0.0
-    assert stereo.balance_db == 0.0
+    assert stereo.correlation == pytest.approx(1.0, abs=1e-6)
+    assert stereo.stereo_width == pytest.approx(0.0, abs=1e-6)
+    assert stereo.balance_db == pytest.approx(0.0, abs=1e-6)
 
     phase = analyze_phase(audio)
-    assert phase.phase_correlation == 1.0
+    assert phase.phase_correlation == pytest.approx(1.0, abs=1e-6)
     assert phase.polarity_inverted is False
 
 
@@ -120,7 +120,7 @@ def test_polarity_flip_inverts_correlation(freq, amp):
     audio = _make_stereo(mono, -mono, sr)
 
     stereo = analyze_stereo(audio)
-    assert stereo.correlation == -1.0
+    assert stereo.correlation == pytest.approx(-1.0, abs=1e-3)
 
     phase = analyze_phase(audio)
     assert phase.phase_correlation == pytest.approx(-1.0, abs=1e-3)

@@ -322,6 +322,7 @@ def atomic_write_text(path: str | Path, content: str) -> None:
         try:
             os.unlink(tmp)
         except OSError:
+            # Cleanup must not replace the original write failure.
             pass
         raise
 

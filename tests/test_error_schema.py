@@ -10,6 +10,7 @@ from fastmcp import Client
 from fastmcp.exceptions import ToolError
 
 from phantom.server import mcp
+from tests.helpers import parse_tool_error
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -138,7 +139,7 @@ async def test_all_tools_return_consistent_error_schema(client):
         bad_args = _get_bad_args(name)
         with pytest.raises(ToolError) as exc_info:
             await client.call_tool(name, bad_args)
-        error = json.loads(str(exc_info.value))
+        error = parse_tool_error(exc_info.value)
 
         _assert_error_schema(error, name)
         tested.append(name)
@@ -163,7 +164,7 @@ def test_error_context_redacts_absolute_paths():
     # the repo's /Users//home/ privacy-guard CI check on source literals.
     secret = "/data/private/session/vocal_take_3.wav"
     err = _to_tool_error(AnalysisError("boom"), context={"file_path": secret})
-    payload = json.loads(str(err))
+    payload = parse_tool_error(err)
 
     assert secret not in json.dumps(payload)
     # The directory prefix is stripped; a basename may remain for context.

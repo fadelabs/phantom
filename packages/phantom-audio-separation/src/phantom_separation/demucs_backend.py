@@ -97,12 +97,13 @@ def separate_stems(input_path: str, output_dir: str) -> SeparationResult:
         channels=model.audio_channels,
     )
     ref = wav.mean(0)
+    ref_mean = float(ref.mean())
     ref_std = float(ref.std())
     if ref_std < 1e-12:
         raise AnalysisError(
             "Cannot separate a silent file — the input has no audible signal."
         )
-    wav = (wav - ref.mean()) / ref_std
+    wav = (wav - ref_mean) / ref_std
 
     # Step 5: Run separation (with timeout to prevent indefinite hangs)
     _SEPARATION_TIMEOUT = 600  # 10 minutes max for any file
@@ -121,7 +122,7 @@ def separate_stems(input_path: str, output_dir: str) -> SeparationResult:
                 "Try a shorter audio file."
             ) from _exc
     sources = sources[0]
-    sources = sources * ref.std() + ref.mean()
+    sources = sources * ref_std + ref_mean
 
     # Step 6: Save each stem as WAV (per D-01, D-02)
     _SAFE_NAME_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")

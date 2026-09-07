@@ -755,6 +755,7 @@ def match_to_reference(
             try:
                 os.unlink(output_path)
             except OSError:
+                # Keep the matching failure even if the reserved stub cannot be removed.
                 pass
         raise
     finally:

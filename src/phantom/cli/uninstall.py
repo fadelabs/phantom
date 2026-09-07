@@ -64,7 +64,8 @@ def _find_artifacts() -> dict:
                         }
                     )
             except (json.JSONDecodeError, OSError):
-                pass
+                # Do not infer ownership or delete entries from an unreadable config.
+                continue
 
     scripts_dir = _get_reaper_scripts_dir()
     if scripts_dir.exists():
@@ -245,7 +246,9 @@ def uninstall(yes: bool, keep_config: bool) -> None:
             Path(lua).unlink()
             removed.append(f"Lua: {Path(lua).name}")
         except OSError:
-            pass
+            console.print(
+                "[yellow]Could not remove a Reaper Lua script; remove it manually.[/yellow]"
+            )
 
     if "reaper_startup_hook" in artifacts:
         if _remove_startup_hook(artifacts["reaper_startup_hook"]):

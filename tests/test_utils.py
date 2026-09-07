@@ -37,7 +37,7 @@ class TestBlockRmsDb:
         assert result == []
 
     def test_known_amplitude_sine(self) -> None:
-        """A 0.5-amplitude sine (~-6 dBFS) produces block values near -6 dB."""
+        """A 0.5-amplitude sine produces block RMS values near -9.03 dBFS."""
         sr = 44100
         t = np.linspace(0, 1.0, sr, endpoint=False, dtype=np.float64)
         mono = 0.5 * np.sin(2 * np.pi * 1000 * t)
@@ -248,14 +248,20 @@ class TestOpenValidatedInput:
         target.write_bytes(b"data")
         link = tmp_path / "link.wav"
         link.symlink_to(target)
-        with pytest.raises(AudioLoadError, match="Cannot read audio file"):
-            open_validated_input(str(link))
+        with (
+            pytest.raises(AudioLoadError, match="Cannot read audio file"),
+            os.fdopen(open_validated_input(str(link)), "rb"),
+        ):
+            pytest.fail("Invalid input unexpectedly opened")
 
     def test_non_regular_rejected(self, tmp_path, monkeypatch):
         """A directory (non-regular file) is rejected."""
         monkeypatch.delenv("PHANTOM_AUDIO_DIR", raising=False)
-        with pytest.raises(AudioLoadError):
-            open_validated_input(str(tmp_path))
+        with (
+            pytest.raises(AudioLoadError),
+            os.fdopen(open_validated_input(str(tmp_path)), "rb"),
+        ):
+            pytest.fail("Invalid input unexpectedly opened")
 
 
 class TestValidateOutputPath:

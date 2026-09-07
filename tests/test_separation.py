@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-import phantom.separation as separation_mod
+from phantom import separation as separation_mod
 from phantom.exceptions import DependencyMissingError
 from phantom.separation import (
     SEPARATION_EP_GROUP,

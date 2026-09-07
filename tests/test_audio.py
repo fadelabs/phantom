@@ -296,7 +296,7 @@ class TestMemoizedDerivatives:
             calls["block"] += 1
             return _block_rms_db(mono)
 
-        import phantom.audio as audio_mod
+        from phantom import audio as audio_mod
 
         monkeypatch.setattr(audio_mod, "_block_rms_db", counting_block)
 
