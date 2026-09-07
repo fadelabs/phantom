@@ -46,10 +46,14 @@ def _read_config(path: Path) -> dict:
     return data
 
 
-def _install_script(scripts_dir: Path | None) -> None:
-    command = ["uvx", "--from", ABLETON_PACKAGE, "ableton-mcp-install-script"]
-    if scripts_dir is not None:
-        command.extend(["--target", str(scripts_dir.expanduser().resolve())])
+def _run_script_installer(*arguments: str) -> str:
+    command = [
+        "uvx",
+        "--from",
+        ABLETON_PACKAGE,
+        "ableton-mcp-install-script",
+        *arguments,
+    ]
     env = {**os.environ, "ABLETON_MCP_DISABLE_TELEMETRY": "true"}
     # This explicit setup step installs the script; server starts never do.
     env.pop("ABLETON_MCP_SKIP_SCRIPT_INSTALL", None)
@@ -66,6 +70,55 @@ def _install_script(scripts_dir: Path | None) -> None:
             "Ableton Remote Script installation failed: "
             + (result.stderr or result.stdout).strip()[:500]
         )
+    return result.stdout
+
+
+def _restrict_script_listener(root: Path) -> None:
+    """Restrict the pinned upstream script's unauthenticated socket to loopback."""
+    script = root / "AbletonMCP" / "__init__.py"
+    try:
+        source = script.read_text(encoding="utf-8")
+        lines = source.splitlines(keepends=True)
+        wildcard = 'HOST = "0.0.0.0"'
+        loopback = 'HOST = "127.0.0.1"'
+        assignments = [
+            i
+            for i, line in enumerate(lines)
+            if line.rstrip("\r\n") in (wildcard, loopback)
+        ]
+        if len(assignments) != 1:
+            raise click.ClickException(
+                "Cannot verify the Ableton Remote Script listener. "
+                "Setup stopped; do not activate this script in Live."
+            )
+        index = assignments[0]
+        if lines[index].rstrip("\r\n") == wildcard:
+            lines[index] = lines[index].replace(wildcard, loopback)
+            atomic_write_text(script, "".join(lines))
+    except (OSError, UnicodeError) as exc:
+        raise click.ClickException(
+            "Could not restrict the Ableton Remote Script listener to localhost."
+        ) from exc
+
+
+def _install_script(scripts_dir: Path | None) -> None:
+    if scripts_dir is not None:
+        roots = [scripts_dir.expanduser().resolve()]
+    else:
+        discovered = _run_script_installer("--list-targets")
+        roots = [
+            Path(line).expanduser().resolve()
+            for line in discovered.splitlines()
+            if line.strip()
+        ]
+        if not roots:
+            raise click.ClickException(
+                "No Ableton User Library was found. Pass --scripts-dir with "
+                "your User Library/Remote Scripts directory."
+            )
+    for root in dict.fromkeys(roots):
+        _run_script_installer("--target", str(root))
+        _restrict_script_listener(root)
 
 
 @click.command("setup-ableton")
@@ -136,6 +189,7 @@ def setup_ableton(
         "package": ABLETON_PACKAGE,
         "remote_script": "not_installed" if config_only else "installer_completed",
         "live_connection": "not_verified",
+        "listener_host": None if config_only else "127.0.0.1",
         "next_step": "Restart Live, select AbletonMCP as a Control Surface, restart your MCP client, then call get_session_info.",
     }
     if json_output:

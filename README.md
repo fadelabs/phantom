@@ -120,9 +120,9 @@ The plugin includes Reaper recipes for routing, FX, automation, and session setu
 phantom setup-ableton
 ```
 
-This runs the Remote Script installer from `ableton-mcp==1.4.0` and configures `AbletonMCP` alongside Phantom. It preserves other MCP entries, uses loopback port 9877, and disables upstream telemetry. Restart Live, select **AbletonMCP** as a Control Surface in its MIDI settings, then restart your MCP client and call `get_session_info` to verify the connection.
+This runs the Remote Script installer from `ableton-mcp==1.4.0` and configures `AbletonMCP` alongside Phantom. It preserves other MCP entries, restricts the installed Remote Script listener to `127.0.0.1:9877`, and disables upstream telemetry. Setup stops if it cannot verify the listener configuration. Restart Live, select **AbletonMCP** as a Control Surface in its MIDI settings, then restart your MCP client and call `get_session_info` to verify the connection.
 
-For a custom User Library, pass `--scripts-dir '/path/to/User Library/Remote Scripts'`. Use `--config PATH` to select an MCP JSON file, or `--config-only` to configure the client without installing the script. Setup refuses to replace a different existing Ableton entry unless you pass `--force`.
+For a custom User Library, pass `--scripts-dir '/path/to/User Library/Remote Scripts'`. Use `--config PATH` to select an MCP JSON file, or `--config-only` to configure the client without installing or securing the script. If you use `--config-only`, restrict the Remote Script listener to localhost yourself before activating it. Setup refuses to replace a different existing Ableton entry unless you pass `--force`.
 
 The external [Ableton MCP project](https://github.com/ahujasid/ableton-mcp) supplies Live control. Phantom's audio analysis still uses exported files. Reaper Lua recipes cannot be run in Live; use the Ableton workflow guidance and only the tools exposed by your installed bridge. A real Live-session smoke test is still required for this integration; setup and configuration tests do not establish DAW compatibility.
 

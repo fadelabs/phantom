@@ -63,3 +63,9 @@ Phantom's setup disables upstream AbletonMCP telemetry and server-start script
 installation. Preserve those settings unless the user explicitly changes them.
 
 Upstream installation and tools: https://github.com/ahujasid/ableton-mcp
+
+Full setup restricts the installed Remote Script listener to `127.0.0.1:9877`
+and stops if it cannot verify that setting. The upstream script otherwise listens
+on all network interfaces without authentication. `--config-only` does not
+install or secure the script; restrict its listener separately before activation.
+The client host setting alone does not restrict the listener.
