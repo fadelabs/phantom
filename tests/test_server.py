@@ -1089,3 +1089,57 @@ async def test_tool_count_includes_processing_tools(client):
     """Tool listing includes all 19 tools (17 original + 2 processing)."""
     tools = await client.list_tools()
     assert len(tools) >= 19
+
+
+@pytest.mark.parametrize("path_kind", ["absolute", "traversal", "symlink"])
+def test_aggregate_metadata_rejects_outside_paths_before_open(
+    tmp_path, monkeypatch, path_kind
+):
+    """PR #70: confinement applies before metadata reads, not only decoding."""
+    from unittest.mock import Mock
+
+    from phantom import server
+
+    allowed = tmp_path / "allowed"
+    allowed.mkdir()
+    outside = tmp_path / "outside.wav"
+    outside.write_bytes(b"not an audio file")
+    link = allowed / "linked.wav"
+    link.symlink_to(outside)
+    paths = {
+        "absolute": str(outside),
+        "traversal": "../outside.wav",
+        "symlink": str(link),
+    }
+    monkeypatch.setenv("PHANTOM_AUDIO_DIR", str(allowed))
+    opened = Mock(side_effect=AssertionError("Outside path reached file opening"))
+    metadata = Mock(side_effect=AssertionError("Outside path reached metadata read"))
+    monkeypatch.setattr(server, "open_validated_input", opened)
+    monkeypatch.setattr(sf, "info", metadata)
+
+    # Unreadable headers are deferred to load_audio for the public error.
+    assert server._peek_aggregate_decoded_bytes([paths[path_kind]]) == 0
+    opened.assert_not_called()
+    metadata.assert_not_called()
+
+
+def test_aggregate_metadata_uses_and_closes_validated_descriptor(tmp_path, monkeypatch):
+    """Header inspection keeps the validated file open and closes it afterwards."""
+    from types import SimpleNamespace
+
+    from phantom import server
+
+    path = tmp_path / "stem.wav"
+    path.write_bytes(b"header")
+    monkeypatch.setenv("PHANTOM_AUDIO_DIR", str(tmp_path))
+    streams = []
+
+    def inspect_header(stream):
+        streams.append(stream)
+        assert stream.read() == b"header"
+        return SimpleNamespace(frames=100, channels=2)
+
+    monkeypatch.setattr(sf, "info", inspect_header)
+    assert server._peek_aggregate_decoded_bytes(["stem.wav"]) == 800
+    assert len(streams) == 1
+    assert streams[0].closed

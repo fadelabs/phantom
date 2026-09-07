@@ -250,14 +250,17 @@ class TestOpenValidatedInput:
         link.symlink_to(target)
         with (
             pytest.raises(AudioLoadError, match="Cannot read audio file"),
-            open_validated_input(str(link)),
+            os.fdopen(open_validated_input(str(link)), "rb"),
         ):
             pytest.fail("Invalid input unexpectedly opened")
 
     def test_non_regular_rejected(self, tmp_path, monkeypatch):
         """A directory (non-regular file) is rejected."""
         monkeypatch.delenv("PHANTOM_AUDIO_DIR", raising=False)
-        with pytest.raises(AudioLoadError), open_validated_input(str(tmp_path)):
+        with (
+            pytest.raises(AudioLoadError),
+            os.fdopen(open_validated_input(str(tmp_path)), "rb"),
+        ):
             pytest.fail("Invalid input unexpectedly opened")
 
 
