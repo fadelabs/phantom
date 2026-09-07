@@ -674,8 +674,9 @@ def setup_reaper(
                 check=False,
             )
             remote_url = result.stdout.strip()
-        except Exception:
-            pass
+        except (OSError, subprocess.SubprocessError):
+            # An unreadable remote stays unknown and takes the conflict path below.
+            remote_url = ""
 
         is_fadelabs = bool(remote_url) and _normalize_git_remote(
             remote_url

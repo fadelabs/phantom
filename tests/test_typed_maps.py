@@ -55,7 +55,7 @@ class TestPerBandCorrelation:
     def test_subscript_missing_key_raises_key_error(self) -> None:
         m = PerBandCorrelation(sub=0.9)
         with pytest.raises(KeyError):
-            m["air"]
+            _ = m["air"]
 
 
 class TestOctaveBandEnergyDb:

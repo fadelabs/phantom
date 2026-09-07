@@ -21,6 +21,7 @@ from phantom.live_metrics import (
     read_live_metrics,
 )
 from phantom.server import mcp
+from tests.helpers import parse_tool_error
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -44,7 +45,11 @@ def metrics_dir(tmp_path, monkeypatch):
 
 
 def _write_snapshot(d, name="aaaa-1111", **overrides):
-    """Write a minimal Phantom Studio snapshot, return its path."""
+    """Write a minimal snapshot and return its path.
+
+    Keyword overrides replace top-level payload fields, not nested values.
+    For example, track="Old" replaces the default track name.
+    """
     payload = {
         "schema_version": 1,
         "plugin": "Phantom Studio",
@@ -217,7 +222,7 @@ async def test_tool_error_via_client(client, tmp_path, monkeypatch):
     monkeypatch.setenv("PHANTOM_METRICS_DIR", str(tmp_path / "empty-nope"))
     with pytest.raises(ToolError) as exc_info:
         await client.call_tool("read_live_metrics", {})
-    error = json.loads(str(exc_info.value))
+    error = parse_tool_error(exc_info.value)
     assert error["error_type"] == "AnalysisError"
     assert "Phantom Studio plugin" in error["message"]
 

@@ -15,6 +15,7 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
+import soundfile as sf
 
 pytest.importorskip("phantom_separation")
 
@@ -146,6 +147,39 @@ class TestSeparateStems:
         for stem_name, stem_path in result.stems.items():
             assert stem_path.endswith(f"{stem_name}.wav")
 
+    def test_restores_original_scale_after_model_execution(
+        self, tmp_path, stereo_sine_input
+    ):
+        """An identity model round-trips audio using the original normalization."""
+
+        class TensorArray(np.ndarray):
+            def cpu(self):
+                return self
+
+            def numpy(self):
+                return np.asarray(self)
+
+        samples = np.array([[0.1, 0.4, 0.1, 0.4]] * 2, dtype=np.float32)
+        mocks = _make_demucs_mocks()
+        wav = mocks["demucs.audio"].AudioFile.return_value.read.return_value
+        ref = wav.mean.return_value
+        # A backend can reuse reference storage while executing. Re-reading it
+        # afterwards must not change the scale used to restore the model output.
+        ref.mean.side_effect = [0.25, 0.8]
+        ref.std.side_effect = [0.15, 0.9]
+        wav.__sub__.side_effect = lambda mean: samples - mean
+
+        def identity_model(model, batch, **kwargs):
+            return np.repeat(batch[:, None], 4, axis=1).view(TensorArray)
+
+        mocks["_apply"].apply_model.side_effect = identity_model
+        with _demucs_patch(mocks):
+            result = separate_stems(stereo_sine_input, str(tmp_path / "stems"))
+
+        for path in result.stems.values():
+            restored, _ = sf.read(path)
+            np.testing.assert_allclose(restored, samples.T, atol=1 / 32768)
+
     def test_model_is_htdemucs(self, tmp_path, stereo_sine_input):
         """get_model is called with 'htdemucs' (D-03)."""
         output_dir = str(tmp_path / "stems")
@@ -224,7 +258,7 @@ class TestSeparateStems:
         import builtins
         import sys
 
-        import phantom_separation.demucs_backend
+        from phantom_separation import demucs_backend
 
         for mod in ["demucs", "demucs.pretrained", "demucs.apply", "demucs.audio"]:
             monkeypatch.delitem(sys.modules, mod, raising=False)
@@ -237,7 +271,7 @@ class TestSeparateStems:
             return original_import(name, *args, **kwargs)
 
         monkeypatch.setattr("builtins.__import__", _mock_import)
-        importlib.reload(phantom_separation.demucs_backend)
+        importlib.reload(demucs_backend)
 
 
 class TestDecodeLimits:
@@ -298,7 +332,7 @@ class TestEntryPoint:
         """The installed distribution exposes phantom.separation -> separate_stems."""
         from importlib.metadata import entry_points
 
-        import phantom_separation.demucs_backend as backend_mod
+        from phantom_separation import demucs_backend as backend_mod
 
         eps = list(entry_points(group="phantom.separation"))
         if not eps:

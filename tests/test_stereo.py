@@ -397,7 +397,8 @@ class TestMidSideState:
         tone = self._tone()
         mid = analyze_stereo(self._stereo(tone, tone.copy()))
         side = analyze_stereo(self._stereo(tone, -tone))
-        assert mid.mid_side_ratio_db == side.mid_side_ratio_db is None
+        assert mid.mid_side_ratio_db is None
+        assert side.mid_side_ratio_db is None
         assert mid.mid_side_state != side.mid_side_state
 
     def test_measurable_ratio_leaves_state_unset(self):

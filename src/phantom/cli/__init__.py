@@ -60,7 +60,10 @@ def cli(ctx: click.Context) -> None:
                 )
                 ctx.invoke(cli.commands["setup"])
         except Exception:
-            pass
+            click.echo(
+                "Automatic setup could not finish. Run phantom setup to diagnose it.",
+                err=True,
+            )
 
     # Check for updates
     if ctx.invoked_subcommand not in (
@@ -87,6 +90,7 @@ def cli(ctx: click.Context) -> None:
                         err=True,
                     )
         except Exception:
+            # An optional update notification must not block the requested command.
             pass
 
 
@@ -129,22 +133,34 @@ try:
 
     cli.add_command(_version_cmd)
     cli.add_command(_update_cmd)
-except ImportError:
-    pass
+except ImportError as _exc:
+    warnings.warn(
+        f"Could not register version/update commands ({type(_exc).__name__}). Run phantom doctor.",
+        RuntimeWarning,
+        stacklevel=2,
+    )
 
 try:
     from phantom.cli.uninstall import uninstall as _uninstall_cmd
 
     cli.add_command(_uninstall_cmd)
-except ImportError:
-    pass
+except ImportError as _exc:
+    warnings.warn(
+        f"Could not register uninstall command ({type(_exc).__name__}). Run phantom doctor.",
+        RuntimeWarning,
+        stacklevel=2,
+    )
 
 try:
     from phantom.cli.setup import setup as _setup_cmd
 
     cli.add_command(_setup_cmd)
-except ImportError:
-    pass
+except ImportError as _exc:
+    warnings.warn(
+        f"Could not register setup command ({type(_exc).__name__}). Run phantom doctor.",
+        RuntimeWarning,
+        stacklevel=2,
+    )
 
 
 # ---------------------------------------------------------------------------
