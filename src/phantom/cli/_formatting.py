@@ -14,7 +14,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from phantom._utils import _PATH_REGEX
+from phantom._utils import ERROR_PATH_PATTERN
 from phantom.exceptions import RECOMMENDED_PYTHON, DependencyMissingError, PhantomError
 
 # ---------------------------------------------------------------------------
@@ -231,7 +231,7 @@ def render_error(exc: Exception, console: Console) -> None:
     elif isinstance(exc, PhantomError):
         console.print(
             Panel(
-                _PATH_REGEX.sub("", str(exc)),
+                ERROR_PATH_PATTERN.sub("", str(exc)),
                 title="Error",
                 border_style="red",
             )

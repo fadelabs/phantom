@@ -17,7 +17,12 @@ from pydantic import BaseModel
 
 from phantom._profiles import list_profiles as _list_profiles
 from phantom._profiles import load_profile as _load_profile
-from phantom._utils import _get_env_int, open_validated_input, validate_input_path
+from phantom._utils import (
+    ERROR_PATH_PATTERN,
+    _get_env_int,
+    open_validated_input,
+    validate_input_path,
+)
 from phantom.audio import load_audio
 from phantom.comparison import compare_to_profile as _compare_to_profile
 from phantom.comparison import compare_to_reference as _compare_to_reference
@@ -61,9 +66,6 @@ class MultiStemMaskingResult(BaseModel):
     stem_paths: dict[str, str]
 
 
-from phantom._utils import _PATH_REGEX
-
-
 def _to_tool_error(exc: Exception, context: dict | None = None) -> ToolError:
     """Convert an exception to a ToolError with structured JSON message.
 
@@ -77,7 +79,7 @@ def _to_tool_error(exc: Exception, context: dict | None = None) -> ToolError:
     if isinstance(exc, PhantomError):
         msg = str(exc)
         # Strip any remaining absolute paths (Unix and Windows) from PhantomError messages
-        msg = _PATH_REGEX.sub("", msg)
+        msg = ERROR_PATH_PATTERN.sub("", msg)
         error_info["message"] = msg
     else:
         error_info["message"] = (
@@ -93,7 +95,7 @@ def _to_tool_error(exc: Exception, context: dict | None = None) -> ToolError:
     # logs/transcripts even though `message` is already redacted.
     if context:
         error_info["context"] = {
-            k: (_PATH_REGEX.sub("", v) if isinstance(v, str) else v)
+            k: (ERROR_PATH_PATTERN.sub("", v) if isinstance(v, str) else v)
             for k, v in context.items()
         }
     else:
@@ -443,7 +445,7 @@ def batch_diagnostic(file_paths: list[str]) -> dict:
                 **analysis,
             )
         except PhantomError as e:
-            msg = _PATH_REGEX.sub("", str(e))
+            msg = ERROR_PATH_PATTERN.sub("", str(e))
             results[stem_name] = {"error": msg, "error_type": type(e).__name__}
         except Exception as e:
             results[stem_name] = {

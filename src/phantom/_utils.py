@@ -24,7 +24,7 @@ if TYPE_CHECKING:
     from phantom.audio import AudioData
 
 # Shared CLI/MCP error-path redaction keeps both public surfaces consistent.
-_PATH_REGEX = re.compile(r"(?:[A-Za-z]:\\[^\"\n]+\\|\\\\[^\"\n]+\\|/[^\"\n]+/)+")
+ERROR_PATH_PATTERN = re.compile(r"(?:[A-Za-z]:\\[^\"\n]+\\|\\\\[^\"\n]+\\|/[^\"\n]+/)+")
 
 # Silence threshold in dBFS -- signals below this are treated as silence.
 SILENCE_THRESHOLD_DB = -80.0
@@ -342,6 +342,7 @@ def atomic_write_audio(path: str, samples: np.ndarray, sample_rate: int) -> None
         try:
             os.unlink(temporary)
         except OSError:
+            # Preserve the original write failure if temporary-file cleanup fails.
             pass
         raise
 
