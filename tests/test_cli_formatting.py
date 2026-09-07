@@ -10,6 +10,7 @@ from __future__ import annotations
 import io
 import json
 
+import pytest
 from click.testing import CliRunner
 from rich.console import Console
 
@@ -338,3 +339,22 @@ def test_python_m_phantom_routes_to_cli():
     assert "from phantom.server import main" not in source, (
         "phantom.__main__ must NOT import main from phantom.server"
     )
+
+
+@pytest.mark.parametrize("extra", ["separation", "matching", "processing", "analysis"])
+def test_missing_dependency_install_command_is_copyable(extra):
+    """Issue #69: check rendered text, not Rich's markup source."""
+    import shlex
+
+    from phantom.exceptions import RECOMMENDED_PYTHON
+
+    buf = io.StringIO()
+    console = Console(file=buf, force_terminal=False, width=140)
+    render_error(
+        DependencyMissingError(package="Optional backend", extra=extra), console
+    )
+    output = buf.getvalue()
+    command = f'uv tool install "phantom-audio[{extra}]" --python {RECOMMENDED_PYTHON}'
+    assert command in output
+    assert "\\]" not in output
+    assert shlex.split(command)[3] == f"phantom-audio[{extra}]"

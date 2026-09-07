@@ -544,8 +544,55 @@ def _detect_noise_and_snr(
     return items
 
 
+def _refine_hum_frequency(
+    mono: np.ndarray, sample_rate: int, frequency: float, start: float, end: float
+) -> float | None:
+    """Refine a coarse hum contour with at most four seconds of windowed audio.
+
+    HumDetector's pitch bins can be more than 1 Hz below the actual tone. A
+    narrow mains test must use the measured spectral peak, not that coarse bin.
+    Search near the contour frequency without biasing the result toward mains.
+    """
+    if not np.isfinite([frequency, start, end]).all():
+        return None
+    first = max(0, int(start * sample_rate))
+    last = max(0, min(len(mono), int(end * sample_rate)))
+    center = (first + last) // 2
+    first = max(first, center - 2 * sample_rate)
+    last = min(last, first + 4 * sample_rate)
+    segment = mono[first:last]
+    if len(segment) < sample_rate // 2:
+        return None
+
+    magnitudes = np.abs(rfft(segment * np.hanning(len(segment))))
+    bins = rfftfreq(len(segment), 1.0 / sample_rate)
+    radius = max(2.0, frequency * 0.02)
+    candidates = np.flatnonzero(np.abs(bins - frequency) <= radius)
+    if len(candidates) == 0:
+        return None
+    peak = int(candidates[np.argmax(magnitudes[candidates])])
+    if peak == 0 or peak == len(magnitudes) - 1:
+        return None
+    left, middle, right = magnitudes[peak - 1 : peak + 2]
+    if middle <= 1e-30 or middle <= left or middle <= right:
+        return None
+
+    # A log-parabolic peak estimate reduces bin error without a large padded FFT.
+    left, middle, right = np.log(np.maximum([left, middle, right], 1e-30))
+    curvature = left - 2 * middle + right
+    if curvature >= 0:
+        return None
+    offset = 0.5 * (left - right) / curvature
+    return float((peak + offset) * sample_rate / len(segment))
+
+
 def _detect_hum(mono: np.ndarray, sample_rate: int) -> list[ProblemItem]:
-    """Detect mains hum at 50/60Hz and harmonics. PROB-06."""
+    """Detect tones consistent with 50/60 Hz mains and harmonic drift. PROB-06.
+
+    This is a hum candidate detector, not proof of electrical interference:
+    a musical tone exactly on a mains frequency is spectrally indistinguishable.
+    A lone fundamental can be real hum, so multiple harmonics are not required.
+    """
     duration = len(mono) / sample_rate
     if duration < 2.0:
         # Audio shorter than 2s has insufficient data for reliable PSD
@@ -562,24 +609,24 @@ def _detect_hum(mono: np.ndarray, sample_rate: int) -> list[ProblemItem]:
         numberHarmonics=5,
         timeWindow=time_window,
     )
-    _, frequencies, saliences, _starts, _ends = hd(mono)
+    _, frequencies, saliences, starts, ends = hd(mono)
 
     if len(frequencies) == 0:
         return []
 
-    # Filter for mains hum (50Hz or 60Hz +/- 5Hz tolerance)
+    # Allow 0.5 Hz drift at the fundamental, scaled by harmonic number.
+    # Refine the detector's coarse pitch bins before applying this narrow window.
     hum_freqs: list[tuple[float, float]] = []
-    for f, s in zip(frequencies, saliences, strict=False):
-        matched = False
-        for mains in (50, 60):
-            if matched:
-                break
-            for harmonic in range(1, 6):
-                target = mains * harmonic
-                if abs(f - target) < 5:
-                    hum_freqs.append((float(f), float(s)))
-                    matched = True
-                    break
+    for f, salience, start, end in zip(
+        frequencies, saliences, starts, ends, strict=False
+    ):
+        refined = _refine_hum_frequency(mono, sample_rate, f, start, end)
+        if refined is not None and any(
+            abs(refined - mains * harmonic) < 0.5 * harmonic
+            for mains in (50, 60)
+            for harmonic in range(1, 6)
+        ):
+            hum_freqs.append((refined, float(salience)))
 
     if not hum_freqs:
         return []
@@ -592,7 +639,7 @@ def _detect_hum(mono: np.ndarray, sample_rate: int) -> list[ProblemItem]:
             type="hum",
             severity="significant",
             message=(
-                f"Mains hum detected at {primary_freq:.1f} Hz "
+                f"Possible mains hum near {primary_freq:.1f} Hz "
                 f"(salience: {primary_salience:.2f}). "
                 f"Found {len(hum_freqs)} hum component(s)."
             ),
