@@ -1153,3 +1153,22 @@ class TestFixAudioPreloaded:
 
         assert len(loaded_paths) == 1
         assert os.path.realpath(loaded_paths[0]) == os.path.realpath(stereo_wav)
+
+
+@pytest.mark.skipif(not _has_pedalboard, reason="pedalboard not installed")
+def test_hum_fix_preserves_a_nearby_musical_bass_note(tmp_path, monkeypatch):
+    """Issue #68: a hum-only fix must not notch the reported 97.3 Hz bass tone."""
+    from phantom.processing import fix_audio
+
+    sr = 44100
+    t = np.arange(sr * 3, dtype=np.float64) / sr
+    samples = (0.2 * np.sin(2 * np.pi * 97.3 * t)).astype(np.float32)
+    source = tmp_path / "bass.wav"
+    target = tmp_path / "checked.wav"
+    sf.write(source, samples, sr, subtype="FLOAT")
+    monkeypatch.setenv("PHANTOM_AUDIO_DIR", str(tmp_path))
+    monkeypatch.setenv("PHANTOM_OUTPUT_DIR", str(tmp_path))
+    result = fix_audio(str(source), problems=["hum"], output_path=str(target))
+    assert result.fixes_applied == []
+    restored, _ = sf.read(target, dtype="float32")
+    np.testing.assert_array_equal(restored, samples)

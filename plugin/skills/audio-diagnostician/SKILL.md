@@ -99,7 +99,7 @@ Review `detect_problems` results. Four severity tiers — dealbreakers first. **
 **Significant** (address before building mix — report with **playback context**: headphone listeners hear noise at -52 dBFS; club/PA playback masks it under ambient noise):
 - True peak > -1 dBTP (tight headroom) — the ISP detector rates peaks above this significant (`PHANTOM_ISP_SEVERE_DBTP`, default -1.0)
 - Poor SNR — below `PHANTOM_SNR_POOR_DB` (default 50 dB); dedicated noise reduction required before mixing
-- Mains hum at 50/60 Hz (± 5 Hz) — notch at fundamental + harmonics (50/100/150/200 or 60/120/180/240 Hz). The loudest harmonic is often 2× mains frequency. Within lo-fi/tape genres, distinguish **aesthetic noise** (tape hiss, vinyl crackle — keep, it's the texture) from **technical noise** (60 Hz hum, ground loop buzz, digital artifacts — always remove regardless of genre)
+- Possible mains hum near 50/60 Hz and their harmonics — Phantom refines tonal candidates and allows ±0.5 Hz at the fundamental, scaled by harmonic number. A nearby bass note is not evidence of electrical interference, and a tone exactly on a mains frequency can still be musical. Listen and check the recording context before recommending removal. If confirmed, notch only the reported frequencies and compare before/after audio. Preserve intentional noise or texture when it serves the user’s goal.
 - Room resonances at specific frequencies — the resonant-peak detector (`PHANTOM_RESONANCE_MEDIAN_FLOOR_DB` default -40, `PHANTOM_RESONANCE_PROMINENCE_DB` default 12)
 
 **Moderate** (address during mixing):

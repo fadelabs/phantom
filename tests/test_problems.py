@@ -1343,3 +1343,75 @@ class TestInjectSampleRateMismatch:
         assert result.problems[1] is existing
         assert result.summary.dealbreaker == 2
         assert result.summary.total == 2
+
+
+@pytest.mark.parametrize(
+    "midi_note", [30, 31, 32, 34, 35, 43, 44, 46, 47, 50, 54, 55, 59]
+)
+def test_musical_bass_near_mains_is_not_hum(midi_note):
+    """Issue #68: nearby musical pitches must not become hum-removal targets."""
+    sr = 44100
+    t = np.arange(sr * 3, dtype=np.float64) / sr
+    frequency = 440 * 2 ** ((midi_note - 69) / 12)
+    samples = (
+        0.3 * np.sin(2 * np.pi * 440 * t) + 0.1 * np.sin(2 * np.pi * frequency * t)
+    ).astype(np.float32)
+    assert _detect_hum(samples, sr) == []
+
+
+@pytest.mark.parametrize("duration", [3, 30])
+def test_reported_97_hz_bass_is_not_hum(duration):
+    """The sustained 97.3 Hz tone from #68 is outside a mains harmonic window."""
+    sr = 44100
+    t = np.arange(sr * duration, dtype=np.float64) / sr
+    samples = (0.2 * np.sin(2 * np.pi * 97.3 * t)).astype(np.float32)
+    assert _detect_hum(samples, sr) == []
+
+
+@pytest.mark.parametrize("mains,harmonic", [(50, 1), (60, 1), (50, 2), (60, 2)])
+@pytest.mark.parametrize("drift", [-0.3, 0.0, 0.3])
+@pytest.mark.parametrize("sr", [44100, 48000])
+def test_mains_and_harmonic_drift_remain_detectable(mains, harmonic, drift, sr):
+    """Refinement retains real mains tones despite coarse native pitch estimates."""
+    t = np.arange(sr * 3, dtype=np.float64) / sr
+    frequency = (mains + drift) * harmonic
+    samples = (
+        0.3 * np.sin(2 * np.pi * 440 * t) + 0.1 * np.sin(2 * np.pi * frequency * t)
+    ).astype(np.float32)
+    result = _detect_hum(samples, sr)
+    assert len(result) == 1
+    assert result[0].details.primary_frequency_hz == pytest.approx(frequency, abs=0.15)
+
+
+def test_hum_candidate_is_not_reported_as_proven_contamination(signal_with_hum):
+    samples, sr = signal_with_hum
+    result = _detect_hum(samples, sr)
+    assert "Possible mains hum" in result[0].message
+
+
+@pytest.mark.parametrize(
+    "frequency,expected",
+    [(246.94165, False), (248.5, True), (250.0, True), (251.5, True)],
+)
+def test_high_harmonic_candidates_use_refined_frequency(
+    monkeypatch, frequency, expected
+):
+    """A native contour, when present, separates B3 from a drifting fifth harmonic."""
+    from phantom import problems
+
+    sr = 44100
+    t = np.arange(sr * 3, dtype=np.float64) / sr
+    samples = (0.2 * np.sin(2 * np.pi * frequency * t)).astype(np.float32)
+    # Native detection is signal-dependent and does not always return high
+    # harmonics. Supply its coarse candidate to exercise classification itself.
+    monkeypatch.setattr(
+        problems.es,
+        "HumDetector",
+        lambda **kwargs: lambda audio: (None, [frequency - 1], [0.9], [0.0], [3.0]),
+    )
+    result = _detect_hum(samples, sr)
+    assert bool(result) is expected
+    if expected:
+        assert result[0].details.primary_frequency_hz == pytest.approx(
+            frequency, abs=0.15
+        )
