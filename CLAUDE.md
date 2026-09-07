@@ -137,3 +137,17 @@ are not a writing target unless the user specifically requests detector testing.
 
 Read the text aloud for clarity, compare claims with source, and run the relevant
 documentation checks. An existing sentence that works does not need rewriting.
+
+## Release campaigns
+
+Publishing a Phantom release includes its MailerLite announcement and follow-up,
+unless the user explicitly excludes release communication. Follow
+[RELEASING.md](RELEASING.md) through the campaign step; do not stop after pushing
+a tag or publishing the package. This is the owner's requested default for
+release tasks, shared with Codex through [AGENTS.md](AGENTS.md).
+
+Use the private fadelab.net workflow and its campaign tool. Keep credentials,
+audience settings, campaign IDs, drafts, and execution state out of Phantom.
+Reuse existing campaigns on a retry. Report a missing private checkout or
+credential as a campaign blocker instead of inventing settings or claiming
+success. An ordinary code change does not authorize a release or campaign.
