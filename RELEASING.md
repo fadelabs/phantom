@@ -81,3 +81,44 @@ an external directory has refreshed. Never rename the plugin as an update fix.
 Deploy fadelab.net documentation describing the new release after the package is
 available. Check the public installation instructions and changed documentation
 pages after deployment. Keep unreleased Studio capabilities clearly identified.
+
+## Release email campaigns — Claude and Codex
+
+The owner’s default release process includes a MailerLite announcement and a
+follow-up. Complete this step for an authorized release unless the user explicitly
+excludes communication. Both Claude and Codex follow the same private workflow;
+do not maintain separate campaign procedures in their agent instructions.
+
+After verifying the public tag, GitHub release, PyPI package, and deployed docs:
+
+1. Locate the private `fadelab.net` checkout, normally `../fadelab.net`, and read
+   its `AGENTS.md` and `RELEASE-CAMPAIGNS.md`. Follow the exact commands documented
+   there. Campaign implementation and account configuration belong there, not in
+   this public repository.
+2. Run the campaign tool’s preparation step for the released version. It checks
+   release evidence, retrieves the established template and audience from private
+   configuration, and checks for existing campaigns before making changes.
+3. Write the version-specific announcement and follow-up from the verified
+   release notes and current setup documentation. Preserve the established email
+   design and footer. Follow the shared writing rules; never invent a feature,
+   performance claim, customer result, or connected DAW test.
+4. Validate the copy, links, recipient scope, and proposed schedule with the
+   private tool, then apply and schedule through that tool. Use the established
+   cadence and private account settings unless the user supplies different ones.
+   Do not request the same release-campaign authorization a second time.
+5. Read back the campaign status, content, audience, and actual UTC send times.
+   Report the subjects and send dates in the owner’s timezone. A successful write
+   response alone is not proof that the intended content or schedule was saved.
+
+A resumed release must reconcile its existing campaigns. Do not duplicate an
+announcement, reschedule a sent campaign, silently replace conflicting copy, or
+retry an uncertain send operation without checking its remote state first.
+
+Keep credentials, account and audience identifiers, mailing addresses, recipient
+records, drafts, API responses, and scheduling receipts in the private workflow’s
+ignored storage. Never stage them here or copy them into public PRs or release
+notes. Never read a credential into tool output. If access is missing or validation
+fails, report the exact campaign blocker while preserving the completed release.
+
+These instructions automate the campaign step during an agent-run release. They
+do not claim that a GitHub tag starts an unattended AI process by itself.
