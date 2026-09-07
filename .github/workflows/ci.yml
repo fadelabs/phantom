@@ -84,3 +84,14 @@ jobs:
 
       - name: Audit dependencies
         run: uv run --with pip-audit pip-audit
+
+  release-artifacts:
+    name: Release artifact contents
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+      - name: Build wheel and source archive
+        run: uv build --out-dir dist/review
+      - name: Check release contents
+        run: python scripts/check-release-artifacts.py dist/review/*.whl dist/review/*.tar.gz

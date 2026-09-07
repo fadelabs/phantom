@@ -14,14 +14,17 @@ import time
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 
-def _run_phantom(*args, timeout=120):
-    """Run a phantom CLI command via subprocess and return CompletedProcess."""
+def _run_phantom(*args, timeout=300):
+    """Run the CLI with a deadline suitable for full-length local fixtures.
+
+    Real tracks can be several minutes long; spectral and hum analysis inspect
+    the entire signal. Multi-file tests pass a separate per-file budget below.
+    """
     return subprocess.run(
         ["uv", "run", "phantom", *args],
         capture_output=True,
@@ -98,7 +101,9 @@ def test_cli_analyze_batch_json(live_mix, live_stem_paths):
     """phantom analyze --json with multiple files produces batch output."""
     if len(live_stem_paths) < 2:
         pytest.skip("Need at least 2 stem files for batch test")
-    result = _run_phantom("analyze", "--json", *live_stem_paths)
+    result = _run_phantom(
+        "analyze", "--json", *live_stem_paths, timeout=300 * len(live_stem_paths)
+    )
     assert result.returncode == 0, f"stderr: {result.stderr}"
     data = json.loads(result.stdout)
     assert "stems" in data, f"Missing 'stems' key in batch output: {list(data.keys())}"
@@ -140,7 +145,9 @@ def test_cli_compare_reference_json(live_stems, live_mix):
     if not live_stems:
         pytest.skip("No live stems available for reference comparison")
     ref_path = next(iter(live_stems.values()))
-    result = _run_phantom("compare", "--reference", ref_path, "--json", live_mix)
+    result = _run_phantom(
+        "compare", "--reference", ref_path, "--json", live_mix, timeout=600
+    )
     assert result.returncode == 0, f"stderr: {result.stderr}"
     data = json.loads(result.stdout)
     # Reference comparison should have comparison data present

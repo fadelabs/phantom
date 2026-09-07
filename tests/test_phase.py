@@ -9,15 +9,14 @@ import pytest
 
 from phantom.audio import AudioData
 from phantom.phase import (
+    PerBandCorrelation,
+    PhaseCompareResult,
+    PhaseResult,
+    _gcc_phat_delay,
     analyze_phase,
     compare_phase,
-    _gcc_phat_delay,
-    PerBandCorrelation,
-    PhaseResult,
-    PhaseCompareResult,
 )
 from tests.conftest import _make_audio
-
 
 # ---------------------------------------------------------------------------
 # Helpers

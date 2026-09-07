@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from phantom._bands import OctaveBandEnergyDb, _BAND_LABELS
+from phantom._bands import _BAND_LABELS, OctaveBandEnergyDb
 from phantom.comparison import DeviationResult, FrequencyDeviationMap
 from phantom.phase import PerBandCorrelation, PhaseResult
 from phantom.spectral import SpectralResult

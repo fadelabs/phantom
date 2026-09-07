@@ -11,10 +11,9 @@ import json
 import numpy as np
 import pytest
 import soundfile as sf
-
 from click.testing import CliRunner
-from phantom.cli import cli
 
+from phantom.cli import cli
 
 # ---------------------------------------------------------------------------
 # Fixtures

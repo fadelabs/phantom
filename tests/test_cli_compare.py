@@ -6,8 +6,8 @@ import json
 
 import pytest
 import soundfile as sf
-
 from click.testing import CliRunner
+
 from phantom.cli import cli
 
 

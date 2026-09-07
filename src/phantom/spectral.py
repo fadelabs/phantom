@@ -13,15 +13,14 @@ from collections.abc import Callable
 from typing import ClassVar
 
 import numpy as np
-import essentia.standard as es
 
+import phantom._essentia as es
 from phantom._bands import (  # re-exported for backward compatibility (B.6)
-    OCTAVE_CENTERS,  # noqa: F401 -- tests import it from phantom.spectral
     _BAND_LABELS,
+    OCTAVE_CENTERS,  # noqa: F401 -- tests import it from phantom.spectral
     OctaveBandEnergyDb,
     _octave_band_energies,
 )
-from phantom.audio import AudioData
 from phantom._rounding import (
     RoundedModel,
     round_db_dict,
@@ -31,6 +30,7 @@ from phantom._rounding import (
 )
 from phantom._settings import AnalysisSettings, analysis_settings
 from phantom._utils import guarded_mono, wrap_errors
+from phantom.audio import AudioData
 
 
 class SpectralResult(RoundedModel):
@@ -155,7 +155,8 @@ def analyze_spectrum(
     band_db = 10 * np.log10(avg_bands + eps)
 
     octave_band_energy = {
-        label: float(db_val) for label, db_val in zip(_BAND_LABELS, band_db)
+        label: float(db_val)
+        for label, db_val in zip(_BAND_LABELS, band_db, strict=False)
     }
 
     return SpectralResult(

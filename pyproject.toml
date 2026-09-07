@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "phantom-audio"
-version = "1.5.2"
+version = "1.6.0"
 description = "AI audio engineering system -- makes Claude a professional audio engineer"
 readme = "README.md"
 license = "AGPL-3.0-or-later"
@@ -87,6 +87,19 @@ Changelog = "https://github.com/fadelabs/phantom/releases"
 phantom = "phantom.cli:cli"
 phantom-mcp = "phantom.server:main"
 
+[tool.hatch.build.targets.sdist]
+# Explicit selection prevents local caches/configuration entering PyPI archives.
+only-include = [
+    "src/phantom",
+    "packages/phantom-audio-separation/src",
+    "packages/phantom-audio-separation/README.md",
+    "packages/phantom-audio-separation/pyproject.toml",
+    "README.md",
+    "LICENSE",
+    "pyproject.toml",
+    "uv.lock",
+]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/phantom"]
 artifacts = ["*.json"]
@@ -112,26 +125,8 @@ extend-select = [
     "C90", # complexity gate (mccabe)
     "I",   # import sorting (isort)
 ]
-# Curated baseline (code review 2026-08, D.2): these codes currently fire
-# across src/, tests/, and packages/ and are tolerated while the debt is
-# cleared. Remove a code here once its findings are fixed; new code must
-# satisfy every other rule in the selected families from the start.
-extend-ignore = [
-    "B007",  # unused loop control variable (7x)
-    "B017",  # blind `assert Exception` (1x)
-    "B028",  # logging call without explicit stacklevel (1x)
-    "B904",  # raise inside except without `from` (13x)
-    "B905",  # zip without strict= (7x)
-    "I001",  # unsorted imports (97x) -- run `ruff check --fix --select I001`
-
-    # Not debt -- deliberate design. Broad `except Exception` backs the
-    # PhantomError hierarchy's graceful degradation, and silent
-    # try/except-pass or try/except-continue is how fire-and-forget and
-    # best-effort cleanup paths avoid ever crashing the caller.
-    "BLE001",  # blind `except Exception` (20x)
-    "S110",  # `try`-`except`-`pass` (5x)
-    "S112",  # `try`-`except`-`continue` (2x)
-]
+# Broad exception handling is intentional at plugin and CLI error boundaries.
+extend-ignore = ["BLE001", "S110", "S112"]
 
 [tool.ruff.lint.per-file-ignores]
 # Complexity gate stays live everywhere else; these are the known-complex

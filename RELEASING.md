@@ -1,194 +1,83 @@
 # Releasing Phantom
 
-Complete workflow for publishing a new version to GitHub, PyPI, and the Claude Code marketplace.
+Release from a reviewed branch after local checks and remote CI pass. This is a
+public repository: inspect the staged diff, outgoing commits, PR description,
+and release notes for secrets, personal information, private plans, local paths,
+and AI session links. Keep all repository hooks enabled.
 
-## When to Bump Versions
+## Prepare the version
 
-Use [semantic versioning](https://semver.org/) — `MAJOR.MINOR.PATCH`:
+Use a patch version for compatible fixes, a minor version for new commands or
+features, and a major version for incompatible public API changes.
 
-| Change type | Bump | Example |
-|-------------|------|---------|
-| Bug fix, typo, small tweak | PATCH | 1.1.1 → 1.1.2 |
-| New feature, new skill, new CLI command | MINOR | 1.1.2 → 1.2.0 |
-| Breaking change (renamed tools, changed API, removed features) | MAJOR | 1.2.0 → 2.0.0 |
+Update all three public version fields together:
 
-**Rules of thumb:**
-- If a user's existing workflow still works after updating → PATCH or MINOR
-- If a user has to change anything on their end → MAJOR
-- Skill content improvements (better prompts, better thresholds) → PATCH
-- New MCP tools or CLI commands → MINOR
-- Renamed or removed MCP tools → MAJOR
+- `pyproject.toml`: project version.
+- `plugin/.claude-plugin/plugin.json`: plugin version.
+- `.claude-plugin/marketplace.json`: plugin source ref, `vX.Y.Z`.
 
-## Pre-Release Checklist
+Run `uv lock` and include `uv.lock` in the same change. The marketplace pin test
+checks that the plugin version and tag agree. The separation sibling has an
+independent version; release it separately when it has changes to distribute.
 
-1. **All changes committed and pushed to main**
-2. **Tests pass:** `uv run pytest tests/ -x -q`
-3. **Linting clean:** `uv run ruff check src/ tests/ packages/`
-4. **Format clean:** `uv run ruff format --check src/ tests/ packages/`
-5. **Version number updated** in both places (see below)
+DAW bridges also have independent versions. `REAPER_MCP_VERSION` in
+`src/phantom/cli/setup_reaper.py` must name an existing, tested bridge release tag.
+It must not be derived from the Phantom version. `ABLETON_PACKAGE` in
+`src/phantom/cli/setup_ableton.py` pins the external Ableton package. Verify both
+installation paths before publishing a release that changes either pin.
 
-Use `uv run ruff` (not `uv tool run ruff`) so checks run the ruff version
-pinned in the dev dependencies — the same one CI and the pre-push hook use.
-
-## Step 1: Bump the Version
-
-Update the version in **three files**:
+## Validate and merge
 
 ```bash
-# 1. pyproject.toml (line 6)
-version = "X.Y.Z"
-
-# 2. plugin/.claude-plugin/plugin.json
-"version": "X.Y.Z"
-
-# 3. .claude-plugin/marketplace.json -- plugins[0].source.ref, with a "v" prefix
-"ref": "vX.Y.Z"
-```
-
-The third is easy to miss and the test suite enforces it:
-`tests/test_cli_setup.py::TestMarketplaceVersionPin` fails when the marketplace
-`ref` does not equal `v` + the plugin version, so the pre-release checks above
-will not pass until all three agree.
-
-`uv.lock` also records the project version. Any `uv run` after the bump rewrites
-it, so it shows up as an unstaged change — commit it with the rest rather than
-leaving the lock disagreeing with `pyproject.toml`.
-
-Commit:
-```bash
-git add pyproject.toml plugin/.claude-plugin/plugin.json \
-  .claude-plugin/marketplace.json uv.lock
-git commit -m "chore: bump version to X.Y.Z"
-```
-
-## Step 2: Tag and Push
-
-```bash
-git tag vX.Y.Z
-git push && git push origin vX.Y.Z
-```
-
-## Step 3: Publish to PyPI
-
-```bash
-uv build
-uv publish --token "$(security find-generic-password -a pypi -s pypi -w)"
-```
-
-Without file arguments, `uv publish` uploads **every** file in `dist/` —
-including artifacts left over from earlier releases. Clear `dist/` before
-building, or pass explicit paths: `uv publish --token ... dist/phantom_audio-X.Y.Z*`.
-
-**Sibling package:** the stem-separation plugin lives in
-`packages/phantom-audio-separation` (its own version in
-`packages/phantom-audio-separation/pyproject.toml`). When it has changes to
-release, build and publish it too:
-
-```bash
-uv build --package phantom-audio-separation
-uv publish --token "$(security find-generic-password -a pypi -s pypi -w)" dist/phantom_audio_separation-*
-```
-
-Verify it works:
-```bash
-uv tool install phantom-audio --python 3.13 --force
-phantom --version
-```
-
-## Step 4: Confirm the Anthropic catalog pin advanced
-
-**There is no "notify Anthropic" step. That was wrong.** Anthropic's community
-catalog pins each plugin to a **commit SHA on your default branch** and a nightly
-CI sweep (07:23 UTC) opens a `bump/<name>` PR when your `main` moves ahead. A
-human on their side merges it, and the public directory syncs nightly after that.
-Normal turnaround is one to three days.
-
-Two consequences worth internalizing:
-
-- **They track `main`, not our tag.** Their entry carries `"ref": "main"` plus a
-  pinned `sha`. Our own `.claude-plugin/marketplace.json` says `"ref": "v1.5.0"`,
-  and the D-01 test asserts that matches the tag and `plugin.json`. That
-  invariant governs *our* marketplace only — the Anthropic catalog never reads it.
-- **The version users see comes from `plugin/.claude-plugin/plugin.json` at the
-  pinned SHA.** So bumping that file and pushing to `main` is normally all it
-  takes.
-
-Check the pin after every release:
-
-```bash
-curl -sSL https://raw.githubusercontent.com/anthropics/claude-plugins-community/main/.claude-plugin/marketplace.json \
-  | python3 -c "import json,sys; p=[x for x in json.load(sys.stdin)['plugins'] if x['name']=='phantom'][0]; print(p['source'])"
-git rev-list --count <that-sha>..main   # 0 means the pin is current
-```
-
-If the pin is stale, first run the same validation their sweep runs — a failure
-there produces no PR and no notification, the pin just silently holds:
-
-```bash
-claude plugin validate ./plugin --strict
-```
-
-If validation passes and the pin still has not moved after a few days, re-submit
-through <https://clau.de/plugin-directory-submission> and say in the notes which
-SHA it is stuck on. **Do not open a PR against `anthropics/claude-plugins-community`
-— external PRs are auto-closed.**
-
-Directory description, homepage and category come from the submission record, not
-the repo. Editing the repo will not change them. Never change the plugin's `name`;
-it breaks existing installs.
-
-### Our own marketplace
-
-Separately, update `.claude-plugin/marketplace.json` so users who add
-`fadelabs/phantom` directly get the new version:
-
-```bash
-# ref = the tag name
-git rev-parse HEAD  # if you also want to record a sha
-```
-
-Update the `ref`, commit, and push.
-
-## Quick Reference
-
-| What | Where | Command |
-|------|-------|---------|
-| Version (package) | `pyproject.toml` line 6 | edit manually |
-| Version (plugin) | `plugin/.claude-plugin/plugin.json` | edit manually |
-| Version (marketplace ref) | `.claude-plugin/marketplace.json` | edit manually, `vX.Y.Z` |
-| Tests | local | `uv run pytest tests/ -x -q` |
-| Lint | local | `uv run ruff check src/ tests/ packages/` |
-| Build | local | `uv build` |
-| Publish to PyPI | pypi.org | `uv publish --token "$(security find-generic-password -a pypi -s pypi -w)"` |
-| Tag | GitHub | `git tag vX.Y.Z && git push origin vX.Y.Z` |
-| Install test | local | `uv tool install phantom-audio --python 3.13 --force` |
-
-## Example: Full Release
-
-```bash
-# 1. Make sure everything is clean
-uv run pytest tests/ -x -q
+uv sync --locked --extra dev --extra processing --extra matching
 uv run ruff check src/ tests/ packages/
-
-# 2. Bump version (edit both files)
-# pyproject.toml: version = "1.2.0"
-# plugin/.claude-plugin/plugin.json: "version": "1.2.0"
-
-# 3. Commit, tag, push
-git add pyproject.toml plugin/.claude-plugin/plugin.json
-git commit -m "chore: bump version to 1.2.0"
-git tag v1.2.0
-git push && git push origin v1.2.0
-
-# 4. Build and publish to PyPI
-uv build
-uv publish --token "$(security find-generic-password -a pypi -s pypi -w)"
-
-# 5. Verify
-uv tool install phantom-audio --python 3.13 --force
-phantom --version  # should show 1.2.0
-
-# 6. Update marketplace sha (if applicable)
-# Edit .claude-plugin/marketplace.json with new ref/sha
-# git add, commit, push
+uv run ruff format --check src/ tests/ packages/
+uv run pytest tests/ -x -q
+uv run pre-commit run --all-files
 ```
+
+Use the project’s pinned Ruff through `uv run`. Check optional separation tests
+in an environment with that sibling installed. Record skipped manual DAW tests
+honestly; configuration tests do not prove a connected session works.
+
+Stage only reviewed public files, commit with the normal hooks, and push the
+checked-out branch. Inspect all remote CI results before merging. Verify main’s
+checks after the merge, then tag the tested merge commit. Do not force-push,
+skip hooks, or tag an unreviewed commit to work around a failure.
+
+## Build and publish
+
+Build into a fresh release directory so old artifacts cannot be uploaded:
+
+```bash
+uv build --out-dir dist/X.Y.Z
+python scripts/check-release-artifacts.py dist/X.Y.Z/*.whl dist/X.Y.Z/*.tar.gz
+```
+
+Inspect wheel and source archive contents and metadata, and install the wheel in
+an isolated environment to check the CLI version and startup. Publish only those
+exact artifact paths using `uv publish` with credentials from the configured
+secret store. Never print a token or put it in a committed command or log.
+
+Create `vX.Y.Z` at the tested main commit, push that specific tag, and publish the
+matching GitHub release. Release notes should explain user-visible changes,
+installation requirements, and material limitations. Verify the package version
+on PyPI and the release artifacts on GitHub before describing it as released.
+
+If the separation sibling also needs a release, build its package explicitly
+with `uv build --package phantom-audio-separation` into a separate fresh directory,
+inspect it, and publish only its exact files.
+
+## Marketplace and documentation
+
+Our marketplace uses the release tag committed above. Validate the plugin with
+`claude plugin validate ./plugin --strict` when that CLI is available.
+
+The external Anthropic catalog has its own review and update process. Inspect
+its actual Phantom entry after publication; do not promise an automatic update
+or a turnaround time. A successful GitHub or PyPI release does not establish that
+an external directory has refreshed. Never rename the plugin as an update fix.
+
+Deploy fadelab.net documentation describing the new release after the package is
+available. Check the public installation instructions and changed documentation
+pages after deployment. Keep unreleased Studio capabilities clearly identified.

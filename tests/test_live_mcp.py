@@ -11,10 +11,9 @@ import os
 from pathlib import Path
 
 import pytest
-
 from fastmcp import Client
-from phantom.server import mcp
 
+from phantom.server import mcp
 
 # ---------------------------------------------------------------------------
 # Plausible ranges for real audio (D-08)

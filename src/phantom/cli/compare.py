@@ -10,21 +10,20 @@ from rich.prompt import Prompt
 from rich.table import Table
 
 from phantom import (
-    load_audio,
+    PhantomError,
     compare_to_profile,
     compare_to_reference,
-    load_profile,
     list_profiles,
-    PhantomError,
+    load_audio,
+    load_profile,
 )
 from phantom.cli._formatting import (
-    get_console,
     RATING_STYLES,
+    _format_band_label,
+    get_console,
     output_json,
     render_error,
-    _format_band_label,
 )
-
 
 # ---------------------------------------------------------------------------
 # Rendering helpers

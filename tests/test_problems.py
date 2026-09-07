@@ -5,27 +5,27 @@ PROB-11, PROB-12, and FFT spectrum sharing (21-03).
 All test audio is generated in-memory via conftest fixtures.
 """
 
-import numpy as np
-import pytest
 from unittest.mock import patch
 
+import numpy as np
+import pytest
+
+from phantom._settings import AnalysisSettings
 from phantom.audio import AudioData
 from phantom.problems import (
-    detect_problems,
-    inject_sample_rate_mismatch,
-    build_summary,
     ProblemItem,
     ProblemsResult,
-    _detect_hum,
-    _detect_band_excess,
-    _detect_resonances,
-    _detect_lossy_codec,
-    _spectral_flatness,
     _average_power_spectrum,
+    _detect_band_excess,
+    _detect_hum,
+    _detect_lossy_codec,
+    _detect_resonances,
+    _spectral_flatness,
+    build_summary,
+    detect_problems,
+    inject_sample_rate_mismatch,
 )
-from phantom._settings import AnalysisSettings
 from tests.conftest import _make_audio
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -471,9 +471,9 @@ class TestMergedNoiseFloorSnr:
     )
     def test_merged_matches_old_pair(self, request, fixture_name):
         """Every fixture yields byte-identical noise_floor+snr ProblemItems."""
+        from phantom._settings import AnalysisSettings
         from phantom._utils import _block_rms_db
         from phantom.problems import _detect_noise_and_snr
-        from phantom._settings import AnalysisSettings
 
         samples, _sr = request.getfixturevalue(fixture_name)
         assert samples.ndim == 1  # all fixtures are 1D mono

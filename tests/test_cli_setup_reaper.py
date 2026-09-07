@@ -591,7 +591,7 @@ class TestVersionPinning:
     """Tests for version-pinned clone and tag-based update (D-01, D-03)."""
 
     def test_version_pin_fresh_clone(self, runner, tmp_path):
-        """D-01: Fresh clone includes --branch v{__version__} arguments."""
+        """D-01: Fresh clone includes --branch the independent bridge release tag arguments."""
         install_dir = tmp_path / "reaper-mcp"
         scripts_dir = tmp_path / "reaper-scripts"
         scripts_dir.mkdir()
@@ -617,7 +617,9 @@ class TestVersionPinning:
         assert "--branch" in cmd_args
         # Version tag should start with 'v'
         branch_idx = cmd_args.index("--branch")
-        assert cmd_args[branch_idx + 1].startswith("v")
+        from phantom.cli.setup_reaper import REAPER_MCP_VERSION
+
+        assert cmd_args[branch_idx + 1] == f"v{REAPER_MCP_VERSION}"
 
     def test_version_pin_update_uses_fetch_checkout(self, runner, tmp_path):
         """D-01: Update path uses fetch --tags + checkout v{version}, not pull --ff-only."""
@@ -827,3 +829,34 @@ class TestNormalizeGitRemote:
         expected = _normalize_git_remote("https://github.com/fadelabs/reaper-mcp.git")
         evil = _normalize_git_remote("https://github.com/fadelabs/reaper-mcp-x.git")
         assert evil != expected
+
+
+def test_config_diff_does_not_print_credentials_or_other_servers():
+    import json
+    from io import StringIO
+    from pathlib import Path
+
+    from rich.console import Console
+
+    from phantom.cli.setup_reaper import _render_mcp_diff
+
+    old = json.dumps(
+        {
+            "mcpServers": {
+                "other": {"env": {"TOKEN": "private-other-value"}},
+                "reaper": {"args": ["private-argument-value"]},
+            }
+        }
+    )
+    new = json.dumps(
+        {
+            "mcpServers": {
+                "reaper": {"command": "uv", "env": {"TOKEN": "private-new-value"}}
+            }
+        }
+    )
+    output = StringIO()
+    _render_mcp_diff(Path("config.json"), old, new, Console(file=output))
+    rendered = output.getvalue()
+    assert "private-" not in rendered
+    assert "other MCP servers are preserved" in rendered

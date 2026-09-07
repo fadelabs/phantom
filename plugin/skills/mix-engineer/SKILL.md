@@ -260,3 +260,7 @@ For genre-specific mixing approaches: load [genre-approaches.md](genre-approache
 4. Bypass-test at matched levels — remove loudness bias
 5. Monitor at conversation volume — final balance decisions happen quiet
 6. Reference frequently — level-matched A/B throughout, not just at the end
+
+## Ableton Live
+
+For Live sessions, follow [the Ableton workflow](../session-architect/ableton-workflow.md). Inspect the connected bridge and its tool schemas; do not run Reaper-specific recipes in Live.

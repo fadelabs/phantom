@@ -1,72 +1,81 @@
 # Phantom
 
-> Makes Claude a professional audio engineer.
+Phantom measures audio and gives an AI assistant evidence to work with. Analyze a mix or a folder of stems, compare it with a reference, and investigate loudness, tonal balance, stereo behavior, phase, and frequency masking.
 
-[Documentation](https://fadelab.net/docs/overview?utm_source=github&utm_medium=readme) · [Getting Started](https://fadelab.net/docs/getting-started?utm_source=github&utm_medium=readme) · [Tool Reference](https://fadelab.net/docs/tools-index?utm_source=github&utm_medium=readme) · [Website](https://fadelab.net?utm_source=github&utm_medium=readme)
+Use it as a command-line tool, a Python library, or an MCP server. The Claude Code plugin adds five skills for interpreting the measurements and planning a mix. Separate Reaper and Ableton MCP integrations let an assistant work inside your DAW.
 
-[![Star](https://img.shields.io/github/stars/fadelabs/phantom?style=social)](https://github.com/fadelabs/phantom) &nbsp; [![Support](https://img.shields.io/badge/Buy%20me%20a%20coffee-PayPal-blue?logo=paypal)](https://paypal.me/inkbox)
+[Documentation](https://fadelab.net/docs/overview?utm_source=github&utm_medium=readme) · [Getting started](https://fadelab.net/docs/getting-started?utm_source=github&utm_medium=readme) · [Tool reference](https://fadelab.net/docs/tools-index?utm_source=github&utm_medium=readme) · [Releases](https://github.com/fadelabs/phantom/releases)
 
-<!-- TODO: Add terminal screenshot of `phantom analyze` output -->
+## Start with one file
 
-Phantom gives Claude ears. It's an audio engineering system that combines measurement tools, professional mixing and mastering methodology, genre reference profiles, and Reaper DAW integration. Everything works through Claude Code.
+Phantom supports macOS and Linux with Python 3.10–3.13. The commands below use 3.13. **Windows is not supported:** the Essentia dependency has no Windows wheel. A replacement backend is tracked in [issue #52](https://github.com/fadelabs/phantom/issues/52).
 
-Drop in your stems. Claude analyzes every file: spectral balance, loudness, dynamics, stereo width, phase coherence, frequency masking between instruments, and problems like clipping, hum, and noise. Then it makes the same decisions an experienced engineer would. Where to cut, what to compress, how to route, when to send it back for more work.
-
-Without Claude, Phantom is a capable CLI analysis tool. With Claude, it becomes a full mixing and mastering workflow.
-
-## What It Can Do
-
-**Diagnose before you mix.** Load 15 stems, run one command. Phantom catches phase cancellation between kick mics, sample rate mismatches across files, 60 Hz hum on the bass DI, and frequency masking where guitar and vocals fight at 3 kHz. All before you touch a fader.
-
-**Mix against a reference.** A/B your mix against any reference track or genre profile. Get per-dimension deviation: "Your vocal is 2 dB quieter at 2-4 kHz, low end is 3 dB heavy below 100 Hz, stereo width is narrower than the reference." Claude closes the gap with targeted EQ and level adjustments.
-
-**Master for every platform in one pass.** Claude builds the full chain: HPF, corrective EQ, glue compression, tonal shaping, stereo imaging, limiting. Then it renders three masters. Spotify at -14 LUFS, Apple Music at -16 LUFS, and vinyl with mono bass, de-essing, and HF rolloff at 16 kHz. Different loudness targets, different format constraints, same session.
-
-**Solve problems by measurement, not guesswork.** "The mix sounds muddy" becomes "4 dB buildup at 300 Hz across bass, guitar, and keys. Cut bass at 300 Hz by 3 dB, cut guitar at 250-350 Hz by 2 dB." Every recommendation is backed by a number.
-
-**Set up sessions from a template.** Tell Claude the genre and stem count. It builds the folder hierarchy, bus routing, aux sends (reverb, delay, parallel compression), sidechain routing, color coding, and gain staging. Ready to mix.
-
-**Design creative effects.** "I want Tool-style vocal distortion" or "Make the guitars sound like shoegaze." Claude builds the chain: saturation type, drive amount, chain order, parallel blend level. All calibrated by measurement.
-
-## How It Works
-
-Four layers that work together:
-
-1. **Measurement.** 20 MCP tools that quantify your audio: spectrum, loudness (EBU R128), dynamics, stereo field, phase coherence, frequency masking between stems, and problems like clipping, hum, DC offset, sibilance, and room resonances. Plus automated problem fixing and custom processing chains.
-
-2. **Methodology.** Five domain expert skills that encode how professional engineers actually think. Structured decision-making workflows: when to use FET vs VCA compression, how to read crest factor to choose a handling strategy, when a mix needs more work vs when it's ready for mastering.
-
-3. **Reference.** Nine genre profiles with target loudness, spectral balance, dynamics conventions, and stereo width standards. Your mix gets compared against professional benchmarks for your genre.
-
-4. **Execution.** Reaper DAW integration via MCP. Claude inserts EQ, sets compression ratios, builds sidechain routing, writes automation, and renders deliverables.
-
-## Try It
-
-No install needed. Run this on any audio file:
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/), then:
 
 ```bash
-uvx --from phantom-audio phantom analyze your-track.wav
+uv tool install phantom-audio --python 3.13
+phantom analyze mix.wav
+phantom analyze mix.wav --json
+phantom compare mix.wav --reference reference.wav
+phantom doctor
 ```
 
-The distribution is `phantom-audio`; the command it installs is `phantom`. `uvx` assumes those
-match, so `--from` is required here.
+The CLI works without an AI assistant. First use may run setup to configure the MCP server and Claude Code plugin; you can also run `phantom setup` explicitly.
 
-Or install it:
+For an assistant, try: “Analyze these stems. Prioritize technical problems, explain the measurements, and tell me what you would check by listening before changing anything.”
+
+## What you can do
+
+- **Check a recording before mixing.** Look for digital clipping, DC offset, mains hum, noise, and stereo polarity problems. Batch diagnostics also report differing sample rates.
+- **Compare a mix with a reference.** Measure loudness, relative octave-band balance, dynamics, and stereo differences. Nine genre profiles provide starting targets when you do not have a reference file.
+- **Find competing stems.** Rank pairs by weighted octave-band overlap to decide where to investigate masking. The score is a heuristic; it does not establish that one instrument is inaudible.
+- **Try corrective processing.** With the processing extra, apply EQ and other Pedalboard operations or use recipes for selected detected problems. `fix_audio` reports before/after findings, including regressions.
+- **Read meters from Phantom Studio.** `read_live_metrics` reads local snapshots from the separate Studio preview plugin. Studio is not included in this package.
+
+The measurements support an engineering decision. They cannot decide whether distortion is intentional, whether a reference suits a song, or whether a change sounds better.
+
+## Analysis tools
+
+The MCP server exposes 20 tools over stdio:
+
+| Purpose | Tools |
+|---|---|
+| Measure a file | `analyze_spectrum`, `analyze_loudness`, `analyze_dynamics`, `analyze_stereo`, `analyze_phase`, `detect_problems` |
+| Compare stems | `compare_phase`, `analyze_masking`, `multi_stem_masking` |
+| Compare targets | `compare_to_profile`, `compare_to_reference`, `list_profiles`, `load_profile` |
+| Process audio | `match_to_reference`, `separate_stems`, `fix_audio`, `apply_processing` |
+| Diagnose a session | `full_diagnostic`, `batch_diagnostic`, `read_live_metrics` |
+
+Loudness is measured from the individual channels. Clipping checks either channel and accounts for integer PCM's positive rail. For analyses based on a mono signal, Phantom uses the loudest channel if stereo cancellation would otherwise turn active audio into a silent downmix. Phase and stereo measurements still describe the original channels.
+
+## Optional processing
+
+Install the capabilities you need into the same isolated environment:
 
 ```bash
-curl -sSL https://fadelab.net/install | bash
+# Corrective EQ, compression, and other Pedalboard effects
+uv tool install --force 'phantom-audio[processing]' --python 3.13
+
+# Add reference matching and stem separation as well
+uv tool install --force 'phantom-audio[all]' --python 3.13
 ```
 
-The installer handles everything — installs uv and Python if needed, lets you choose which extras to install, and configures the MCP server, Claude Code plugin, and Reaper bridge.
+The `matching` extra uses Matchering. The `separation` extra installs the sibling `phantom-audio-separation` package and Demucs/PyTorch; these are a substantially larger download, and first use downloads model weights. `analysis` adds librosa for optional cross-validation. None is needed for the core analysis tools.
 
-> **Windows is not supported yet.** `phantom-audio` cannot currently be installed on Windows. Its analysis engine, [essentia](https://essentia.upf.edu/), publishes no Windows package, so the install fails while resolving dependencies. Work to replace that engine with a Windows-capable one is tracked in [#52](https://github.com/fadelabs/phantom/issues/52). Until then, run Phantom on macOS, on Linux, or under [WSL](https://learn.microsoft.com/en-us/windows/wsl/install).
-
-Point it at any WAV file:
 ```bash
-phantom analyze your-track.wav
+phantom fix vocal.wav --output vocal-fixed.wav
+phantom separate mix.wav --output stems
+phantom render mix.wav --reference reference.wav --output matched.wav
+phantom render mix.wav --format flac --output converted.flac
 ```
 
-To use with Claude, add to your MCP config (`.mcp.json`):
+Relative output paths resolve inside `~/.phantom/output` by default. Set `PHANTOM_OUTPUT_DIR` to an existing directory to write elsewhere. Format conversion also requires the `ffmpeg` executable.
+
+Corrective processing writes 32-bit float WAVs to preserve precision and headroom. It does not restore clipped samples, perform source-aware de-essing, or guarantee improvement. An EQ cut around 7 kHz is a static tonal change, not a dynamic de-esser. Listen to the result and inspect reported regressions.
+
+## Use with an MCP client
+
+Run `phantom-mcp` or `phantom serve` for the stdio server. A client that accepts MCP JSON configuration can use:
 
 ```json
 {
@@ -79,220 +88,65 @@ To use with Claude, add to your MCP config (`.mcp.json`):
 }
 ```
 
-Install the Claude Code plugin for domain expert skills:
+The executable must be on the client's PATH. See [assistant configuration](https://fadelab.net/docs/configuring-assistants) for client-specific setup.
 
-```bash
-claude plugin install phantom/plugin
-```
+The Claude Code plugin supplies these skills:
 
-Then talk to Claude:
+| Skill | Focus |
+|---|---|
+| `audio-diagnostician` | Assess recordings and prioritize findings |
+| `session-architect` | Organize tracks, routing, and session structure |
+| `mix-engineer` | Balance, EQ, dynamics, and reference comparison |
+| `effects-engineer` | Reverb, delay, modulation, and creative chains |
+| `mastering-engineer` | Final tonal, dynamics, and delivery checks |
 
-> "Analyze my stems and tell me what needs fixing before I start mixing."
+## Work in a DAW
 
-> "Compare my master against this reference track and show me what's off."
+Phantom analyzes files; a separate MCP server controls the DAW. Export a mix or stems, analyze them, make a proposed change, then export and measure again. Check the bridge's available tools before attempting an operation.
 
-> "Set up a mixing session for a 5-stem rock track with parallel drum compression."
-
-> "Is this mix ready for mastering, or does it need more work?"
-
-## Analysis Tools
-
-| Category | Tools | What They Measure |
-|----------|-------|-------------------|
-| Spectral | `analyze_spectrum` | Frequency balance, centroid, rolloff, contrast, flatness, dissonance |
-| Loudness | `analyze_loudness` | Integrated LUFS, momentary, short-term, loudness range (EBU R128), true peak |
-| Dynamics | `analyze_dynamics` | RMS, peak, crest factor, dynamic range, dynamic complexity |
-| Stereo | `analyze_stereo` | Width, balance, mid/side ratio, correlation, panorama distribution |
-| Phase | `analyze_phase`, `compare_phase` | Phase coherence per band, polarity, inter-channel delay |
-| Problems | `detect_problems` | Clipping, DC offset, inter-sample peaks, noise floor, SNR, hum, sibilance, mud, harshness, resonances, lossy-codec artifacts |
-| Masking | `analyze_masking`, `multi_stem_masking` | Per-octave frequency overlap between stems, collision severity ranking |
-| Comparison | `compare_to_profile`, `compare_to_reference` | Deviation from genre targets or reference tracks across all dimensions |
-| Matching | `match_to_reference` | Automated spectral/loudness/width matching to a reference WAV |
-| Separation | `separate_stems` | Isolate vocals, drums, bass, and instruments via Demucs |
-| Fixing | `fix_audio` | Automatically fix detected problems (DC offset, clipping, hum, etc.) |
-| Processing | `apply_processing` | Apply a custom chain of audio processing operations |
-| Profiles | `list_profiles`, `load_profile` | Browse and inspect genre reference profiles |
-| Diagnostic | `full_diagnostic`, `batch_diagnostic` | All analysis types on one file, or across up to 50 files in a single call |
-
-## Domain Expert Skills
-
-**Audio Diagnostician.** Runs batch diagnostics on all stems, triages problems by severity (dealbreaker, significant, moderate, minor), maps frequency masking between every stem pair, and produces a structured mix brief. Catches phase cancellation and sample rate mismatches before you waste time mixing.
-
-**Mix Engineer.** Phase-first troubleshooting, gain staging methodology, complementary EQ decisions (boost one stem where you cut its competitor), compressor type selection (FET for punch, Opto for smooth, VCA for transparent, Vari-Mu for glue), sidechain routing, parallel compression, serial compression, spatial processing with reverb type selection, and automation strategy.
-
-**Effects Engineer.** Distortion and saturation taxonomy (tube warmth vs transistor grit vs tape compression), modulation effects, reverb and delay type selection with pre-delay guidance, creative chain recipes (ethereal vocals, massive guitars, Tool-style distortion, lo-fi textures), and effects automation for dynamic transitions.
-
-**Mastering Engineer.** Ten-stage mastering chain in strict order (HPF through dither), send-back criteria (when a mix needs more work, not mastering), platform-specific loudness targeting (Spotify, Apple Music, YouTube, CD, vinyl), reference-based mastering workflow, and format delivery requirements including metadata.
-
-**Session Architect.** Genre-specific session templates, folder/bus hierarchy design, aux channel setup (reverb sends, delay sends, parallel compression), sidechain routing, color coding conventions, automation mode guidance, and render settings per deliverable format.
-
-## Reference Profiles
-
-| Profile | Target LUFS | Character |
-|---------|-------------|-----------|
-| Pop | -10 to -7 | Polished, vocal-forward, controlled dynamics, 4 kHz presence boost |
-| Rock | -12 to -8 | Wide stereo, prominent guitars, punchy drums |
-| Hip-Hop | -10 to -7 | Heavy low end, crisp highs, compressed dynamics |
-| Electronic | -10 to -7 | Wide stereo, sub-bass emphasis, bright top end |
-| EDM | -8 to -5 | Loud, sidechain pumping, wide and bright |
-| Metal | -10 to -6 | Dense, scooped mids, aggressive compression |
-| Rock-Metal | -10 to -7 | Heavy, mid-present, tight low end |
-| Lo-Fi | -14 to -10 | Warm, rolled-off highs, narrow stereo, intentionally quiet |
-| Ambient | -20 to -14 | Wide, dynamic, gentle spectral curve |
-
-## Installation
-
-**Core** (analysis + MCP server + CLI):
-
-```bash
-uv tool install phantom-audio --python 3.13
-```
-
-> **Python 3.13 required.** Essentia (the analysis engine) doesn't support Python 3.14+ yet. The `--python 3.13` flag tells uv to use the right version automatically.
->
-> Don't have `uv`? Install it with `curl -LsSf https://astral.sh/uv/install.sh | sh` or `brew install uv`.
-
-Setup runs automatically on first use. To re-run manually: `phantom setup`
-
-**With all extras** (recommended — install everything upfront so stem separation and reference matching are available immediately):
-
-```bash
-uv tool install "phantom-audio[all]" --python 3.13
-```
-
-> **Why install extras upfront?** `uv tool install` creates an isolated Python environment. If you install extras later, you'll need to reinstall with `--force` to add them to the same environment. Installing everything at once avoids this. Stem separation (Demucs) adds ~2.5GB for PyTorch.
-
-**Or pick only what you need:**
-
-```bash
-# Stem separation only (Demucs + PyTorch ~2.5GB)
-# Ships as the sibling package phantom-audio-separation; the [separation]
-# extra is a backward-compatible meta-installer that pulls it in.
-uv tool install "phantom-audio[separation]" --python 3.13
-
-# Reference matching only (GPLv3 -- see License section)
-uv tool install "phantom-audio[matching]" --python 3.13
-
-# Audio processing / auto-fix (Pedalboard)
-uv tool install "phantom-audio[processing]" --python 3.13
-```
-
-**Using uv** (recommended):
-
-```bash
-uv add phantom-audio
-```
-
-**Development:**
-
-```bash
-git clone https://github.com/fadelabs/phantom.git
-cd phantom
-uv sync --extra dev
-```
-
-## Telemetry
-
-Both installers (`install.sh` and `install.ps1`) report anonymized install telemetry to `fadelab.net` at the start, completion, and failure of an install. Each report is a small JSON payload carrying the OS, architecture, phantom version (when known), the chosen extras, and the install method (currently always `uv`), plus a per-run install ID used to join the start and completion events of a single install. A failure report also includes one of six fixed reason codes (`unsupported_os`, `unsupported_arch`, `no_downloader`, `uv_install_failed`, `pkg_install_failed`, `not_on_path`) — never raw error text or log contents. No audio, file names, or other personal data is sent, and the request has no effect on the install.
-
-Two of those codes are specific to `install.sh`: the Windows installer rejects no architecture (`unsupported_arch`) and needs no external downloader (`no_downloader`).
-
-Telemetry is on by default. Opt out by setting the flag on the shell that runs the script:
-
-```bash
-# macOS / Linux
-curl -sSL https://fadelab.net/install | PHANTOM_NO_TELEMETRY=1 bash
-```
-
-The variable has to go on `bash`, not on `curl`. `PHANTOM_NO_TELEMETRY=1 curl ... | bash` exports it
-to the download process only, and the installer never sees it.
-
-```powershell
-# Windows (install.ps1 honors the same variable, but see the Windows note above —
-# the install cannot currently succeed on Windows)
-$env:PHANTOM_NO_TELEMETRY = "1"
-irm https://raw.githubusercontent.com/fadelabs/phantom/main/install.ps1 | iex
-```
-
-## Usage
-
-### With Claude Code (Recommended)
-
-Add the MCP server to your project's `.mcp.json`, install the plugin, and talk to Claude. The tools handle measurement, the skills handle interpretation, and a Reaper MCP server handles applying changes in your DAW.
-
-Example prompts:
-
-- *"Analyze this vocal take and tell me if it needs de-essing."*
-- *"Check all my stems for phase issues and frequency masking."*
-- *"Compare my master to a pop reference. What's off?"*
-- *"Set up a mixing session for a 5-stem rock track."*
-- *"I want ethereal reverb on the vocals. Build the chain."*
-- *"Is this loud enough for Spotify, or do I need more limiting?"*
-
-### Standalone CLI
-
-Works without AI:
-
-```bash
-phantom analyze track.wav              # Full analysis with Rich terminal output
-phantom analyze track.wav --json       # Machine-readable JSON
-phantom compare track.wav --profile rock  # Compare against genre targets
-phantom compare track.wav --reference ref.wav  # A/B against a reference
-phantom separate mix.wav --output ./stems/     # Stem separation
-phantom fix track.wav                  # Auto-fix detected problems
-phantom render mix.wav --reference ref.wav     # Match to reference
-phantom doctor                         # Check installation health
-phantom serve                          # Start the MCP server
-```
-
-### As an MCP Server
-
-Works with any MCP-compatible client. Claude Code, Cursor, Windsurf, or anything that speaks MCP:
-
-```bash
-phantom-mcp
-```
-
-Connect via stdio transport.
-
-## DAW Integration
-
-Pair Phantom with a Reaper MCP server for full DAW control. Two servers running simultaneously: Phantom handles measurement, Reaper MCP handles tracks, plugins, routing, and automation.
-
-The workflow:
-
-1. **Analyze.** Phantom measures your audio (spectrum, loudness, dynamics, problems, masking)
-2. **Decide.** Skills interpret the measurements and choose processing
-3. **Execute.** Reaper MCP applies changes in your DAW (EQ, compression, reverb, levels, sidechain routing, automation)
-
-Set up Reaper integration:
+### Reaper
 
 ```bash
 phantom setup-reaper
 ```
 
-This auto-detects your Reaper installation, clones the bridge, copies the Lua scripts, configures auto-start, and writes MCP config. No prompts. If Reaper is installed, it just works. If Reaper isn't installed, it silently skips. The bridge auto-starts every time you open Reaper.
+This installs the [Phantom Reaper MCP fork](https://github.com/fadelabs/reaper-mcp), copies its Lua bridge, and configures the MCP entry and startup script. Existing installations and conflicting configurations may require an explicit choice; read setup's result before assuming it is connected. Open Reaper and verify the bridge responds before editing a session.
 
-The Reaper MCP server includes batch tools built for mixing workflows:
+The plugin includes Reaper recipes for routing, FX, automation, and session setup. Plugin parameter names and ranges vary; discover them before setting values. Some third-party plugins expose limited parameters to the host.
 
-| Tool | What It Does |
-|------|-------------|
-| `batch_set_fx_params` | Set multiple plugin parameters in one call |
-| `copy_fx_chain` | Clone all FX from one track to another |
-| `batch_create_tracks` | Create multiple named, colored tracks at once |
-| `set_fx_params_by_name` | Set parameters by name ("Threshold", "Ratio") instead of index |
-| `create_submix` | Create a bus with routing and optional EQ/compression |
-| `batch_apply_eq` | Apply identical EQ settings across multiple tracks |
-| `configure_multiband_compressor` | Set ReaXcomp band parameters by discovery |
-| `setup_sidechain_with_filter` | Sidechain compression with HPF on the sidechain signal |
-| `set_fx_preset_batch` | Apply the same preset across multiple tracks |
-| `add_pan_automation` | Pan automation with named positions ("center", "hard left") |
+### Ableton Live
 
-These sit on top of 100+ individual tools for tracks, FX, MIDI, routing, markers, envelopes, transport, and rendering.
+```bash
+phantom setup-ableton
+```
 
-## Known Limitations
+This runs the Remote Script installer from `ableton-mcp==1.4.0` and configures `AbletonMCP` alongside Phantom. It preserves other MCP entries, uses loopback port 9877, and disables upstream telemetry. Restart Live, select **AbletonMCP** as a Control Surface in its MIDI settings, then restart your MCP client and call `get_session_info` to verify the connection.
 
-**iZotope Neutron and Ozone module exposure.** Neutron and Ozone use an internal module system where each processing module (EQ, Compressor, Exciter, etc.) must be manually added to the plugin's signal chain before its parameters become visible to external automation. This means Phantom and Reaper MCP cannot see or control a module until you've added it inside the plugin GUI. This is a limitation of how iZotope exposes VST parameters, not a Phantom issue. Once modules are added, their parameters are fully controllable.
+For a custom User Library, pass `--scripts-dir '/path/to/User Library/Remote Scripts'`. Use `--config PATH` to select an MCP JSON file, or `--config-only` to configure the client without installing the script. Setup refuses to replace a different existing Ableton entry unless you pass `--force`.
+
+The external [Ableton MCP project](https://github.com/ahujasid/ableton-mcp) supplies Live control. Phantom's audio analysis still uses exported files. Reaper Lua recipes cannot be run in Live; use the Ableton workflow guidance and only the tools exposed by your installed bridge. A real Live-session smoke test is still required for this integration; setup and configuration tests do not establish DAW compatibility.
+
+## Reference profiles
+
+Built-in profiles: `ambient`, `edm`, `electronic`, `hip-hop`, `lo-fi`, `metal`, `pop`, `rock`, and `rock-metal`.
+
+Profiles describe broad spectral and dynamics tendencies. They are not mastering rules for every song, and a full-mix profile is not an appropriate tonal target for every isolated stem. Streaming normalization levels are playback references, not a requirement to master every release to one LUFS value.
+
+## Privacy and limits
+
+Audio analysis runs locally. If you connect an AI assistant, the measurements and tool results it receives are subject to that provider's configuration and data policy. Optional separation downloads model weights. The standalone installers report install status, OS, architecture, version, selected extras, and a per-install identifier to `fadelab.net`; they do not send audio or raw error logs.
+
+To opt out of installer telemetry:
+
+```bash
+curl -sSL https://fadelab.net/install | PHANTOM_NO_TELEMETRY=1 bash
+```
+
+Put the variable on `bash`, which runs the installer. Direct `uv tool install` does not run Phantom's shell installer. Ableton MCP is a separate project; Phantom's generated configuration explicitly disables its telemetry.
+
+Inputs may come from anywhere unless `PHANTOM_AUDIO_DIR` is set. Outputs are always confined to the output directory. Default per-file limits are 15 minutes, 500 MB on disk, and 1 GB decoded. Large batches and resampling have additional memory guards. Live snapshots are limited to 1 MB and flagged stale after 10 seconds.
+
+WAV, FLAC, AIFF, OGG, and other libsndfile formats are supported for analysis. MP3/AAC/M4A/WMA are rejected by the loader; convert them with `phantom render` first. Only mono and stereo audio are supported. Technical and tonal problem detectors are heuristics and may miss or misclassify material; a high-frequency cutoff alone is not proof of lossy encoding.
 
 ## Configuration
 

@@ -8,18 +8,17 @@ import sys
 import rich_click as click
 from rich.panel import Panel
 
-from phantom import load_audio, PhantomError
-from phantom.facade import ANALYSIS_TYPES, analysis_keys, run_analyses
+from phantom import PhantomError, load_audio
 from phantom.cli._formatting import (
     get_console,
+    output_json,
+    render_analysis_table,
+    render_error,
     render_problems_table,
     render_spectral_chart,
-    render_analysis_table,
-    output_json,
-    render_error,
 )
+from phantom.facade import ANALYSIS_TYPES, analysis_keys, run_analyses
 from phantom.problems import inject_sample_rate_mismatch
-
 
 # ---------------------------------------------------------------------------
 # Analysis dispatcher

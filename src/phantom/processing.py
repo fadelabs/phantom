@@ -14,20 +14,21 @@ notch filters, then parametric cuts, then shelf adjustments.
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
 from collections.abc import Callable
+from dataclasses import dataclass
 
 from pydantic import BaseModel
 
-from phantom.exceptions import AnalysisError, DependencyMissingError
 from phantom._utils import (
+    atomic_write_audio,
     get_output_dir,
     validate_input_path,
     validate_output_path,
     wrap_errors,
 )
 from phantom.audio import AudioData, load_audio
-from phantom.problems import ProblemItem, ProblemDetails, ProblemsResult
+from phantom.exceptions import AnalysisError, DependencyMissingError
+from phantom.problems import ProblemDetails, ProblemItem, ProblemsResult
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -304,15 +305,14 @@ def apply_processing(
     # Step 0: Dependency guard
     try:
         import pedalboard as pb
-        import soundfile as sf
-    except ImportError:
+    except ImportError as _exc:
         raise DependencyMissingError(
             package="Pedalboard",
             extra="processing",
             detail=(
                 "Pedalboard provides audio effects processing for corrective fixes."
             ),
-        )
+        ) from _exc
 
     # Step 1: Validate paths (T-23-02, T-23-05). _resolve_output_path confines
     # and validates the output (Finding 5), so no separate validate call here.
@@ -342,7 +342,7 @@ def apply_processing(
     sf_output = pb_output.T  # (channels, samples) -> (samples, channels)
 
     # Step 4: Write output WAV
-    sf.write(output_path, sf_output, audio.sample_rate)
+    atomic_write_audio(output_path, sf_output, audio.sample_rate)
 
     return FixResult(
         output_path=output_path,
@@ -557,15 +557,14 @@ def fix_audio(
     # Step 0: Dependency guard
     try:
         import pedalboard as pb
-        import soundfile as sf
-    except ImportError:
+    except ImportError as _exc:
         raise DependencyMissingError(
             package="Pedalboard",
             extra="processing",
             detail=(
                 "Pedalboard provides audio effects processing for corrective fixes."
             ),
-        )
+        ) from _exc
 
     # Step 1: Validate paths. _resolve_output_path confines + validates the
     # output (Finding 5).
@@ -601,13 +600,23 @@ def fix_audio(
         pb_input = audio.samples.T  # (samples, channels) -> (channels, samples)
         pb_output = board(pb_input, float(audio.sample_rate))
         sf_output = pb_output.T  # (channels, samples) -> (samples, channels)
-        sf.write(output_path, sf_output, audio.sample_rate)
+        atomic_write_audio(output_path, sf_output, audio.sample_rate)
     else:
         # No fixable problems -- write copy of audio unchanged
-        sf.write(output_path, audio.samples, audio.sample_rate)
+        atomic_write_audio(output_path, audio.samples, audio.sample_rate)
 
     # Step 7: Detect problems on output (after)
-    after_audio = load_audio(output_path)
+    # The output is already validated against the write sandbox. It need not
+    # live in the input sandbox, and float WAV preserves these exact samples.
+    output_samples = sf_output if chain else audio.samples
+    after_audio = AudioData(
+        samples=output_samples,
+        sample_rate=audio.sample_rate,
+        num_channels=audio.num_channels,
+        duration=len(output_samples) / audio.sample_rate,
+        num_samples=len(output_samples),
+        file_path=output_path,
+    )
     after = detect_problems(after_audio)
 
     # Step 8: Compare before/after

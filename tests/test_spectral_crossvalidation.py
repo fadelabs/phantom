@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 
 from phantom.audio import AudioData
-from phantom.spectral import analyze_spectrum, OCTAVE_CENTERS
+from phantom.spectral import OCTAVE_CENTERS, analyze_spectrum
 
 TOLERANCE_DB = 3.0
 

@@ -20,6 +20,8 @@ from phantom._diagnostics import (
     OPTIONAL_DEPS,
     SEPARATION_PLUGIN_DIST,
     separation_plugin_status,
+)
+from phantom._diagnostics import (
     try_import as _try_import,
 )
 from phantom.cli._formatting import get_console, output_json
@@ -36,8 +38,10 @@ def _check_mcp_config(path: Path) -> bool | None:
         return None
     try:
         data = json.loads(path.read_text())
+        if not isinstance(data, dict):
+            return False
         servers = data.get("mcpServers", {})
-        return "phantom" in servers
+        return isinstance(servers, dict) and isinstance(servers.get("phantom"), dict)
     except (json.JSONDecodeError, OSError):
         return False
 

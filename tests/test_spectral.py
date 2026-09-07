@@ -244,8 +244,8 @@ class TestBandLabelAlignment:
 
     def test_band_labels_match_profile_keys(self):
         """Built-in profile 'rock' has frequency.bands keys matching _BAND_LABELS."""
-        from phantom.spectral import _BAND_LABELS
         from phantom._profiles import load_profile
+        from phantom.spectral import _BAND_LABELS
 
         profile = load_profile("rock")
         profile_bands = sorted(profile.frequency.bands.keys())

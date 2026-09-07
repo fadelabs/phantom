@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import stat
 import sys
 import time
 
@@ -28,6 +29,7 @@ from phantom.exceptions import AnalysisError, PathSecurityError
 #: and removes its file on shutdown, so a stale file usually means the plugin
 #: host crashed or the DAW froze.
 STALE_AFTER_SECONDS = 10.0
+MAX_SNAPSHOT_BYTES = 1_000_000
 
 _INSTANCE_ID_REGEX = re.compile(r"^[A-Za-z0-9_-]+$")
 
@@ -94,6 +96,35 @@ def _newest_snapshot(candidates: list[str]) -> str:
         raise AnalysisError(_NO_METRICS_MSG) from e
 
 
+def _read_snapshot(chosen: str) -> tuple[dict, float]:
+    try:
+        fd = os.open(
+            chosen,
+            os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0),
+        )
+        with os.fdopen(fd, "rb") as fh:
+            info = os.fstat(fh.fileno())
+            if not stat.S_ISREG(info.st_mode) or info.st_size > MAX_SNAPSHOT_BYTES:
+                raise AnalysisError(_UNREADABLE_MSG)
+            mtime = info.st_mtime
+            payload = fh.read(MAX_SNAPSHOT_BYTES + 1)
+            if len(payload) > MAX_SNAPSHOT_BYTES:
+                raise AnalysisError(_UNREADABLE_MSG)
+            snapshot = json.loads(payload)
+            # JSON extensions NaN/Infinity must never reach MCP serializers.
+            json.dumps(snapshot, allow_nan=False)
+    except OSError as e:
+        # File vanished between listing and reading (plugin closed).
+        raise AnalysisError(_NO_METRICS_MSG) from e
+    except (ValueError, UnicodeError, RecursionError) as e:
+        raise AnalysisError(_UNREADABLE_MSG) from e
+
+    if not isinstance(snapshot, dict):
+        raise AnalysisError(_UNREADABLE_MSG)
+
+    return snapshot, mtime
+
+
 def read_live_metrics(instance_id: str | None = None) -> LiveMetricsResult:
     """Read the newest (or a specific instance's) live metrics snapshot.
 
@@ -112,7 +143,7 @@ def read_live_metrics(instance_id: str | None = None) -> LiveMetricsResult:
     candidates = _contained_json_files(real_base)
 
     if instance_id is not None:
-        if not _INSTANCE_ID_REGEX.match(instance_id):
+        if not _INSTANCE_ID_REGEX.fullmatch(instance_id):
             raise PathSecurityError(
                 "Invalid instance id: only letters, digits, '-' and '_' are allowed."
             )
@@ -130,18 +161,7 @@ def read_live_metrics(instance_id: str | None = None) -> LiveMetricsResult:
     else:
         chosen = _newest_snapshot(candidates)
 
-    try:
-        mtime = os.path.getmtime(chosen)
-        with open(chosen, encoding="utf-8") as fh:
-            snapshot = json.load(fh)
-    except OSError as e:
-        # File vanished between listing and reading (plugin closed).
-        raise AnalysisError(_NO_METRICS_MSG) from e
-    except json.JSONDecodeError as e:
-        raise AnalysisError(_UNREADABLE_MSG) from e
-
-    if not isinstance(snapshot, dict):
-        raise AnalysisError(_UNREADABLE_MSG)
+    snapshot, mtime = _read_snapshot(chosen)
 
     age = max(0.0, time.time() - mtime)
     return LiveMetricsResult(

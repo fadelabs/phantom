@@ -12,7 +12,6 @@ from phantom.audio import AudioData
 from phantom.loudness import LoudnessResult, LufsStats, analyze_loudness
 from tests.conftest import _make_audio
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -394,6 +393,7 @@ class TestSharedTruePeak:
         (two independent per-channel loops) it is 4 for stereo.
         """
         import essentia.standard as es
+
         import phantom.problems as problems_mod
         from phantom.loudness import es as loudness_es
 

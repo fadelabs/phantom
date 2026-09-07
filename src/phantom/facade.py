@@ -55,12 +55,12 @@ from phantom._cache import _cached_analysis
 from phantom._rounding import RoundedModel, round_duration
 from phantom._settings import AnalysisSettings
 from phantom.audio import AudioData
-from phantom.dynamics import analyze_dynamics, DynamicsResult
-from phantom.loudness import analyze_loudness, LoudnessResult
-from phantom.phase import analyze_phase, PhaseResult
-from phantom.problems import detect_problems, ProblemsResult
-from phantom.spectral import analyze_spectrum, SpectralResult
-from phantom.stereo import analyze_stereo, StereoResult
+from phantom.dynamics import DynamicsResult, analyze_dynamics
+from phantom.loudness import LoudnessResult, analyze_loudness
+from phantom.phase import PhaseResult, analyze_phase
+from phantom.problems import ProblemsResult, detect_problems
+from phantom.spectral import SpectralResult, analyze_spectrum
+from phantom.stereo import StereoResult, analyze_stereo
 
 
 @dataclass(frozen=True)

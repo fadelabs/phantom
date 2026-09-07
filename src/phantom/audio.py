@@ -12,6 +12,7 @@ Mono and stereo only (>2 channels rejected per AIO-03).
 
 from __future__ import annotations
 
+import math
 import os
 from functools import cached_property
 
@@ -19,7 +20,6 @@ import numpy as np
 import soundfile as sf
 from pydantic import BaseModel, ConfigDict, model_validator
 
-from phantom.exceptions import AnalysisError, AudioLoadError
 from phantom._utils import (
     SILENCE_THRESHOLD_DB,
     _block_rms_db,
@@ -28,6 +28,7 @@ from phantom._utils import (
     open_validated_input,
     validate_input_path,
 )
+from phantom.exceptions import AnalysisError, AudioLoadError
 
 # Sample rate bounds for supported audio files (SC-9)
 MIN_SAMPLE_RATE = 8000  # 8 kHz -- telephone quality floor
@@ -68,6 +69,7 @@ class AudioData(BaseModel):
     duration: float
     num_samples: int
     file_path: str | None = None
+    pcm_bits: int | None = None
 
     @model_validator(mode="after")
     def _validate_samples(self) -> AudioData:
@@ -107,6 +109,56 @@ class AudioData(BaseModel):
                 "digital full scale)"
             )
         return self
+
+    @model_validator(mode="after")
+    def _validate_metadata(self) -> AudioData:
+        if self.num_channels not in (1, 2):
+            raise AnalysisError("audio must have one or two channels")
+        if not MIN_SAMPLE_RATE <= self.sample_rate <= MAX_SAMPLE_RATE:
+            raise AnalysisError("sample_rate is outside the supported range")
+        if not math.isfinite(self.duration):
+            raise AnalysisError("duration must be finite")
+        # The buffer is authoritative, including callers with stale metadata.
+        self.num_samples = len(self.samples)
+        self.duration = self.num_samples / self.sample_rate
+        if self.pcm_bits not in (None, 8, 16, 24, 32):
+            raise AnalysisError("pcm_bits must be 8, 16, 24, or 32")
+        if not np.issubdtype(self.samples.dtype, np.floating):
+            raise AnalysisError("samples must contain floating-point audio")
+        return self
+
+    @cached_property
+    def analysis_mono(self) -> np.ndarray:
+        """Use the loudest channel when cancellation makes an active downmix silent.
+
+        The actual mono mix remains available as ``mono`` for compatibility
+        measurements. This fallback prevents active stereo becoming no data.
+        """
+        if self.is_near_silent and not self.channels_are_silent:
+            channel = int(np.argmax(np.mean(self.samples**2, axis=0)))
+            return self.samples[:, channel]
+        return self.mono
+
+    @cached_property
+    def analysis_rms(self) -> float:
+        if self.analysis_mono is self.mono:
+            return self.mono_rms
+        return float(np.sqrt(np.mean(self.analysis_mono**2)))
+
+    @cached_property
+    def analysis_block_rms_db(self) -> list[float]:
+        if self.analysis_mono is self.mono:
+            return self.block_rms_db
+        return _block_rms_db(self.analysis_mono)
+
+    @cached_property
+    def channels_are_silent(self) -> bool:
+        """True only when every channel is near-silent, regardless of polarity."""
+        from phantom._utils import is_near_silent
+
+        return all(
+            is_near_silent(self.samples[:, ch]) for ch in range(self.num_channels)
+        )
 
     @property
     def left(self) -> np.ndarray:
@@ -185,6 +237,29 @@ def load_audio(
     max_file_size: int | None = None,
     max_decoded_bytes: int | None = None,
 ) -> AudioData:
+    """Load mono/stereo audio within the input sandbox and decode limits.
+
+    Explicit limits override PHANTOM_MAX_DURATION, PHANTOM_MAX_FILE_SIZE and
+    PHANTOM_MAX_DECODED_BYTES; defaults are 900s, 500MB and 1GB respectively.
+    """
+    return _load_audio(
+        validate_input_path(path), max_duration, max_file_size, max_decoded_bytes
+    )
+
+
+def load_output_audio(path: str) -> AudioData:
+    """Read a generated output within the write sandbox, with normal decode guards."""
+    from phantom._utils import validate_output_path
+
+    return _load_audio(validate_output_path(path))
+
+
+def _load_audio(
+    path: str,
+    max_duration: float | None = None,
+    max_file_size: int | None = None,
+    max_decoded_bytes: int | None = None,
+) -> AudioData:
     """Load an audio file and return an AudioData instance.
 
     Reads the file as float32 samples normalized to [-1.0, 1.0].
@@ -211,7 +286,6 @@ def load_audio(
             limits, or has >2 channels.
     """
     # Step 1: Path validation (SEC-01, D-04)
-    path = validate_input_path(path)
 
     # Step 1.5: Unsupported format detection — check extension before sf.info
     ext = os.path.splitext(path)[1].lower()
@@ -271,6 +345,13 @@ def load_audio(
             # Step 6: Load audio as float32 via the held descriptor
             data = snd.read(dtype="float32", always_2d=True)
             sample_rate = snd.samplerate
+            pcm_bits = {
+                "PCM_U8": 8,
+                "PCM_S8": 8,
+                "PCM_16": 16,
+                "PCM_24": 24,
+                "PCM_32": 32,
+            }.get(snd.subtype)
 
             # Step 6.5: Finite-sample and magnitude guard (AUD-01/02).
             # Float-format files can carry NaN/Inf samples, and float32
@@ -302,4 +383,5 @@ def load_audio(
         duration=len(data) / sample_rate,
         num_samples=len(data),
         file_path=path,
+        pcm_bits=pcm_bits,
     )

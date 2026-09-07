@@ -11,9 +11,8 @@ from pathlib import Path
 
 import rich_click as click
 from rich.panel import Panel
-from rich.table import Table
-
 from rich.status import Status
+from rich.table import Table
 
 from phantom._utils import atomic_write_text
 from phantom.cli._formatting import get_console

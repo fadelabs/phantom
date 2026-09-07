@@ -230,3 +230,7 @@ For "this vocal sounds weird" — run `full_diagnostic` on that one file. But al
 5. Processing order matters — noise removal before compression, phase before EQ
 6. Handoff explicitly — tell downstream skills exactly what to do with each finding
 7. Confidence always — prefix every finding with Definite/Likely/Possible so engineers know what to trust
+
+## Ableton Live
+
+For Live sessions, follow [the Ableton workflow](../session-architect/ableton-workflow.md). Inspect the connected bridge and its tool schemas; do not run Reaper-specific recipes in Live.

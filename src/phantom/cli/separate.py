@@ -9,8 +9,8 @@ from rich.panel import Panel
 from rich.table import Table
 
 from phantom import (
-    separate_stems,
     PhantomError,
+    separate_stems,
 )
 from phantom._utils import validate_output_path
 from phantom.cli._formatting import (

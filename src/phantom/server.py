@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import sys
 from collections.abc import Callable
 
@@ -16,8 +15,18 @@ from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from pydantic import BaseModel
 
-from phantom._utils import _get_env_int
+from phantom._profiles import list_profiles as _list_profiles
+from phantom._profiles import load_profile as _load_profile
+from phantom._utils import (
+    ERROR_PATH_PATTERN,
+    _get_env_int,
+    open_validated_input,
+    validate_input_path,
+)
 from phantom.audio import load_audio
+from phantom.comparison import compare_to_profile as _compare_to_profile
+from phantom.comparison import compare_to_reference as _compare_to_reference
+from phantom.comparison import match_to_reference as _match_to_reference
 from phantom.exceptions import AnalysisError, PhantomError
 from phantom.facade import (
     ANALYSIS_TYPES,
@@ -25,25 +34,23 @@ from phantom.facade import (
     StemDiagnosticResult,
     run_analyses,
 )
-from phantom.phase import compare_phase as _compare_phase
-from phantom.problems import inject_sample_rate_mismatch
+from phantom.live_metrics import read_live_metrics as _read_live_metrics
+from phantom.masking import (
+    MaskingPair,
+)
 from phantom.masking import analyze_masking as _analyze_masking
 from phantom.masking import (
     analyze_masking_matrix as _analyze_masking_matrix,
-    MaskingPair,
 )
-from phantom.live_metrics import read_live_metrics as _read_live_metrics
-from phantom._profiles import load_profile as _load_profile
-from phantom._profiles import list_profiles as _list_profiles
-from phantom.comparison import compare_to_profile as _compare_to_profile
-from phantom.comparison import compare_to_reference as _compare_to_reference
-from phantom.comparison import match_to_reference as _match_to_reference
-from phantom.separation import separate_stems as _separate_stems
+from phantom.phase import compare_phase as _compare_phase
+from phantom.problems import inject_sample_rate_mismatch
 from phantom.processing import (
-    fix_audio as _fix_audio,
     apply_processing as _apply_processing,
 )
-
+from phantom.processing import (
+    fix_audio as _fix_audio,
+)
+from phantom.separation import separate_stems as _separate_stems
 
 # ---------------------------------------------------------------------------
 # Composite response models
@@ -59,13 +66,6 @@ class MultiStemMaskingResult(BaseModel):
     stem_paths: dict[str, str]
 
 
-# Regex pattern for stripping file paths (Unix, Windows drive-letter, and
-# UNC) from error messages. Segments may contain spaces, apostrophes, and
-# punctuation (but not quotes or newlines); the match runs to the last path
-# separator so only the basename remains visible.
-_PATH_REGEX = re.compile(r"(?:[A-Za-z]:\\[^\"\n]+\\|\\\\[^\"\n]+\\|/[^\"\n]+/)+")
-
-
 def _to_tool_error(exc: Exception, context: dict | None = None) -> ToolError:
     """Convert an exception to a ToolError with structured JSON message.
 
@@ -79,7 +79,7 @@ def _to_tool_error(exc: Exception, context: dict | None = None) -> ToolError:
     if isinstance(exc, PhantomError):
         msg = str(exc)
         # Strip any remaining absolute paths (Unix and Windows) from PhantomError messages
-        msg = _PATH_REGEX.sub("", msg)
+        msg = ERROR_PATH_PATTERN.sub("", msg)
         error_info["message"] = msg
     else:
         error_info["message"] = (
@@ -95,7 +95,7 @@ def _to_tool_error(exc: Exception, context: dict | None = None) -> ToolError:
     # logs/transcripts even though `message` is already redacted.
     if context:
         error_info["context"] = {
-            k: (_PATH_REGEX.sub("", v) if isinstance(v, str) else v)
+            k: (ERROR_PATH_PATTERN.sub("", v) if isinstance(v, str) else v)
             for k, v in context.items()
         }
     else:
@@ -209,7 +209,10 @@ def _peek_aggregate_decoded_bytes(file_paths: list[str]) -> int:
     total = 0
     for p in file_paths:
         try:
-            info = sf.info(p)
+            path = validate_input_path(p)
+            fd = open_validated_input(path)
+            with os.fdopen(fd, "rb") as stream:
+                info = sf.info(stream)
         except Exception:
             continue
         total += info.frames * info.channels * 4
@@ -263,7 +266,9 @@ def _validate_batch_inputs(file_paths: list[str]) -> list[str]:
     # Aggregate work guard (AUD-03): the per-file caps bound each decode,
     # but a full batch at the caps would still decode ~100 GB total.
     max_aggregate = _get_env_int("PHANTOM_MAX_AGGREGATE_BYTES", 4_000_000_000)
-    total_decoded = _peek_aggregate_decoded_bytes(file_paths)
+    if max_aggregate <= 0:
+        raise AnalysisError("PHANTOM_MAX_AGGREGATE_BYTES must be positive")
+    total_decoded = _peek_aggregate_decoded_bytes(normalized_paths)
     if total_decoded > max_aggregate:
         raise ToolError(
             json.dumps(
@@ -427,7 +432,7 @@ def batch_diagnostic(file_paths: list[str]) -> dict:
 
     results: dict[str, StemDiagnosticResult | dict] = {}
     sample_rates = {}
-    for path, stem_name in zip(file_paths, normalized_paths):
+    for path, stem_name in zip(file_paths, normalized_paths, strict=False):
         try:
             audio = load_audio(path)
             sample_rates[stem_name] = audio.sample_rate
@@ -440,7 +445,7 @@ def batch_diagnostic(file_paths: list[str]) -> dict:
                 **analysis,
             )
         except PhantomError as e:
-            msg = _PATH_REGEX.sub("", str(e))
+            msg = ERROR_PATH_PATTERN.sub("", str(e))
             results[stem_name] = {"error": msg, "error_type": type(e).__name__}
         except Exception as e:
             results[stem_name] = {
@@ -500,16 +505,10 @@ def multi_stem_masking(file_paths: list[str]) -> dict:
     # the per-file size/duration limits in load_audio aren't sufficient. Peek
     # each header and reject if the combined decoded size would be excessive
     # (default 4 GB, override via PHANTOM_MAX_AGGREGATE_BYTES).
-    import soundfile as sf
-
     max_aggregate = _get_env_int("PHANTOM_MAX_AGGREGATE_BYTES", 4_000_000_000)
-    total_bytes = 0
-    for p in file_paths:
-        try:
-            info = sf.info(p)
-        except Exception:
-            continue  # defer to load_audio below for a precise error
-        total_bytes += info.frames * info.channels * 4  # float32 decoded
+    if max_aggregate <= 0:
+        raise AnalysisError("PHANTOM_MAX_AGGREGATE_BYTES must be positive")
+    total_bytes = _peek_aggregate_decoded_bytes(file_paths)
     if total_bytes > max_aggregate:
         raise ToolError(
             json.dumps(

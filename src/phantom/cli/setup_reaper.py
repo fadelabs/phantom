@@ -18,9 +18,10 @@ from rich.panel import Panel
 
 from phantom._utils import atomic_write_text
 from phantom.cli._formatting import get_console, output_json
-from phantom import __version__
 
 REAPER_MCP_REPO = "https://github.com/fadelabs/reaper-mcp.git"
+# The bridge has its own release lifecycle; Phantom versions are not bridge tags.
+REAPER_MCP_VERSION = "1.1.1"
 
 
 def _normalize_git_remote(url: str) -> str:
@@ -117,22 +118,22 @@ def _fresh_clone_staged(
                     "--depth",
                     "1",
                     "--branch",
-                    f"v{__version__}",
+                    f"v{REAPER_MCP_VERSION}",
                     REAPER_MCP_REPO,
                     str(staging),
                 ],
                 "Git clone (version-pinned)",
                 timeout=_GIT_TIMEOUT_SECONDS,
             )
-        except click.ClickException:
+        except click.ClickException as _exc:
             if not allow_unverified:
                 raise click.ClickException(
-                    f"Tag v{__version__} not found in reaper-mcp. Refusing to clone "
+                    f"Tag v{REAPER_MCP_VERSION} not found in reaper-mcp. Refusing to clone "
                     "unverified HEAD. Re-run with --allow-unverified to proceed."
-                )
+                ) from _exc
             if not json_output:
                 console.print(
-                    f"[yellow]Warning: tag v{__version__} not found — "
+                    f"[yellow]Warning: tag v{REAPER_MCP_VERSION} not found — "
                     "cloning HEAD (unverified version).[/yellow]"
                 )
             # Reset the staging dir so the fallback clones into an empty target.
@@ -173,15 +174,17 @@ def _run_step(cmd: list[str], step_name: str, timeout: int | None = None) -> Non
     try:
         subprocess.run(cmd, check=True, capture_output=True, timeout=timeout)
     except FileNotFoundError as e:
-        raise click.ClickException(f"{step_name}: command not found: {cmd[0]} ({e})")
-    except subprocess.TimeoutExpired:
+        raise click.ClickException(
+            f"{step_name}: command not found: {cmd[0]} ({e})"
+        ) from e
+    except subprocess.TimeoutExpired as _exc:
         raise click.ClickException(
             f"{step_name} timed out after {timeout} seconds. "
             "Check your connection and try again."
-        )
+        ) from _exc
     except subprocess.CalledProcessError as e:
         stderr = e.stderr.decode().strip() if e.stderr else str(e)
-        raise click.ClickException(f"{step_name} failed:\n{stderr}")
+        raise click.ClickException(f"{step_name} failed:\n{stderr}") from e
 
 
 _STARTUP_MARKER = "-- [phantom] auto-start MCP bridge"
@@ -241,6 +244,10 @@ def _compute_mcp_merge(mcp_config: dict):
         old_text = ""
         existing = {}
 
+    if not isinstance(existing, dict) or not isinstance(
+        existing.get("mcpServers", {}), dict
+    ):
+        return target, old_text, None, False
     reaper_exists = "reaper" in existing.get("mcpServers", {})
     servers = existing.setdefault("mcpServers", {})
     servers["reaper"] = mcp_config["mcpServers"]["reaper"]
@@ -250,25 +257,32 @@ def _compute_mcp_merge(mcp_config: dict):
 
 def _render_mcp_diff(target: Path, old_text: str, new_text: str, console) -> None:
     """Print a unified diff of the proposed .mcp.json change."""
-    diff = "".join(
-        difflib.unified_diff(
-            old_text.splitlines(keepends=True),
-            new_text.splitlines(keepends=True),
-            fromfile=f"{target} (current)",
-            tofile=f"{target} (proposed)",
-        )
-    )
-    if not diff.strip():
+    if old_text == new_text:
         console.print(f"  [dim]{target} already up to date — no change.[/dim]")
         return
-    console.print(f"  [bold].mcp.json change[/bold] ({target}):")
-    for line in diff.splitlines():
-        if line.startswith("+") and not line.startswith("+++"):
-            console.print(f"    [green]{line}[/green]")
-        elif line.startswith("-") and not line.startswith("---"):
-            console.print(f"    [red]{line}[/red]")
-        else:
-            console.print(f"    [dim]{line}[/dim]")
+
+    # Arbitrary MCP entries can contain credentials in args, URLs, and env.
+    # Show structural changes only; unrelated server configuration stays private.
+    def structure(text: str) -> str:
+        data = json.loads(text) if text.strip() else {}
+        entry = data.get("mcpServers", {}).get("reaper", {})
+        if not isinstance(entry, dict):
+            entry = {}
+        return json.dumps({key: "<configured>" for key in entry}, indent=2) + "\n"
+
+    diff = "".join(
+        difflib.unified_diff(
+            structure(old_text).splitlines(keepends=True),
+            structure(new_text).splitlines(keepends=True),
+            fromfile="reaper (current fields)",
+            tofile="reaper (proposed fields)",
+        )
+    )
+    console.print(f"  [bold]Reaper configuration change[/bold] ({target}):")
+    console.print(
+        diff or "    Existing Reaper configuration values will change.", markup=False
+    )
+    console.print("    Values withheld; other MCP servers are preserved.")
 
 
 def _remove_startup_block(content: str) -> str | None:
@@ -322,6 +336,10 @@ def _compute_mcp_unmerge():
         existing = json.loads(old_text)
     except (json.JSONDecodeError, OSError):
         return target, "", None, False
+    if not isinstance(existing, dict) or not isinstance(
+        existing.get("mcpServers", {}), dict
+    ):
+        return target, old_text, None, False
     servers = existing.get("mcpServers", {})
     if "reaper" not in servers:
         return target, old_text, old_text, False
@@ -375,11 +393,11 @@ def _print_dry_run_plan(
     if will_update:
         console.print(
             f"  Update existing bridge at [cyan]{install_path}[/cyan] "
-            f"(git fetch + checkout v{__version__})"
+            f"(git fetch + checkout v{REAPER_MCP_VERSION})"
         )
     else:
         console.print(
-            f"  Clone [cyan]{REAPER_MCP_REPO}[/cyan] (tag v{__version__}) "
+            f"  Clone [cyan]{REAPER_MCP_REPO}[/cyan] (tag v{REAPER_MCP_VERSION}) "
             f"into [cyan]{install_path}[/cyan]"
         )
     console.print(f"  Run: [dim]uv sync --directory {install_path}[/dim]")
@@ -620,7 +638,7 @@ def setup_reaper(
                     "would_update": install_path.exists()
                     and (install_path / ".git").is_dir(),
                     "clone_url": REAPER_MCP_REPO,
-                    "version_tag": f"v{__version__}",
+                    "version_tag": f"v{REAPER_MCP_VERSION}",
                     "uv_sync_cmd": ["uv", "sync", "--directory", str(install_path)],
                     "lua_files": {
                         name: str(scripts_dir / name) for name in EXPECTED_LUA_FILES
@@ -699,15 +717,20 @@ def setup_reaper(
         )
         try:
             _run_step(
-                ["git", "-C", str(install_path), "checkout", f"v{__version__}"],
+                ["git", "-C", str(install_path), "checkout", f"v{REAPER_MCP_VERSION}"],
                 "Git checkout version tag",
                 timeout=_GIT_TIMEOUT_SECONDS,
             )
-        except click.ClickException:
+        except click.ClickException as exc:
+            if not allow_unverified:
+                raise click.ClickException(
+                    f"Could not check out bridge v{REAPER_MCP_VERSION}. "
+                    "No scripts or MCP configuration were updated. Resolve local "
+                    "changes or the missing tag before retrying."
+                ) from exc
             if not json_output:
                 console.print(
-                    f"[yellow]Warning: tag v{__version__} not found — "
-                    "staying on current version (unverified).[/yellow]"
+                    "[yellow]Warning: continuing with the current, unverified bridge.[/yellow]"
                 )
         if (install_path / "pyproject.toml").exists():
             _run_step(

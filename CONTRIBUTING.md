@@ -15,7 +15,7 @@ Contributions are welcome under the [AGPL-3.0](LICENSE) license (inbound = outbo
    cd phantom
    ```
 
-2. Install dependencies (requires Python 3.10+ and [uv](https://docs.astral.sh/uv/)):
+2. Install dependencies (requires Python 3.10–3.13 on macOS or Linux and [uv](https://docs.astral.sh/uv/)):
 
    ```bash
    uv sync --extra dev
@@ -47,8 +47,8 @@ Contributions are welcome under the [AGPL-3.0](LICENSE) license (inbound = outbo
 
 ## Code Style
 
-- **Linting:** `uv tool run ruff check src/ tests/`
-- **Formatting:** `uv tool run ruff format src/ tests/`
+- **Linting:** `uv run ruff check src/ tests/`
+- **Formatting:** `uv run ruff format src/ tests/`
 - **Type checking:** `uv tool run mypy src/` (config in `pyproject.toml`;
   third-party deps without stubs are `ignore_missing_imports`)
 - The pre-push hook runs linting and formatting automatically before each push
@@ -80,8 +80,8 @@ See [CLAUDE.md](CLAUDE.md) for deeper architectural guidance.
 All PRs require:
 
 - Tests passing (`uv run pytest tests/ -x -q`)
-- Ruff linting clean (`uv tool run ruff check src/ tests/`)
-- Ruff formatting clean (`uv tool run ruff format --check src/ tests/`)
+- Ruff linting clean (`uv run ruff check src/ tests/`)
+- Ruff formatting clean (`uv run ruff format --check src/ tests/`)
 - Security scan passing (automated via GitHub Actions -- checks for secrets, PII, and policy violations)
 
 
@@ -105,7 +105,7 @@ Phantom uses a tiered dependency system:
 |------|----------|---------|
 | **Core** | essentia, scipy, numpy, soundfile, pydantic, FastMCP | `uv sync` |
 | **Dev** | pytest, ruff, pyloudnorm | `uv sync --extra dev` |
-| **Separation** | demucs, torch | `uv sync --extra separation` |
+| **Separation** | demucs, torch | `uv pip install phantom-audio-separation` |
 | **Matching** | matchering (GPLv3) | `uv sync --extra matching` |
 | **Processing** | pedalboard | `uv sync --extra processing` |
 | **Analysis** | librosa | `uv sync --extra analysis` |

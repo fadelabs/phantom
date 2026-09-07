@@ -13,9 +13,9 @@ from __future__ import annotations
 from typing import Any
 
 import numpy as np
-import essentia.standard as es
 from pydantic import BaseModel, ConfigDict, Field, create_model, model_serializer
 
+import phantom._essentia as es
 from phantom._settings import AnalysisSettings
 
 # Standard octave band center frequencies (Hz).

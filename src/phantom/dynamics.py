@@ -15,12 +15,12 @@ from collections.abc import Callable
 from typing import ClassVar
 
 import numpy as np
-import essentia.standard as es
 
-from phantom.audio import AudioData
+import phantom._essentia as es
 from phantom._rounding import RoundedModel, round_db, round_ratio
 from phantom._settings import AnalysisSettings, analysis_settings
 from phantom._utils import guarded_mono, wrap_errors
+from phantom.audio import AudioData
 
 
 class DynamicsResult(RoundedModel):
@@ -83,7 +83,7 @@ def analyze_dynamics(
         return _silent_dynamics_result()
 
     # -- RMS level (DYN-01) --
-    rms = audio.mono_rms
+    rms = audio.analysis_rms
     rms_dbfs = float(20 * np.log10(rms + 1e-10))
 
     # -- Peak level (DYN-02) --
@@ -97,7 +97,7 @@ def analyze_dynamics(
     # -- Dynamic range (DYN-04) --
     # Memoized on AudioData (A.2): also consumed by detect_problems'
     # noise-floor/SNR detectors, so the block loop runs at most once.
-    block_rms_db = audio.block_rms_db
+    block_rms_db = audio.analysis_block_rms_db
     if len(block_rms_db) >= 2:
         dynamic_range_db = float(
             np.percentile(block_rms_db, 95) - np.percentile(block_rms_db, 5)

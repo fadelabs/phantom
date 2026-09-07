@@ -9,16 +9,16 @@ from rich.panel import Panel
 from rich.prompt import Prompt
 from rich.table import Table
 
-from phantom.processing import fix_audio, UNFIXABLE_TYPES, RECIPES
-from phantom.problems import detect_problems
-from phantom.exceptions import PhantomError
 from phantom.audio import load_audio
 from phantom.cli._formatting import (
+    SEVERITY_STYLES,
     get_console,
     output_json,
     render_error,
-    SEVERITY_STYLES,
 )
+from phantom.exceptions import PhantomError
+from phantom.problems import detect_problems
+from phantom.processing import RECIPES, UNFIXABLE_TYPES, fix_audio
 
 
 @click.command()

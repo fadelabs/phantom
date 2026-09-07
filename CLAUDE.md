@@ -10,6 +10,12 @@ Phantom is an AI audio engineering system. It combines an MCP server for audio a
 
 ## Planning Docs
 
+This project does not use GSD. Work directly from the user’s request, the latest
+handoff, and the roadmap. Do not invoke GSD commands, agents, or automatic phase
+transitions. Existing plans and execution records remain useful project history;
+their old workflow instructions are not active requirements. Preserve decisions,
+open work, and verification evidence when updating them.
+
 `.planning/` is a symlink to `~/Projects/phantom-planning/planning`, a separate
 private repo. The files are real and every existing path still works -- read and
 write `.planning/...` from here exactly as before -- but they are committed in
@@ -36,7 +42,7 @@ paths. Its README carries the two grep commands.
 | scipy / numpy | Signal processing, array operations |
 | soundfile | WAV I/O |
 | pydantic | Typed response models |
-| FastMCP 2.x | MCP server framework |
+| FastMCP 3.x | MCP server framework |
 | click + rich | CLI interface |
 
 Optional: demucs (stem separation), matchering (reference matching, GPLv3), pedalboard (audio processing)
@@ -66,18 +72,29 @@ Optional: demucs (stem separation), matchering (reference matching, GPLv3), peda
 Use `uv run`, not `uv tool run` -- the latter resolves to the newest ruff, and a
 new minor can widen the default rule set, so it fails on rules CI never
 enforces. The hook blocks a push whose ref is not the one checked out, since its
-checks run against the working tree; `--no-verify` overrides.
+checks run against the working tree. Do not bypass hooks with `--no-verify`,
+`SKIP`, or a replacement hooks path. Resolve the failure before publishing.
 
 ## Privacy
 
-Artist personal information must never appear in commits or public-facing documentation. Reference artists by first name only in internal docs, never in committed code.
+This repository is public. Review the exact staged diff and every outgoing commit
+before a push. Never publish secrets, personal information, absolute home paths,
+private planning files, local assistant configuration, real session audio, or AI
+session and artifact links. Check commit messages, PR descriptions, and release
+notes as well as file contents. Use explicit staging paths; never force-add
+ignored files. A later deletion cannot make a public disclosure private again.
+
+Artist personal information must never appear in commits or public-facing
+documentation. Reference artists by first name only in internal docs, never in
+committed code. Preserve the secret, PII, planning, binary, and session-link hooks;
+run the pre-push checks on the checked-out commit being pushed.
 
 ## Key Decisions
 
 - **AGPL-3.0** -- open source, copyleft (commercial licensing available separately)
 - **Reaper over Cubase** for DAW integration (900+ API functions vs sandboxed JS)
 - **Monorepo** -- MCP server usable by any MCP client, skills are Claude Code specific
-- **Essentia as primary engine** -- 10-25x faster than librosa for feature extraction. Cost: **essentia publishes no Windows wheel, so phantom-audio cannot be installed on Windows at all.** macOS and Linux only. Replacing it with a Windows-capable backend is tracked in issue #52 -- read that issue before touching `loudness.py`, `spectral.py`, `dynamics.py`, `problems.py`, `_bands.py`, or `_truepeak.py`
+- **Essentia as primary engine** -- native audio analysis with cross-validation tests. Platform constraint: **essentia publishes no Windows wheel, so phantom-audio cannot be installed on Windows at all.** macOS and Linux only. Replacing it with a Windows-capable backend is tracked in issue #52 -- read that issue before touching `loudness.py`, `spectral.py`, `dynamics.py`, `problems.py`, `_bands.py`, or `_truepeak.py`
 - **Dynamic reference system** -- accepts artist name, genre, song title, or WAV file as mixing/mastering target
 
 ## Entry Points
@@ -93,7 +110,7 @@ Artist personal information must never appear in commits or public-facing docume
 
 ### CLI Commands
 
-`phantom analyze`, `phantom compare`, `phantom separate`, `phantom render`, `phantom setup-reaper`, `phantom serve`
+`phantom analyze`, `phantom compare`, `phantom separate`, `phantom render`, `phantom setup-reaper`, `phantom setup-ableton`, `phantom serve`
 
 ## Contributing
 
@@ -101,3 +118,22 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and guidelines.
 
 <!-- For detailed internal technical research (dependency analysis, alternatives considered, -->
 <!-- version pinning rationale), see .claude.local.md (not committed). -->
+
+## Public writing
+
+Write for the person trying to use the product. Lead with what it does or what
+changed, then give the steps and limits that matter. Prefer clear paragraphs,
+active verbs, familiar words, and concrete examples verified against the code.
+Use US spelling. Avoid hype, invented compound labels, canned contrasts,
+rhetorical questions, and forced sentence fragments. Do not add anecdotes or
+personal experience to make a passage sound human.
+
+Use the humanize skill for editorial review when available, but correctness is
+the final gate. Preserve flags, paths, schemas, units, signs, links, and exact
+quotes. Label illustrative output. Distinguish shipped Phantom functionality,
+external DAW tools, Studio preview features, and plans. Do not claim a live DAW
+test, performance result, customer, or revenue without evidence. Detector scores
+are not a writing target unless the user specifically requests detector testing.
+
+Read the text aloud for clarity, compare claims with source, and run the relevant
+documentation checks. An existing sentence that works does not need rewriting.

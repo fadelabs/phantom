@@ -5,6 +5,7 @@ from __future__ import annotations
 import functools
 import math
 import os
+import re
 import stat
 import tempfile
 from pathlib import Path
@@ -21,6 +22,9 @@ from phantom.exceptions import (
 
 if TYPE_CHECKING:
     from phantom.audio import AudioData
+
+# Shared CLI/MCP error-path redaction keeps both public surfaces consistent.
+ERROR_PATH_PATTERN = re.compile(r"(?:[A-Za-z]:\\[^\"\n]+\\|\\\\[^\"\n]+\\|/[^\"\n]+/)+")
 
 # Silence threshold in dBFS -- signals below this are treated as silence.
 SILENCE_THRESHOLD_DB = -80.0
@@ -117,10 +121,10 @@ def check_duration_size(
         if env_val is not None and env_val.strip():
             try:
                 effective_max_duration = float(env_val)
-            except ValueError:
+            except ValueError as _exc:
                 raise AudioLoadError(
                     f"PHANTOM_MAX_DURATION must be a number (seconds), got: '{env_val}'"
-                )
+                ) from _exc
         else:
             effective_max_duration = DEFAULT_MAX_DURATION
     # Non-finite limits (NaN/Inf from "nan"/"inf" env values or an inf
@@ -148,10 +152,10 @@ def check_duration_size(
         if env_val is not None and env_val.strip():
             try:
                 effective_max_size = int(env_val)
-            except ValueError:
+            except ValueError as _exc:
                 raise AudioLoadError(
                     f"PHANTOM_MAX_FILE_SIZE must be an integer (bytes), got: '{env_val}'"
-                )
+                ) from _exc
         else:
             effective_max_size = DEFAULT_MAX_FILE_SIZE
     if not math.isfinite(effective_max_size) or effective_max_size <= 0:
@@ -192,11 +196,11 @@ def check_decoded_size(
         if env_val is not None and env_val.strip():
             try:
                 effective_max = int(env_val)
-            except ValueError:
+            except ValueError as _exc:
                 raise AudioLoadError(
                     "PHANTOM_MAX_DECODED_BYTES must be an integer (bytes), "
                     f"got: '{env_val}'"
-                )
+                ) from _exc
         else:
             effective_max = DEFAULT_MAX_DECODED_BYTES
     if not math.isfinite(effective_max) or effective_max <= 0:
@@ -234,7 +238,7 @@ def open_validated_input(path: str) -> int:
             file.
     """
     confined = bool(os.environ.get("PHANTOM_AUDIO_DIR"))
-    flags = os.O_RDONLY
+    flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0)
     if confined and hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
     try:
@@ -318,6 +322,27 @@ def atomic_write_text(path: str | Path, content: str) -> None:
         try:
             os.unlink(tmp)
         except OSError:
+            pass
+        raise
+
+
+def atomic_write_audio(path: str, samples: np.ndarray, sample_rate: int) -> None:
+    """Publish a float WAV atomically, preserving headroom and the old output on failure."""
+    import soundfile as sf
+
+    path = validate_output_path(path)
+    if not np.isfinite(samples).all():
+        raise AnalysisError("Processing produced non-finite audio samples")
+    fd, temporary = tempfile.mkstemp(dir=os.path.dirname(path), suffix=".wav")
+    try:
+        with os.fdopen(fd, "wb") as stream:
+            sf.write(stream, samples, sample_rate, format="WAV", subtype="FLOAT")
+        os.replace(temporary, path)
+    except BaseException:
+        try:
+            os.unlink(temporary)
+        except OSError:
+            # Preserve the original write failure if temporary-file cleanup fails.
             pass
         raise
 
@@ -445,11 +470,9 @@ def guarded_mono(audio: AudioData, failure_label: str) -> np.ndarray | None:
     prefix so the raised message stays identical, e.g.
     ``guarded_mono(audio, "Spectral analysis failed")``.
 
-    The near-silence decision uses the memoized ``AudioData.is_near_silent``
-    (mono mixdown, A.7). The mono mixdown cancels coherent anti-phase stereo
-    (R = -L), so analyzers whose silence verdict must reflect individual
-    channels (stereo, per-band phase) deliberately keep their own per-channel
-    checks and must not adopt this helper (see stereo.py, phase.py).
+    Silence is checked per channel. When an active stereo downmix cancels,
+    AudioData.analysis_mono supplies the loudest channel for signal analysis;
+    AudioData.mono remains the literal downmix for compatibility checks.
 
     Returns:
         The mono mixdown when analysis should proceed, or ``None`` when the
@@ -458,10 +481,10 @@ def guarded_mono(audio: AudioData, failure_label: str) -> np.ndarray | None:
     Raises:
         AnalysisError: If the audio has 0 samples.
     """
-    mono = audio.mono
-    if len(mono) == 0:
+    if len(audio.samples) == 0:
         raise AnalysisError(f"{failure_label}: audio has 0 samples")
-    if audio.is_near_silent:
+    mono = audio.analysis_mono
+    if audio.channels_are_silent:
         return None
     return mono
 
@@ -513,7 +536,7 @@ def validate_input_path(path: str) -> str:
         )
 
     # Containment check (pattern from _profiles.py, with os.sep suffix)
-    if not (real_path.startswith(real_base + os.sep) or real_path == real_base):
+    if not (os.path.commonpath([real_path, real_base]) == real_base):
         raise PathSecurityError(
             "Access denied: audio file is outside the allowed directory. "
             "Set PHANTOM_AUDIO_DIR to a directory containing your audio files."
@@ -550,7 +573,7 @@ def validate_output_path(path: str) -> str:
     # Resolve symlinks and re-verify containment on the FINAL path.
     real_path = os.path.realpath(path)
 
-    if not (real_path.startswith(real_base + os.sep) or real_path == real_base):
+    if not (os.path.commonpath([real_path, real_base]) == real_base):
         raise PathSecurityError(
             "Access denied: output path is outside the allowed directory. "
             "Set PHANTOM_OUTPUT_DIR to the directory where outputs should be "

@@ -49,7 +49,8 @@ def separation_plugin_status() -> tuple[bool, str]:
     successfully -- a merely-present-but-broken plugin reports False so
     ``phantom doctor`` never claims separation works when it does not.
     """
-    from importlib.metadata import entry_points, version as dist_version
+    from importlib.metadata import entry_points
+    from importlib.metadata import version as dist_version
 
     try:
         eps = list(entry_points(group=SEPARATION_EP_GROUP))

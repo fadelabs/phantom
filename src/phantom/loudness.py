@@ -14,12 +14,13 @@ from collections.abc import Callable
 from typing import ClassVar
 
 import numpy as np
-import essentia.standard as es
 
-from phantom.audio import AudioData
+import phantom._essentia as es
 from phantom._rounding import RoundedModel, round_db
 from phantom._settings import AnalysisSettings
-from phantom._utils import guarded_mono, wrap_errors
+from phantom._utils import wrap_errors
+from phantom.audio import AudioData
+from phantom.exceptions import AnalysisError
 
 
 class LufsStats(RoundedModel):
@@ -107,7 +108,7 @@ def analyze_loudness(
 
 
     Computes five EBU R128 / ITU-R BS.1770-4 loudness descriptors from
-    the mono mixdown of the input:
+    the individual channels of the input:
       - integrated_lufs: EBU R128 integrated loudness (LUFS)
       - true_peak_dbtp: ITU-R BS.1770-4 true peak level (dBTP)
       - loudness_range_lu: EBU R128 loudness range (LU)
@@ -126,9 +127,9 @@ def analyze_loudness(
     """
     sample_rate = audio.sample_rate
 
-    # Empty/silence guards (B.2): mono, or None when near-silent.
-    mono = guarded_mono(audio, "Loudness analysis failed")
-    if mono is None:
+    if audio.num_samples == 0:
+        raise AnalysisError("Loudness analysis failed: audio has 0 samples")
+    if audio.channels_are_silent:
         return _silent_loudness_result()
 
     # -- EBU R128 loudness (LOUD-01, LOUD-03, LOUD-04) --
@@ -137,7 +138,7 @@ def analyze_loudness(
     # This is the correct behavior: mono content measures identically
     # whether played from one or both speakers at the same level.
     if audio.num_channels == 1:
-        stereo = np.column_stack([mono, mono])
+        stereo = np.column_stack([audio.left, audio.left])
     else:
         stereo = np.column_stack([audio.samples[:, 0], audio.samples[:, 1]])
 
