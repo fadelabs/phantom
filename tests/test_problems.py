@@ -1364,7 +1364,9 @@ def test_reported_97_hz_bass_is_not_hum(duration):
     """The sustained 97.3 Hz tone from #68 is outside a mains harmonic window."""
     sr = 44100
     t = np.arange(sr * duration, dtype=np.float64) / sr
-    samples = (0.2 * np.sin(2 * np.pi * 97.3 * t)).astype(np.float32)
+    samples = (
+        0.3 * np.sin(2 * np.pi * 440 * t) + 0.1 * np.sin(2 * np.pi * 97.3 * t)
+    ).astype(np.float32)
     assert _detect_hum(samples, sr) == []
 
 

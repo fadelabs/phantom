@@ -1149,7 +1149,9 @@ async def test_full_diagnostic_does_not_label_bass_as_hum(client, make_wav):
     """Issue #68: the public diagnostic must not recommend removing a bass note."""
     sr = 44100
     t = np.arange(sr * 3, dtype=np.float64) / sr
-    samples = (0.2 * np.sin(2 * np.pi * 97.3 * t)).astype(np.float32)
+    samples = (
+        0.3 * np.sin(2 * np.pi * 440 * t) + 0.1 * np.sin(2 * np.pi * 97.3 * t)
+    ).astype(np.float32)
     path = make_wav(samples, sr)
     result = await client.call_tool("full_diagnostic", {"file_path": path})
     assert all(p["type"] != "hum" for p in _data(result)["problems"]["problems"])

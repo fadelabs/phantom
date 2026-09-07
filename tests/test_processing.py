@@ -1162,7 +1162,9 @@ def test_hum_fix_preserves_a_nearby_musical_bass_note(tmp_path, monkeypatch):
 
     sr = 44100
     t = np.arange(sr * 3, dtype=np.float64) / sr
-    samples = (0.2 * np.sin(2 * np.pi * 97.3 * t)).astype(np.float32)
+    samples = (
+        0.3 * np.sin(2 * np.pi * 440 * t) + 0.1 * np.sin(2 * np.pi * 97.3 * t)
+    ).astype(np.float32)
     source = tmp_path / "bass.wav"
     target = tmp_path / "checked.wav"
     sf.write(source, samples, sr, subtype="FLOAT")
