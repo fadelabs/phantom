@@ -87,6 +87,19 @@ Changelog = "https://github.com/fadelabs/phantom/releases"
 phantom = "phantom.cli:cli"
 phantom-mcp = "phantom.server:main"
 
+[tool.hatch.build.targets.sdist]
+# Explicit selection prevents local caches/configuration entering PyPI archives.
+only-include = [
+    "src/phantom",
+    "packages/phantom-audio-separation/src",
+    "packages/phantom-audio-separation/README.md",
+    "packages/phantom-audio-separation/pyproject.toml",
+    "README.md",
+    "LICENSE",
+    "pyproject.toml",
+    "uv.lock",
+]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/phantom"]
 artifacts = ["*.json"]

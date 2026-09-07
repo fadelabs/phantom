@@ -51,6 +51,7 @@ Build into a fresh release directory so old artifacts cannot be uploaded:
 
 ```bash
 uv build --out-dir dist/X.Y.Z
+python scripts/check-release-artifacts.py dist/X.Y.Z/*.whl dist/X.Y.Z/*.tar.gz
 ```
 
 Inspect wheel and source archive contents and metadata, and install the wheel in
