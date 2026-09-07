@@ -83,3 +83,77 @@ def test_invalid_config_is_not_replaced(tmp_path):
         )
     assert result.exit_code != 0
     assert target.read_text() == '{"mcpServers": []}'
+
+
+def test_full_setup_restricts_installed_listener(tmp_path):
+    from pathlib import Path
+
+    target = tmp_path / "mcp.json"
+    scripts = tmp_path / "Remote Scripts"
+
+    def installer(*arguments):
+        assert arguments[0] == "--target"
+        script = Path(arguments[1]) / "AbletonMCP" / "__init__.py"
+        script.parent.mkdir(parents=True, exist_ok=True)
+        script.write_text('HOST = "0.0.0.0"\nDEFAULT_PORT = 9877\n')
+        return "installed"
+
+    with (
+        patch("phantom.cli.setup_ableton.shutil.which", return_value="uvx"),
+        patch("phantom.cli.setup_ableton._run_script_installer", side_effect=installer),
+    ):
+        result = CliRunner().invoke(
+            setup_ableton,
+            ["--config", str(target), "--scripts-dir", str(scripts), "--json"],
+        )
+    assert result.exit_code == 0, result.output
+    source = (scripts / "AbletonMCP" / "__init__.py").read_text()
+    assert 'HOST = "127.0.0.1"' in source
+    assert "0.0.0.0" not in source
+    assert json.loads(result.output)["listener_host"] == "127.0.0.1"
+
+
+def test_unknown_listener_does_not_write_client_configuration(tmp_path):
+    scripts = tmp_path / "Remote Scripts"
+    script = scripts / "AbletonMCP" / "__init__.py"
+    script.parent.mkdir(parents=True)
+    script.write_text('HOST = "unexpected"\n')
+    target = tmp_path / "mcp.json"
+    with (
+        patch("phantom.cli.setup_ableton.shutil.which", return_value="uvx"),
+        patch(
+            "phantom.cli.setup_ableton._run_script_installer", return_value="installed"
+        ),
+    ):
+        result = CliRunner().invoke(
+            setup_ableton, ["--config", str(target), "--scripts-dir", str(scripts)]
+        )
+    assert result.exit_code != 0
+    assert "Cannot verify" in result.output
+    assert not target.exists()
+
+
+def test_default_setup_restricts_every_discovered_library(tmp_path):
+    from phantom.cli.setup_ableton import _install_script
+
+    roots = [tmp_path / "Library One", tmp_path / "Library Two"]
+    for root in roots:
+        script = root / "AbletonMCP" / "__init__.py"
+        script.parent.mkdir(parents=True)
+        script.write_text('HOST = "0.0.0.0"\n')
+
+    def installer(*arguments):
+        return (
+            "\n".join(map(str, roots))
+            if arguments == ("--list-targets",)
+            else "installed"
+        )
+
+    with patch(
+        "phantom.cli.setup_ableton._run_script_installer", side_effect=installer
+    ):
+        _install_script(None)
+    assert all(
+        'HOST = "127.0.0.1"' in (root / "AbletonMCP" / "__init__.py").read_text()
+        for root in roots
+    )
