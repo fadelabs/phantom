@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "phantom-audio"
-version = "1.6.0"
+version = "1.6.1"
 description = "AI audio engineering system -- makes Claude a professional audio engineer"
 readme = "README.md"
 license = "AGPL-3.0-or-later"
@@ -40,6 +40,9 @@ dependencies = [
     "essentia==2.1b6.dev1389",
     "scipy>=1.12",
     "fastmcp>=3.2",
+    # Security floors for MCP transport and JWT verification dependencies.
+    "anyio>=4.14.2",
+    "pyjwt>=2.15.0",
     "click>=8.0",
     "rich>=13.0",
     "rich-click>=1.8",
@@ -57,9 +60,11 @@ dev = [
     "tomli>=2.0; python_version < '3.11'",
     "ruff>=0.15",
     "pre-commit>=4.0",
+    "virtualenv>=21.7.13",
 ]
 analysis = [
     "librosa>=0.11.0",
+    "urllib3>=2.8.0",
 ]
 # Backward-compatible meta-installer: the Demucs/PyTorch implementation now
 # lives in the sibling distribution phantom-audio-separation (issue #7).
