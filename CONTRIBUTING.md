@@ -15,7 +15,7 @@ Contributions are welcome under the [AGPL-3.0](LICENSE) license (inbound = outbo
    cd phantom
    ```
 
-2. Install dependencies (requires Python 3.10–3.13 on macOS or Linux and [uv](https://docs.astral.sh/uv/)):
+2. Install dependencies (requires Python 3.11–3.13 on macOS or Linux and [uv](https://docs.astral.sh/uv/)):
 
    ```bash
    uv sync --extra dev

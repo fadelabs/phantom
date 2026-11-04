@@ -8,7 +8,7 @@ Use it as a command-line tool, a Python library, or an MCP server. The Claude Co
 
 ## Start with one file
 
-Phantom supports macOS and Linux with Python 3.10–3.13. The commands below use 3.13. **Windows is not supported:** the Essentia dependency has no Windows wheel. A replacement backend is tracked in [issue #52](https://github.com/fadelabs/phantom/issues/52).
+Phantom supports macOS and Linux with Python 3.11–3.13. The commands below use 3.13. **Windows is not supported:** the Essentia dependency has no Windows wheel. A replacement backend is tracked in [issue #52](https://github.com/fadelabs/phantom/issues/52).
 
 Install [uv](https://docs.astral.sh/uv/getting-started/installation/), then:
 

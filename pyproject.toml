@@ -4,12 +4,12 @@ build-backend = "hatchling.build"
 
 [project]
 name = "phantom-audio"
-version = "1.6.1"
+version = "2.0.0"
 description = "AI audio engineering system -- makes Claude a professional audio engineer"
 readme = "README.md"
 license = "AGPL-3.0-or-later"
 license-files = ["LICENSE"]
-requires-python = ">=3.10,<3.14"
+requires-python = ">=3.11,<3.14"
 authors = [
     { name = "Phantom Contributors" },
 ]
@@ -24,7 +24,6 @@ classifiers = [
     "Topic :: Multimedia :: Sound/Audio :: Analysis",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -39,7 +38,15 @@ dependencies = [
     "pydantic>=2.0",
     "essentia==2.1b6.dev1389",
     "scipy>=1.12",
-    "fastmcp>=3.2",
+    # Security floors apply to published installs as well as the lockfile.
+    "fastmcp>=3.4.10,<4",
+    "mcp>=1.30.0,<2",
+    "authlib>=1.9.1",
+    "joserfc>=1.7.6",
+    "certifi>=2026.10.18",
+    "dnspython>=2.9.0",
+    "msgpack>=1.2.3",
+    "opentelemetry-api>=1.45.1",
     # Security floors for MCP transport and JWT verification dependencies.
     "anyio>=4.14.2",
     "pyjwt>=2.15.0",
@@ -57,10 +64,10 @@ dev = [
     "pytest-timeout>=2.4",
     "pyloudnorm>=0.1.0",
     "hypothesis>=6.0",
-    "tomli>=2.0; python_version < '3.11'",
     "ruff>=0.15",
     "pre-commit>=4.0",
-    "virtualenv>=21.7.13",
+    "virtualenv>=21.14.9",
+    "filelock>=4.2.1",
 ]
 analysis = [
     "librosa>=0.11.0",
@@ -69,7 +76,7 @@ analysis = [
 # Backward-compatible meta-installer: the Demucs/PyTorch implementation now
 # lives in the sibling distribution phantom-audio-separation (issue #7).
 separation = [
-    "phantom-audio-separation",
+    "phantom-audio-separation>=2.0.0",
 ]
 matching = [
     "matchering>=2.0",
@@ -155,7 +162,7 @@ max-complexity = 10
 known-first-party = ["phantom"]
 
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.11"
 # Third-party analysis deps (essentia, soundfile, fastmcp) ship without
 # stubs; matching CONTRIBUTING which waived typing on those grounds.
 ignore_missing_imports = true

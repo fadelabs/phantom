@@ -146,5 +146,5 @@ class TestCoreMetadata:
     def test_separation_extra_is_meta_installer(self, project):
         """[separation] pulls exactly the sibling plugin distribution."""
         assert project["optional-dependencies"]["separation"] == [
-            "phantom-audio-separation"
+            "phantom-audio-separation>=2.0.0"
         ]

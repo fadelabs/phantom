@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.10", "3.12"]
+        python-version: ["3.11", "3.12", "3.13"]
 
     steps:
       - uses: actions/checkout@v7
@@ -83,7 +83,9 @@ jobs:
         run: uv python install 3.12
 
       - name: Audit dependencies
-        run: uv run --with pip-audit pip-audit
+        run: |
+          uv export --locked --all-extras --no-emit-workspace --no-hashes --format requirements-txt > /tmp/phantom-audit.txt
+          uv run --with pip-audit pip-audit --no-deps --disable-pip -r /tmp/phantom-audit.txt
 
   release-artifacts:
     name: Release artifact contents
