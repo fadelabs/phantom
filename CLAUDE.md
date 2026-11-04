@@ -37,7 +37,7 @@ paths. Its README carries the two grep commands.
 
 | Library | Purpose |
 |---------|---------|
-| Python 3.10+ | Runtime |
+| Python 3.11+ | Runtime |
 | essentia | Primary analysis engine (spectral, loudness, problem detection) |
 | scipy / numpy | Signal processing, array operations |
 | soundfile | WAV I/O |
