@@ -39,7 +39,7 @@ dependencies = [
     "essentia==2.1b6.dev1389",
     "scipy>=1.12",
     # Security floors apply to published installs as well as the lockfile.
-    "fastmcp>=3.4.10,<4",
+    "fastmcp>=3.4.10,<5",
     "mcp>=1.30.0,<2",
     "authlib>=1.9.1",
     "joserfc>=1.7.6",
